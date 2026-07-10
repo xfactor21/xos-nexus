@@ -1,0 +1,62 @@
+@import 'tailwindcss';
+@import './styles/tokens.css';
+@import './styles/legacy.css';
+
+@theme {
+  --color-void: var(--void);
+  --color-surface-0: var(--surface-0);
+  --color-surface-1: var(--surface-1);
+  --color-surface-2: var(--surface-2);
+  --color-cyan: var(--cyan);
+  --color-cyan-dim: var(--cyan-dim);
+  --color-purple: var(--purple);
+  --color-magenta: var(--magenta);
+  --color-amber: var(--amber);
+  --color-text: var(--text);
+  --color-text-dim: var(--text-dim);
+  --font-display: var(--font-disp);
+  --font-mono: var(--font-mono);
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  -webkit-tap-highlight-color: transparent;
+}
+
+html,
+body,
+#root {
+  width: 100%;
+  min-height: 100%;
+  background: var(--void);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 13px;
+}
+
+button,
+input,
+textarea {
+  font-family: inherit;
+  color: inherit;
+  background: none;
+  border: none;
+  outline: none;
+}
+
+h1,
+h2,
+h3 {
+  font-family: var(--font-disp);
+  font-weight: 500;
+}
+
+/* Glassmorphism panel — Design System: translucent surface, blur(12-20px),
+   1px low-opacity neon border, restraint rule: max one glow per view. */
+.gpanel {
+  background: var(--glass);
+  backdrop-filter: blur(12px);
+  border: 1px solid var(--edge);
+}

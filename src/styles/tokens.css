@@ -1,0 +1,36 @@
+/**
+ * xOS Design System v0.1 — design tokens
+ * Ported 1:1 from the Notion Design System doc + the HTML prototypes'
+ * :root custom properties. Do not hardcode these values in components —
+ * always reference the token (Engineering Bible: "Design tokens only —
+ * no hardcoded colors in components").
+ */
+:root {
+  /* Foundation surfaces */
+  --void: #05080D;
+  --surface-0: #0A0E14;
+  --surface-1: #0F1520;
+  --surface-2: #141C2A;
+
+  /* Neon accents */
+  --cyan: #00F5FF;
+  --cyan-dim: #00A8B0;
+  --purple: #8B5CF6;
+  --magenta: #FF2D78;
+  --amber: #FFB800;
+
+  /* Text */
+  --text: #C8D8E8;
+  --text-dim: #607080;
+
+  /* Glass + edges */
+  --glass: rgba(15, 21, 32, 0.8);
+  --edge: rgba(0, 245, 255, 0.22);
+
+  /* Type */
+  --font-disp: 'Orbitron', sans-serif;
+  --font-mono: 'Share Tech Mono', monospace;
+
+  /* Neon intensity — user-adjustable in Settings, drives glow strength */
+  --glow: 1;
+}
