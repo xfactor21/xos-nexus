@@ -524,3 +524,52 @@ input[type=range]{width:100%;accent-color:#00F5FF}
 #obsScrub{position:absolute;left:50%;bottom:68px;transform:translateX(-50%);z-index:10;display:flex;align-items:center;gap:10px;background:var(--glass);backdrop-filter:blur(12px);border:1px solid var(--edge);padding:6px 12px;width:min(420px,90vw)}
 #obsScrub input[type=range]{flex:1}
 .obsScrubLabel{font-size:9px;letter-spacing:1px;color:var(--cyan-dim);white-space:nowrap}
+
+/* ---- Projects overhaul (Batch 3): classes, widget dashboard, new-project modal ---- */
+#newProjectBtn{margin-bottom:10px;display:inline-block}
+.classTag{display:inline-block;font-size:8px;letter-spacing:1px;color:var(--cyan-dim);border:1px solid var(--edge);padding:1px 6px;margin-left:8px;vertical-align:middle}
+.classPicker{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px;margin-top:8px}
+.classOpt{border:1px solid var(--edge);padding:10px;cursor:pointer;transition:border-color .15s,background .15s}
+.classOpt:hover{border-color:rgba(0,245,255,.5)}
+.classOpt.on{border-color:var(--cyan);background:rgba(0,245,255,.08);box-shadow:0 0 12px rgba(0,245,255,.2)}
+.classIc{font-size:18px;margin-bottom:4px}
+.classLbl{font-size:10px;letter-spacing:1px;color:var(--text);margin-bottom:4px}
+.classBlurb{font-size:9px;color:var(--text-dim);line-height:1.4}
+
+#widgetGrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:10px}
+.widgetCard{border:1px solid var(--edge);background:var(--glass);backdrop-filter:blur(10px);transition:opacity .15s}
+.widgetCard.dragging{opacity:.35}
+.widgetHead{padding:8px 10px;font-size:9px;letter-spacing:1px;color:var(--cyan-dim);border-bottom:1px solid var(--edge);cursor:grab;user-select:none}
+.widgetHead:active{cursor:grabbing}
+.dragHandle{color:var(--text-dim);margin-right:4px}
+.widgetBody{padding:10px}
+.wStat{text-align:center}
+.wStatN{font-family:var(--font-disp);font-size:26px;color:var(--cyan);text-shadow:0 0 14px rgba(0,245,255,.4)}
+.depList{display:flex;flex-direction:column;gap:6px}
+.depRow{display:flex;justify-content:space-between;font-size:10px;letter-spacing:.5px}
+.depCount{color:var(--purple)}
+.wActivity{display:flex;flex-direction:column;gap:6px}
+.wActivityRow{display:flex;justify-content:space-between;font-size:10px;gap:8px}
+.wActivityRow span:first-child{color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.wActivityTime{color:var(--text-dim);flex-shrink:0}
+
+.heatmap{display:grid;grid-template-columns:repeat(12,1fr);grid-auto-flow:column;gap:2px}
+.hcell{display:block;width:100%;aspect-ratio:1;background:rgba(0,245,255,.06)}
+.hcell.l1{background:rgba(0,245,255,.22)}
+.hcell.l2{background:rgba(0,245,255,.42)}
+.hcell.l3{background:rgba(0,245,255,.68)}
+.hcell.l4{background:#00F5FF;box-shadow:0 0 5px rgba(0,245,255,.6)}
+
+/* ---- Focus Time overhaul (Batch 3): ambient warp starfield, soundscape, reflection ---- */
+#focusWarp{position:absolute;inset:0;z-index:0;pointer-events:none}
+#focusContent{position:relative;z-index:1}
+#strayCap{display:flex;gap:6px;margin:14px auto 0;max-width:420px}
+#strayCap input{flex:1;padding:9px 11px;font-size:11px;background:var(--glass);border:1px solid var(--edge);color:var(--text)}
+#strayCap button{padding:0 14px;border:1px solid rgba(0,245,255,.4);color:var(--cyan);cursor:pointer}
+#strayMsg{font-size:9px;letter-spacing:1px;color:var(--cyan);margin-top:6px}
+#reflect{text-align:center;padding-top:20px}
+#sentimentRow{display:flex;gap:10px;justify-content:center;margin:16px 0}
+.sentimentChip{border:1px solid var(--edge);padding:10px 16px;cursor:pointer;font-size:10px;letter-spacing:1px;display:flex;flex-direction:column;align-items:center;gap:4px}
+.sentimentChip .emoji{font-size:20px}
+.sentimentChip.on{border-color:var(--cyan);background:rgba(0,245,255,.08);box-shadow:0 0 12px rgba(0,245,255,.2)}
+#reflectNote{width:min(420px,92vw);min-height:64px;margin:0 auto 16px;display:block;background:var(--glass);border:1px solid var(--edge);color:var(--text);padding:10px;font-size:11px;resize:vertical}
