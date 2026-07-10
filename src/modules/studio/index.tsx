@@ -5,17 +5,87 @@ import { IMPLEMENTED_MODES } from './types';
 import { loadBoards, createBoard, touchBoard, renameBoard, deleteBoard } from './boards';
 import DrawPaint from './draw/DrawPaint';
 import Wireframe from './Wireframe';
+import ImageConverter from './tools/ImageConverter';
+import PaletteGenerator from './tools/PaletteGenerator';
+import QuickPhotoEditor from './tools/QuickPhotoEditor';
+import PixelArt from './tools/PixelArt';
+import QrGenerator from './tools/QrGenerator';
+import MemeGenerator from './tools/MemeGenerator';
+import FontPairing from './tools/FontPairing';
+import ScreenshotAnnotator from './tools/ScreenshotAnnotator';
+import ChartBuilder from './tools/ChartBuilder';
+import AudioTrimmer from './tools/AudioTrimmer';
+import BackgroundRemover from './tools/BackgroundRemover';
 
-const MODE_META: Record<StudioMode, { label: string; icon: string; blurb: string; ref: string }> = {
-  draw: { label: 'Draw / Paint', icon: '🖌', blurb: 'Layers, real brushes, blend modes, filters', ref: 'Photoshop-caliber' },
-  wireframe: { label: 'Wireframe / Prototype', icon: '▭', blurb: 'Infinite canvas, frames, sticky notes, flows', ref: 'Figma-caliber' },
-  animation: { label: 'Animation', icon: '🎬', blurb: 'Timeline, keyframes, tweening', ref: 'After Effects-caliber' },
-  vector: { label: 'Vector', icon: '✒', blurb: 'Bezier pen, paths, boolean ops', ref: 'Illustrator-caliber' },
-  diagram: { label: 'Diagram', icon: '🔗', blurb: 'Flowcharts, connectors, swimlanes', ref: 'Whimsical-caliber' },
-  moodboard: { label: 'Moodboard', icon: '◆', blurb: 'Swatches, references, style tiles', ref: 'Milanote-caliber' },
+interface ModeMeta {
+  label: string;
+  icon: string;
+  blurb: string;
+  ref: string;
+  category: 'primary' | 'utility';
+}
+
+/**
+ * Amendment v0.3 Section B's full New Project roster — 8 primary creative
+ * modes shown immediately, plus a "Show More" reveal of 17 additional
+ * utility tools, replacing the old flat 6-tile grid. `IMPLEMENTED_MODES`
+ * (types.ts) is the honest allowlist of which of these 25 are actually
+ * wired to a real tool right now; everything else still appears in the
+ * picker (so the full roster the Captain was promised is visible and the
+ * modal doesn't quietly shrink back down) but is disabled with a plain
+ * "not yet available" tag — never the old literal "Coming soon" copy the
+ * amendment called out, and never silently clickable into a blank room.
+ */
+const MODE_META: Record<StudioMode, ModeMeta> = {
+  // ---- primary 8 ----
+  draw: { label: 'Draw / Paint', icon: '🖌', blurb: 'Layers, real brushes, blend modes, filters', ref: 'Photoshop-caliber', category: 'primary' },
+  wireframe: { label: 'Wireframe / Prototype', icon: '▭', blurb: 'Infinite canvas, frames, sticky notes, flows', ref: 'Figma-caliber', category: 'primary' },
+  animation: { label: 'Animation', icon: '🎬', blurb: 'Timeline, keyframes, tweening', ref: 'After Effects-caliber', category: 'primary' },
+  vector: { label: 'Vector / Illustration', icon: '✒', blurb: 'Bezier pen, paths, boolean ops', ref: 'Illustrator-caliber', category: 'primary' },
+  diagram: { label: 'Diagram / Flowchart', icon: '🔗', blurb: 'Flowcharts, connectors, swimlanes', ref: 'Whimsical-caliber', category: 'primary' },
+  moodboard: { label: 'Moodboard / Collage', icon: '◆', blurb: 'Swatches, references, style tiles', ref: 'Milanote-caliber', category: 'primary' },
+  presentation: { label: 'Presentation / Slide Deck', icon: '▤', blurb: 'Slides, layouts, speaker notes', ref: 'Keynote-caliber', category: 'primary' },
+  iconDesign: { label: 'Icon Design', icon: '◉', blurb: 'Pixel-grid + vector icon sets', ref: 'Icon-kit-caliber', category: 'primary' },
+  // ---- utility tools ("Show More") ----
+  imageConverter: { label: 'Image Converter', icon: '⇄', blurb: 'Real PNG/JPEG/WebP conversion', ref: 'utility', category: 'utility' },
+  backgroundRemover: { label: 'Background Remover', icon: '✂', blurb: 'Edge-seeded color-distance cutout', ref: 'utility', category: 'utility' },
+  paletteGenerator: { label: 'Color Palette Generator', icon: '🎨', blurb: 'From an image or a base color', ref: 'utility', category: 'utility' },
+  quickPhotoEditor: { label: 'Quick Photo Editor', icon: '🖼', blurb: 'Crop, rotate, flip, brightness/contrast', ref: 'utility', category: 'utility' },
+  logoMaker: { label: 'Logo Maker', icon: '◈', blurb: 'Icon + wordmark combiner', ref: 'utility', category: 'utility' },
+  pixelArt: { label: 'Pixel Art Editor', icon: '▦', blurb: 'Grid painter, crisp nearest-neighbor export', ref: 'utility', category: 'utility' },
+  videoTrimmer: { label: 'Video Trimmer', icon: '▶', blurb: 'Trim a clip to a real exported cut', ref: 'utility', category: 'utility' },
+  audioTrimmer: { label: 'Audio Waveform Trimmer', icon: '〜', blurb: 'Real waveform, trim, export WAV', ref: 'utility', category: 'utility' },
+  pdfMarkup: { label: 'PDF Markup / Annotator', icon: '📄', blurb: 'Mark up an existing PDF', ref: 'utility', category: 'utility' },
+  qrGenerator: { label: 'QR / Barcode Generator', icon: '▧', blurb: 'Real scannable QR encoding', ref: 'utility', category: 'utility' },
+  memeGenerator: { label: 'Meme Generator', icon: '💬', blurb: 'Classic caption-and-image tool', ref: 'utility', category: 'utility' },
+  fontPairing: { label: 'Font Pairing Explorer', icon: 'Aa', blurb: 'Real Google Fonts, live preview', ref: 'utility', category: 'utility' },
+  screenshotAnnotator: { label: 'Screenshot Annotator', icon: '↗', blurb: 'Arrows, shapes, callouts on an image', ref: 'utility', category: 'utility' },
+  gifMaker: { label: 'GIF Maker', icon: '▣', blurb: 'Frames-to-GIF exporter', ref: 'utility', category: 'utility' },
+  chartBuilder: { label: 'Chart / Graph Builder', icon: '📊', blurb: 'Real bar/line/pie from your data', ref: 'utility', category: 'utility' },
+  printLayout: { label: 'Print Layout Designer', icon: '▥', blurb: 'Multi-page print layout', ref: 'utility', category: 'utility' },
+  modelViewer: { label: '3D Model Viewer', icon: '⬡', blurb: 'Preview a 3D model file', ref: 'stretch', category: 'utility' },
 };
 
-const MODE_ORDER: StudioMode[] = ['draw', 'wireframe', 'animation', 'vector', 'diagram', 'moodboard'];
+const PRIMARY_ORDER: StudioMode[] = ['draw', 'wireframe', 'animation', 'vector', 'diagram', 'moodboard', 'presentation', 'iconDesign'];
+const UTILITY_ORDER: StudioMode[] = [
+  'imageConverter',
+  'backgroundRemover',
+  'paletteGenerator',
+  'quickPhotoEditor',
+  'logoMaker',
+  'pixelArt',
+  'videoTrimmer',
+  'audioTrimmer',
+  'pdfMarkup',
+  'qrGenerator',
+  'memeGenerator',
+  'fontPairing',
+  'screenshotAnnotator',
+  'gifMaker',
+  'chartBuilder',
+  'printLayout',
+  'modelViewer',
+];
 
 /** Legacy single-canvas snapshot key from before the multi-board rework —
  * if present and no boards exist yet, we surface it as the seeded first
@@ -49,15 +119,32 @@ function seedFromLegacyIfNeeded(): StudioBoard[] {
  * DESIGN STUDIO — Blueprint v0.3 Amendment v0.2: Design Studio becomes a
  * multi-mode creative suite, picking a mode per-board the way Figma picks
  * a file type. This component is the picker/router shell; each mode's
- * actual tool lives in its own component (DrawPaint, Wireframe, …) and
- * owns the full viewport below this room's header. Only 'draw' and
- * 'wireframe' are implemented per the amendment's own updated execution
- * order — the rest are shown as honest "coming soon" cards, not stubs.
+ * actual tool lives in its own component and owns the full viewport below
+ * this room's header.
+ *
+ * Genuinely implemented right now (Amendment v0.4 items 1 + 2): Draw/Paint
+ * and Wireframe/Prototype (the two primary modes built in earlier batches),
+ * plus 11 of the 17 "Show More" utility tools — Image Converter, Background
+ * Remover, Color Palette Generator, Quick Photo Editor, Pixel Art Editor,
+ * QR/Barcode Generator (QR only — a real Code128/etc. barcode symbology is
+ * a distinct, larger undertaking than fit this pass), Meme Generator, Font
+ * Pairing Explorer, Screenshot Annotator, Chart/Graph Builder, and Audio
+ * Waveform Trimmer. Everything else in `MODE_META` is still shown (the
+ * full 25-entry roster is real, not aspirational padding) but disabled
+ * with an honest "not yet available" tag rather than a demotivating literal
+ * "Coming soon" label. The 6 still-unbuilt primary modes (Animation, which
+ * is Amendment v0.4's own next dedicated item; Vector, Diagram, Moodboard,
+ * Presentation, Icon Design) and 6 still-unbuilt utility tools (Logo Maker,
+ * Video Trimmer, PDF Markup, GIF Maker, Print Layout, and 3D Model
+ * Viewer — the last of which the amendment itself already flags as
+ * "stretch") get their own dedicated future passes the same way Animation
+ * does, rather than 25 tools all built shallowly in one sitting.
  */
 export default function Studio({ active }: { active: boolean }) {
   const [boards, setBoards] = useState<StudioBoard[]>(seedFromLegacyIfNeeded);
   const [openId, setOpenId] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
+  const [showMore, setShowMore] = useState(false);
   const [newName, setNewName] = useState('');
   const [newMode, setNewMode] = useState<StudioMode>('draw');
   const [renamingId, setRenamingId] = useState<string | null>(null);
@@ -75,11 +162,17 @@ export default function Studio({ active }: { active: boolean }) {
     refresh();
   }
 
+  function exitToBoards() {
+    setOpenId(null);
+    refresh();
+  }
+
   function handleCreate() {
     const board = createBoard(newName || `Untitled ${MODE_META[newMode].label}`, newMode);
     refresh();
     setCreating(false);
     setNewName('');
+    setShowMore(false);
     openBoardById(board.id);
   }
 
@@ -107,10 +200,19 @@ export default function Studio({ active }: { active: boolean }) {
         <h2 className="rh" style={{ paddingLeft: 4 }}>
           🎨 DESIGN STUDIO <span style={{ opacity: 0.5, fontWeight: 400 }}>/ {openBoard.name}</span>
         </h2>
-        {openBoard.mode === 'draw' && <DrawPaint boardId={openBoard.id} onExit={() => { setOpenId(null); refresh(); }} />}
-        {openBoard.mode === 'wireframe' && (
-          <Wireframe boardId={openBoard.id} isSeed={openBoard.id === seedBoardId} onExit={() => { setOpenId(null); refresh(); }} />
-        )}
+        {openBoard.mode === 'draw' && <DrawPaint boardId={openBoard.id} onExit={exitToBoards} />}
+        {openBoard.mode === 'wireframe' && <Wireframe boardId={openBoard.id} isSeed={openBoard.id === seedBoardId} onExit={exitToBoards} />}
+        {openBoard.mode === 'imageConverter' && <ImageConverter boardId={openBoard.id} onExit={exitToBoards} />}
+        {openBoard.mode === 'paletteGenerator' && <PaletteGenerator boardId={openBoard.id} onExit={exitToBoards} />}
+        {openBoard.mode === 'quickPhotoEditor' && <QuickPhotoEditor boardId={openBoard.id} onExit={exitToBoards} />}
+        {openBoard.mode === 'pixelArt' && <PixelArt boardId={openBoard.id} onExit={exitToBoards} />}
+        {openBoard.mode === 'qrGenerator' && <QrGenerator boardId={openBoard.id} onExit={exitToBoards} />}
+        {openBoard.mode === 'memeGenerator' && <MemeGenerator boardId={openBoard.id} onExit={exitToBoards} />}
+        {openBoard.mode === 'fontPairing' && <FontPairing boardId={openBoard.id} onExit={exitToBoards} />}
+        {openBoard.mode === 'screenshotAnnotator' && <ScreenshotAnnotator boardId={openBoard.id} onExit={exitToBoards} />}
+        {openBoard.mode === 'chartBuilder' && <ChartBuilder boardId={openBoard.id} onExit={exitToBoards} />}
+        {openBoard.mode === 'audioTrimmer' && <AudioTrimmer boardId={openBoard.id} onExit={exitToBoards} />}
+        {openBoard.mode === 'backgroundRemover' && <BackgroundRemover boardId={openBoard.id} onExit={exitToBoards} />}
       </section>
     );
   }
@@ -163,42 +265,77 @@ export default function Studio({ active }: { active: boolean }) {
 
       {creating && (
         <div className="dpModal" onClick={() => setCreating(false)}>
-          <div className="gpanel dpModalBody" onClick={(e) => e.stopPropagation()}>
+          <div className="gpanel dpModalBody" onClick={(e) => e.stopPropagation()} style={{ maxHeight: '86vh' }}>
             <h3>NEW BOARD</h3>
             <input
               autoFocus
               placeholder="Board name…"
               value={newName}
               onChange={(e) => setNewName(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && newMode && handleCreate()}
+              onKeyDown={(e) => e.key === 'Enter' && newMode && IMPLEMENTED_MODES.includes(newMode) && handleCreate()}
               style={{ width: '100%', marginBottom: 14 }}
             />
-            <div id="dpModeGrid">
-              {MODE_ORDER.map((m) => {
-                const implemented = IMPLEMENTED_MODES.includes(m);
-                const meta = MODE_META[m];
-                return (
-                  <div
-                    key={m}
-                    className={`dpModeCard ${newMode === m ? 'sel' : ''} ${implemented ? '' : 'disabled'}`}
-                    onClick={() => implemented && setNewMode(m)}
-                  >
-                    <div className="dpModeIcon">{meta.icon}</div>
-                    <div className="dpModeLabel">{meta.label}</div>
-                    <div className="dpModeBlurb">{implemented ? meta.blurb : 'Coming soon'}</div>
-                    {!implemented && <div className="dpModeSoon">{meta.ref}</div>}
-                  </div>
-                );
-              })}
+            <div id="dpModeGrid" className="primary">
+              {PRIMARY_ORDER.map((m) => (
+                <ModeCard key={m} mode={m} meta={MODE_META[m]} selected={newMode === m} onSelect={() => setNewMode(m)} />
+              ))}
             </div>
+
+            {!showMore && (
+              <button id="dpShowMoreBtn" onClick={() => setShowMore(true)}>
+                SHOW MORE — {UTILITY_ORDER.length} MORE PROJECT TYPES ▾
+              </button>
+            )}
+
+            {showMore && (
+              <div className="dpModeSection">
+                <div className="dpModeSectionLabel">UTILITY TOOLS</div>
+                <div id="dpModeGrid" className="primary">
+                  {UTILITY_ORDER.map((m) => (
+                    <ModeCard key={m} mode={m} meta={MODE_META[m]} selected={newMode === m} onSelect={() => setNewMode(m)} utility />
+                  ))}
+                </div>
+              </div>
+            )}
+
             <div style={{ display: 'flex', gap: 8, marginTop: 16, justifyContent: 'flex-end' }}>
               <button className="wbtn ghost" onClick={() => setCreating(false)}>CANCEL</button>
-              <button className="wbtn" onClick={handleCreate}>CREATE</button>
+              <button className="wbtn" disabled={!IMPLEMENTED_MODES.includes(newMode)} onClick={handleCreate}>
+                CREATE
+              </button>
             </div>
           </div>
         </div>
       )}
     </section>
+  );
+}
+
+function ModeCard({
+  mode,
+  meta,
+  selected,
+  onSelect,
+  utility,
+}: {
+  mode: StudioMode;
+  meta: ModeMeta;
+  selected: boolean;
+  onSelect: () => void;
+  utility?: boolean;
+}) {
+  const implemented = IMPLEMENTED_MODES.includes(mode);
+  return (
+    <div
+      className={`dpModeCard ${utility ? 'utility' : ''} ${selected ? 'sel' : ''} ${implemented ? '' : 'disabled'}`}
+      onClick={() => implemented && onSelect()}
+      title={implemented ? meta.blurb : `${meta.blurb} — not yet available`}
+    >
+      <div className="dpModeIcon">{meta.icon}</div>
+      <div className="dpModeLabel">{meta.label}</div>
+      <div className="dpModeBlurb">{meta.blurb}</div>
+      {!implemented && <div className="dpModeNotYet">{meta.ref === 'stretch' ? 'Stretch goal' : 'Not yet available'}</div>}
+    </div>
   );
 }
 

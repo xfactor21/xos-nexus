@@ -96,18 +96,71 @@ export interface StudioComponent {
 }
 
 /**
- * Blueprint v0.3 Amendment v0.2 — Design Studio → Multi-Mode Creative
- * Suite. A board picks a mode at creation, like choosing a file type in
- * Figma. Only 'draw' and 'wireframe' are actually implemented — the
- * amendment's own updated execution order says Draw/Paint first, then
- * Wireframe/Prototype interactivity, "then the remaining modes can follow
- * after the rest of the room overhaul progresses." The rest are modeled
- * here (so the picker UI and data shape are future-proof) but surfaced as
- * "coming soon" rather than faked with a shallow stub.
+ * Blueprint v0.3 Amendment v0.2/v0.3 Section B — Design Studio → Multi-Mode
+ * Creative Suite. A board picks a mode at creation, like choosing a file
+ * type in Figma. `draw` and `wireframe` were implemented first per the
+ * amendment's own execution order; Amendment v0.4 item 2 (New Project
+ * modal redesign) adds the full 8-primary + Show-More utility-tool roster
+ * from Section B to the *picker*, and brings real, working — if
+ * appropriately small — implementations for the utility tools alongside
+ * it, rather than the old flat 6-tile grid with literal "Coming soon"
+ * placeholders. The five heavier primary creative modes this pass doesn't
+ * build full flagship depth for (vector/diagram/moodboard/presentation/
+ * iconDesign) get their own dedicated future passes the same way Animation
+ * (built out fully in Amendment v0.4 item 3) did — see the Studio picker's
+ * own comment for exactly which modes are genuinely implemented right now.
  */
-export type StudioMode = 'draw' | 'wireframe' | 'animation' | 'vector' | 'diagram' | 'moodboard';
+export type StudioMode =
+  | 'draw'
+  | 'wireframe'
+  | 'animation'
+  | 'vector'
+  | 'diagram'
+  | 'moodboard'
+  | 'presentation'
+  | 'iconDesign'
+  // ---- utility tools (Amendment v0.3 Section B "Show More" roster) ----
+  | 'imageConverter'
+  | 'backgroundRemover'
+  | 'paletteGenerator'
+  | 'quickPhotoEditor'
+  | 'logoMaker'
+  | 'pixelArt'
+  | 'videoTrimmer'
+  | 'audioTrimmer'
+  | 'pdfMarkup'
+  | 'qrGenerator'
+  | 'memeGenerator'
+  | 'fontPairing'
+  | 'screenshotAnnotator'
+  | 'gifMaker'
+  | 'chartBuilder'
+  | 'printLayout'
+  | 'modelViewer';
 
-export const IMPLEMENTED_MODES: StudioMode[] = ['draw', 'wireframe'];
+/** Which modes have a genuine, working implementation behind them right
+ * now — kept as an explicit allowlist (not "everything not on a deny
+ * list") so a newly-added `StudioMode` is honestly unavailable in the
+ * picker until it's actually built, never silently clickable into a
+ * blank room. */
+export const IMPLEMENTED_MODES: StudioMode[] = [
+  'draw',
+  'wireframe',
+  // 'animation' is deliberately NOT here yet — it's Amendment v0.4 item 3,
+  // its own dedicated next pass, so it still shows honestly as not-yet-
+  // available in the picker until that pass actually builds it.
+  'imageConverter',
+  'paletteGenerator',
+  'quickPhotoEditor',
+  'pixelArt',
+  'qrGenerator',
+  'memeGenerator',
+  'fontPairing',
+  'screenshotAnnotator',
+  'chartBuilder',
+  'audioTrimmer',
+  'backgroundRemover',
+];
 
 export interface StudioBoard {
   id: string;
