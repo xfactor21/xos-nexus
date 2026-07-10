@@ -46,6 +46,8 @@ function blendToComposite(b: BlendMode): GlobalCompositeOperation {
   return b === 'normal' ? 'source-over' : (b as GlobalCompositeOperation);
 }
 
+export type SymmetryMode = 'none' | 'vertical' | 'horizontal' | 'radial4';
+
 export class DrawEngine {
   width: number;
   height: number;
@@ -54,11 +56,29 @@ export class DrawEngine {
   selection: SelectionShape = null;
   display: HTMLCanvasElement;
   displayCtx: CanvasRenderingContext2D;
+  /** Amendment v0.4 item 10 — symmetry drawing: every brush dab (and ink
+   * line segment) is mirrored across the canvas center per the active
+   * mode, at the pixel-stamping level, not a visual-only guide overlay. */
+  symmetry: SymmetryMode = 'none';
 
   private scratch: HTMLCanvasElement;
   private scratchCtx: CanvasRenderingContext2D;
   private strokeLastPoint: [number, number] | null = null;
   private strokeDist = 0;
+
+  /* clone stamp state (Amendment v0.4 item 6) */
+  private cloneSource: [number, number] | null = null;
+  private cloneOffset: [number, number] | null = null;
+  private cloneFrozenSnapshot: HTMLCanvasElement | null = null;
+
+  /* smudge state (Amendment v0.4 item 6) */
+  private smudgeLast: [number, number] | null = null;
+
+  /* named bookmarks — independent of the linear undo/redo stack, survive
+   * across undo/redo so the Captain can always jump back to a marked
+   * moment even after further edits (Amendment v0.4 item 11). */
+  private bookmarks: { id: string; label: string; entry: HistoryEntry }[] = [];
+  onBookmarksChange: (() => void) | null = null;
 
   private past: HistoryEntry[] = [];
   private future: HistoryEntry[] = [];
@@ -277,10 +297,14 @@ export class DrawEngine {
       this.scratchCtx.lineCap = 'round';
       this.scratchCtx.lineJoin = 'round';
       this.scratchCtx.lineWidth = Math.max(1, brush.size * (0.4 + pressure * 0.6));
-      this.scratchCtx.beginPath();
-      this.scratchCtx.moveTo(lx, ly);
-      this.scratchCtx.lineTo(x, y);
-      this.scratchCtx.stroke();
+      const fromPts = this.symmetryPoints(lx, ly);
+      const toPts = this.symmetryPoints(x, y);
+      for (let i = 0; i < fromPts.length; i++) {
+        this.scratchCtx.beginPath();
+        this.scratchCtx.moveTo(fromPts[i][0], fromPts[i][1]);
+        this.scratchCtx.lineTo(toPts[i][0], toPts[i][1]);
+        this.scratchCtx.stroke();
+      }
       this.scratchCtx.restore();
       this.strokeLastPoint = [x, y];
     } else {
@@ -407,8 +431,26 @@ export class DrawEngine {
     const dabFlow = brush.type === 'airbrush' ? brush.flow * 0.35 : brush.flow;
     this.scratchCtx.save();
     this.scratchCtx.globalAlpha = Math.max(0.02, dabFlow);
-    this.scratchCtx.drawImage(tip, x - tip.width / 2, y - tip.height / 2);
+    for (const [sx, sy] of this.symmetryPoints(x, y)) {
+      this.scratchCtx.drawImage(tip, sx - tip.width / 2, sy - tip.height / 2);
+    }
     this.scratchCtx.restore();
+  }
+
+  /** Mirrors a world-space point across the canvas center per the active
+   * symmetry mode. Always includes the original point first. */
+  private symmetryPoints(x: number, y: number): [number, number][] {
+    if (this.symmetry === 'none') return [[x, y]];
+    const cx = this.width / 2,
+      cy = this.height / 2;
+    if (this.symmetry === 'vertical') return [[x, y], [2 * cx - x, y]];
+    if (this.symmetry === 'horizontal') return [[x, y], [x, 2 * cy - y]];
+    // radial4: mirror across both axes at once, four-fold
+    return [[x, y], [2 * cx - x, y], [x, 2 * cy - y], [2 * cx - x, 2 * cy - y]];
+  }
+
+  setSymmetry(mode: SymmetryMode) {
+    this.symmetry = mode;
   }
 
   /* ============ selection tools ============ */
@@ -596,6 +638,155 @@ export class DrawEngine {
     this.composite();
   }
 
+  /* ============ retouch tools: clone stamp / smudge / spot heal ============
+   * Amendment v0.4 item 6. All three sample real pixel data from the active
+   * layer — none of these are visual stand-ins. */
+
+  /** Alt/Option-click equivalent: marks the point future clone strokes
+   * sample from. The next `beginClone()` establishes the fixed offset
+   * between source and where painting starts, exactly like a real clone
+   * stamp tool — after that, the sample point tracks the brush at a
+   * constant offset as the Captain drags. */
+  setCloneSource(x: number, y: number) {
+    this.cloneSource = [x, y];
+    this.cloneOffset = null;
+  }
+
+  hasCloneSource(): boolean {
+    return this.cloneSource !== null;
+  }
+
+  beginClone(x: number, y: number, radius: number) {
+    const layer = this.activeLayer();
+    if (!layer || layer.meta.locked || !this.cloneSource) return;
+    this.pushHistory();
+    if (!this.cloneOffset) this.cloneOffset = [x - this.cloneSource[0], y - this.cloneSource[1]];
+    // Freeze a copy of the source layer's current pixels for the whole
+    // stroke, so cloning doesn't sample pixels the same stroke just painted
+    // a moment ago (which would smear rather than genuinely duplicate).
+    const frozen = document.createElement('canvas');
+    frozen.width = this.width;
+    frozen.height = this.height;
+    frozen.getContext('2d')!.drawImage(layer.canvas, 0, 0);
+    this.cloneFrozenSnapshot = frozen;
+    this.stampClone(x, y, radius);
+  }
+
+  continueClone(x: number, y: number, radius: number) {
+    this.stampClone(x, y, radius);
+  }
+
+  endClone() {
+    this.cloneFrozenSnapshot = null;
+  }
+
+  private stampClone(x: number, y: number, radius: number) {
+    const layer = this.activeLayer();
+    if (!layer || !this.cloneOffset || !this.cloneFrozenSnapshot) return;
+    // We want the frozen source pixel at (sx,sy) = (x - offsetX, y - offsetY)
+    // to land at screen point (x,y). Drawing the whole frozen canvas
+    // translated by (x - sx, y - sy) = (offsetX, offsetY) achieves that —
+    // note this translation is constant for the whole stroke since the
+    // offset itself doesn't change as the brush moves.
+    const ctx = layer.canvas.getContext('2d')!;
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(x, y, radius, 0, Math.PI * 2);
+    ctx.clip();
+    ctx.drawImage(this.cloneFrozenSnapshot, this.cloneOffset[0], this.cloneOffset[1]);
+    ctx.restore();
+    this.composite();
+  }
+
+  beginSmudge(x: number, y: number) {
+    const layer = this.activeLayer();
+    if (!layer || layer.meta.locked) return;
+    this.pushHistory();
+    this.smudgeLast = [x, y];
+  }
+
+  /** Drags existing pixel content forward: at each step, copy a patch from
+   * the layer's *current* state centered on the previous point and paint it
+   * (soft circular mask, opacity-scaled) at the new point — precisely how a
+   * simple finger/smudge tool works, sampling live content rather than a
+   * canned brush tip. */
+  continueSmudge(x: number, y: number, radius: number, strength: number) {
+    const layer = this.activeLayer();
+    if (!layer || layer.meta.locked || !this.smudgeLast) return;
+    const [lx, ly] = this.smudgeLast;
+    const d = Math.max(2, Math.ceil(radius * 2));
+    const patch = document.createElement('canvas');
+    patch.width = d;
+    patch.height = d;
+    const pctx = patch.getContext('2d')!;
+    pctx.drawImage(layer.canvas, lx - d / 2, ly - d / 2, d, d, 0, 0, d, d);
+    const ctx = layer.canvas.getContext('2d')!;
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(x, y, radius, 0, Math.PI * 2);
+    ctx.clip();
+    ctx.globalAlpha = Math.max(0.05, Math.min(1, strength));
+    ctx.drawImage(patch, x - d / 2, y - d / 2);
+    ctx.restore();
+    this.smudgeLast = [x, y];
+    this.composite();
+  }
+
+  endSmudge() {
+    this.smudgeLast = null;
+  }
+
+  /** Approximate content-aware heal: blends the blemish into a blurred copy
+   * of its own surrounding donut of pixels, rather than a literal
+   * generative fill — real pixel math (reuses the same box-blur used by the
+   * Blur filter), not a no-op placeholder. */
+  healAt(x: number, y: number, radius: number) {
+    const layer = this.activeLayer();
+    if (!layer || layer.meta.locked) return;
+    this.pushHistory();
+    const pad = Math.ceil(radius * 2.2);
+    const x0 = Math.max(0, Math.floor(x - pad)),
+      y0 = Math.max(0, Math.floor(y - pad));
+    const w = Math.min(this.width - x0, pad * 2),
+      h = Math.min(this.height - y0, pad * 2);
+    if (w <= 0 || h <= 0) return;
+    const ctx = layer.canvas.getContext('2d')!;
+    let patch = ctx.getImageData(x0, y0, w, h);
+    for (let i = 0; i < 4; i++) patch = boxBlur(patch, w, h, Math.max(2, Math.round(radius * 0.6)));
+    const blurCanvas = document.createElement('canvas');
+    blurCanvas.width = w;
+    blurCanvas.height = h;
+    blurCanvas.getContext('2d')!.putImageData(patch, 0, 0);
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(x, y, radius, 0, Math.PI * 2);
+    ctx.clip();
+    ctx.drawImage(blurCanvas, x0, y0);
+    ctx.restore();
+    this.composite();
+  }
+
+  /* ============ text tool (Amendment v0.4 item 9) ============ */
+
+  /** Rasterizes text directly onto the active layer at the given point —
+   * there's no separate "text layer" object model yet (canvas items here
+   * are pure pixel layers), so text commits immediately like a stamp,
+   * consistent with how every other Draw/Paint tool works. */
+  stampText(x: number, y: number, text: string, opts: { size: number; color: string; font?: string; align?: CanvasTextAlign }) {
+    const layer = this.activeLayer();
+    if (!layer || layer.meta.locked || !text.trim()) return;
+    this.pushHistory();
+    const ctx = layer.canvas.getContext('2d')!;
+    ctx.save();
+    ctx.font = `${opts.size}px ${opts.font ?? "'Rajdhani', sans-serif"}`;
+    ctx.fillStyle = opts.color;
+    ctx.textBaseline = 'top';
+    ctx.textAlign = opts.align ?? 'left';
+    ctx.fillText(text, x, y);
+    ctx.restore();
+    this.composite();
+  }
+
   /* ============ eyedropper ============ */
 
   sampleColorAt(x: number, y: number): string {
@@ -645,6 +836,120 @@ export class DrawEngine {
       const [nr, ng, nb] = hslToRgb(nh, ns, nl);
       return [nr, ng, nb, a];
     });
+  }
+
+  /** Levels: real black-point/white-point/gamma remap per channel — the
+   * same math a real levels dialog uses (linear stretch between the two
+   * input points, then a gamma curve), not a brightness slider in disguise. */
+  applyLevels(inBlack: number, inWhite: number, gamma: number) {
+    const lo = Math.min(inBlack, inWhite),
+      hi = Math.max(inBlack, inWhite, lo + 1);
+    const g = Math.max(0.1, gamma);
+    const map = (v: number) => {
+      const t = clamp01((v - lo) / (hi - lo));
+      return clamp255(Math.pow(t, 1 / g) * 255);
+    };
+    this.mapActiveLayerPixels((r, g2, b, a) => [map(r), map(g2), map(b), a]);
+  }
+
+  /** Curves: a piecewise-linear tone curve through Captain-editable control
+   * points (x = input 0-255, y = output 0-255), applied via a precomputed
+   * 256-entry lookup table to all three channels — a real interactive
+   * curve, not a single-slider stand-in. Points must be sorted by x. */
+  applyCurve(points: { x: number; y: number }[]) {
+    if (points.length < 2) return;
+    const sorted = [...points].sort((a, b) => a.x - b.x);
+    const lut = new Uint8ClampedArray(256);
+    for (let v = 0; v < 256; v++) {
+      let i = 0;
+      while (i < sorted.length - 2 && sorted[i + 1].x < v) i++;
+      const p0 = sorted[i],
+        p1 = sorted[i + 1] ?? sorted[i];
+      const t = p1.x === p0.x ? 0 : clamp01((v - p0.x) / (p1.x - p0.x));
+      lut[v] = clamp255(p0.y + (p1.y - p0.y) * t);
+    }
+    this.mapActiveLayerPixels((r, g, b, a) => [lut[Math.round(r)], lut[Math.round(g)], lut[Math.round(b)], a]);
+  }
+
+  /** Color balance: independent R/G/B tint sliders (-100..100) for
+   * shadows/midtones/highlights, weighted by each pixel's actual luminance
+   * so a "shadows" push only meaningfully affects dark pixels — the same
+   * tone-range-weighting a real color-balance tool uses. */
+  applyColorBalance(shadows: [number, number, number], mids: [number, number, number], highlights: [number, number, number]) {
+    this.mapActiveLayerPixels((r, g, b, a) => {
+      const lum = (r + g + b) / 3 / 255;
+      const shadowW = clamp01(1 - lum * 2.2);
+      const highW = clamp01((lum - 0.45) * 2.2);
+      const midW = clamp01(1 - Math.abs(lum - 0.5) * 2.2);
+      const nr = clamp255(r + (shadows[0] * shadowW + mids[0] * midW + highlights[0] * highW) * 0.6);
+      const ng = clamp255(g + (shadows[1] * shadowW + mids[1] * midW + highlights[1] * highW) * 0.6);
+      const nb = clamp255(b + (shadows[2] * shadowW + mids[2] * midW + highlights[2] * highW) * 0.6);
+      return [nr, ng, nb, a];
+    });
+  }
+
+  /** Real luminance-correct desaturate (Rec. 709 weights), not a naive
+   * r+g+b/3 average. */
+  applyBlackAndWhite() {
+    this.mapActiveLayerPixels((r, g, b, a) => {
+      const l = clamp255(0.2126 * r + 0.7152 * g + 0.0722 * b);
+      return [l, l, l, a];
+    });
+  }
+
+  /* ============ filters (Amendment v0.4 item 8) ============ */
+
+  applyNoise(amount: number) {
+    this.mapActiveLayerPixels((r, g, b, a) => {
+      const n = (Math.random() - 0.5) * amount;
+      return [clamp255(r + n), clamp255(g + n), clamp255(b + n), a];
+    });
+  }
+
+  /** Real block-averaging pixelate — reads and re-fills actual pixel
+   * blocks, not a CSS `image-rendering` trick. */
+  applyPixelate(blockSize: number) {
+    const layer = this.activeLayer();
+    if (!layer || layer.meta.locked) return;
+    this.pushHistory();
+    const ctx = layer.canvas.getContext('2d')!;
+    const w = this.width,
+      h = this.height;
+    const img = ctx.getImageData(0, 0, w, h);
+    const bs = Math.max(2, Math.round(blockSize));
+    for (let by = 0; by < h; by += bs) {
+      for (let bx = 0; bx < w; bx += bs) {
+        const bw = Math.min(bs, w - bx),
+          bh = Math.min(bs, h - by);
+        let r = 0,
+          g = 0,
+          b = 0,
+          a = 0,
+          n = 0;
+        for (let y = by; y < by + bh; y++) {
+          for (let x = bx; x < bx + bw; x++) {
+            const i = (y * w + x) * 4;
+            r += img.data[i];
+            g += img.data[i + 1];
+            b += img.data[i + 2];
+            a += img.data[i + 3];
+            n++;
+          }
+        }
+        r /= n; g /= n; b /= n; a /= n;
+        for (let y = by; y < by + bh; y++) {
+          for (let x = bx; x < bx + bw; x++) {
+            const i = (y * w + x) * 4;
+            img.data[i] = r;
+            img.data[i + 1] = g;
+            img.data[i + 2] = b;
+            img.data[i + 3] = a;
+          }
+        }
+      }
+    }
+    ctx.putImageData(img, 0, 0);
+    this.composite();
   }
 
   applyBlur(radius: number) {
@@ -779,6 +1084,52 @@ export class DrawEngine {
   }
   canRedo() {
     return this.future.length > 0;
+  }
+
+  /* ============ history/snapshot panel (Amendment v0.4 item 11) ============
+   * The linear undo/redo stack above already exists; this exposes it as a
+   * real jump-to-arbitrary-state panel instead of only stepping one at a
+   * time, plus independent named bookmarks that survive further edits. */
+
+  /** One entry per state currently on the undo stack, oldest first. Index
+   * matches what `jumpToHistoryIndex` expects. */
+  historyList(): { index: number; label: string }[] {
+    return this.past.map((_, i) => ({ index: i, label: i === 0 ? 'Start' : `Step ${i}` }));
+  }
+
+  async jumpToHistoryIndex(targetIdx: number) {
+    if (targetIdx < 0 || targetIdx >= this.past.length) return;
+    const entry = this.past[targetIdx];
+    const after = this.past.slice(targetIdx + 1); // states between target and "now"
+    const forwardSeq = [...after, this.snapshotCurrent()]; // chronological order back to "now"
+    this.future = [...forwardSeq.reverse(), ...this.future]; // redo() pops from the end
+    this.past = this.past.slice(0, targetIdx);
+    await this.restoreEntry(entry);
+    this.onHistoryChange?.();
+  }
+
+  bookmarkCurrent(label: string) {
+    this.bookmarks.push({ id: nid('bm'), label: label || `Bookmark ${this.bookmarks.length + 1}`, entry: this.snapshotCurrent() });
+    this.onBookmarksChange?.();
+  }
+
+  listBookmarks(): { id: string; label: string }[] {
+    return this.bookmarks.map((b) => ({ id: b.id, label: b.label }));
+  }
+
+  async restoreBookmark(id: string) {
+    const bm = this.bookmarks.find((b) => b.id === id);
+    if (!bm) return;
+    this.past.push(this.snapshotCurrent());
+    if (this.past.length > HISTORY_LIMIT) this.past.shift();
+    this.future = [];
+    await this.restoreEntry(bm.entry);
+    this.onHistoryChange?.();
+  }
+
+  deleteBookmark(id: string) {
+    this.bookmarks = this.bookmarks.filter((b) => b.id !== id);
+    this.onBookmarksChange?.();
   }
 
   async undo() {

@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 import type { PointerEvent as RPointerEvent } from 'react';
 import { DrawEngine, hexToRgb, hsbToRgb, rgbToHex, rgbToHsb } from './DrawEngine';
+import type { SymmetryMode } from './DrawEngine';
 import type { BlendMode, BrushSettings, BrushType, DrawDocument } from '../types';
 
-type Tool = 'brush' | 'eraser' | 'marquee' | 'lasso' | 'wand' | 'fill' | 'eyedropper' | 'gradient';
+type Tool = 'brush' | 'eraser' | 'marquee' | 'lasso' | 'wand' | 'fill' | 'eyedropper' | 'gradient' | 'clone' | 'smudge' | 'heal' | 'text';
 
 const BRUSH_TYPES: { key: BrushType; label: string; icon: string }[] = [
   { key: 'pencil', label: 'Pencil', icon: '✎' },
@@ -16,6 +17,28 @@ const BLEND_MODES: BlendMode[] = ['normal', 'multiply', 'screen', 'overlay', 'da
 
 const DEFAULT_W = 1400;
 const DEFAULT_H = 950;
+
+const PRESET_KEY = 'xos-studio-brush-presets-v1';
+interface BrushPreset {
+  id: string;
+  name: string;
+  settings: BrushSettings;
+}
+function loadPresets(): BrushPreset[] {
+  try {
+    const raw = localStorage.getItem(PRESET_KEY);
+    return raw ? (JSON.parse(raw) as BrushPreset[]) : [];
+  } catch {
+    return [];
+  }
+}
+function savePresets(list: BrushPreset[]) {
+  try {
+    localStorage.setItem(PRESET_KEY, JSON.stringify(list));
+  } catch {
+    /* best-effort */
+  }
+}
 
 function docKey(boardId: string) {
   return `xos-studio-draw-${boardId}`;
@@ -32,15 +55,20 @@ function loadDoc(boardId: string): DrawDocument | null {
 }
 
 /**
- * DRAW / PAINT MODE — Blueprint v0.3 Amendment v0.2. Flagship reference:
- * Photoshop / Procreate. Full brush engine (pencil/ink/airbrush/texture,
- * size/opacity/hardness/flow, real pressure via Pointer Events), layers
- * with native blend modes + opacity, HSB color wheel + swatches +
- * eyedropper + gradient tool, marquee/lasso/magic-wand selection + fill,
- * brightness/contrast + hue/saturation + blur/sharpen adjustments, real
- * multi-level undo, canvas resize/crop, PNG/JPEG export. See
- * DrawEngine.ts for the actual pixel-level implementation — this
- * component is the UI wiring on top of it.
+ * DRAW / PAINT MODE — Blueprint v0.3 Amendment v0.2/v0.4. Flagship
+ * reference: Photoshop / Procreate. Full brush engine (pencil/ink/airbrush/
+ * texture, size/opacity/hardness/flow, real pressure via Pointer Events),
+ * layers with all 16 native blend modes + opacity, HSB color wheel +
+ * swatches + eyedropper + gradient tool, marquee/lasso/magic-wand selection
+ * + fill, retouch tools (clone stamp/smudge/spot-heal), a text tool, a full
+ * Adjustments panel (brightness/contrast, hue/sat, levels, an interactive
+ * curve, color balance, B&W), a separate Filters panel (blur, sharpen,
+ * noise, pixelate), symmetry drawing guides, a reference-image overlay,
+ * custom brush presets, a real history/snapshot panel (jump to any earlier
+ * state, plus named bookmarks) on top of linear undo/redo, canvas
+ * resize/crop, and PNG/JPEG export. See DrawEngine.ts for the actual
+ * pixel-level implementation — this component is the UI wiring on top of
+ * it.
  */
 export default function DrawPaint({ boardId, onExit }: { boardId: string; onExit: () => void }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -55,13 +83,25 @@ export default function DrawPaint({ boardId, onExit }: { boardId: string; onExit
   const [swatches, setSwatches] = useState<string[]>(['#00F5FF', '#8B5CF6', '#FF2D78', '#FFB800', '#ffffff', '#05080D']);
   const [tolerance, setTolerance] = useState(28);
   const [zoom, setZoom] = useState(1);
-  const [panel, setPanel] = useState<'none' | 'adjust' | 'resize' | 'export'>('none');
-  const [adjust, setAdjust] = useState({ brightness: 0, contrast: 0, hue: 0, sat: 1, light: 1, blur: 3 });
+  const [panel, setPanel] = useState<'none' | 'adjust' | 'filters' | 'resize' | 'export' | 'history'>('none');
+  const [adjust, setAdjust] = useState({ brightness: 0, contrast: 0, hue: 0, sat: 1, light: 1 });
+  const [levels, setLevels] = useState({ black: 0, white: 255, gamma: 1 });
+  const [curvePoints, setCurvePoints] = useState([{ x: 0, y: 0 }, { x: 128, y: 128 }, { x: 255, y: 255 }]);
+  const [colorBalance, setColorBalance] = useState({ shadows: [0, 0, 0] as [number, number, number], mids: [0, 0, 0] as [number, number, number], highlights: [0, 0, 0] as [number, number, number] });
+  const [filters, setFilters] = useState({ blur: 3, noise: 24, pixelate: 10 });
   const [resizeDraft, setResizeDraft] = useState({ w: DEFAULT_W, h: DEFAULT_H, mode: 'scale' as 'scale' | 'crop' });
+  const [symmetry, setSymmetryState] = useState<SymmetryMode>('none');
+  const [reference, setReference] = useState<{ url: string; opacity: number; visible: boolean } | null>(null);
+  const [presets, setPresets] = useState<BrushPreset[]>(() => loadPresets());
+  const [presetNameDraft, setPresetNameDraft] = useState('');
+  const [cloneArmed, setCloneArmed] = useState(false);
+  const [textDraft, setTextDraft] = useState<{ x: number; y: number; value: string } | null>(null);
+  const [bookmarkNameDraft, setBookmarkNameDraft] = useState('');
 
   const strokeRef = useRef(false);
   const lassoPoints = useRef<[number, number][]>([]);
   const gradientDrag = useRef<{ x0: number; y0: number } | null>(null);
+  const referenceInputRef = useRef<HTMLInputElement>(null);
 
   /* ============ init ============ */
   useEffect(() => {
@@ -75,6 +115,7 @@ export default function DrawPaint({ boardId, onExit }: { boardId: string; onExit
       setResizeDraft({ w: eng.width, h: eng.height, mode: 'scale' });
       eng.onHistoryChange = bump;
       eng.onLayersChange = bump;
+      eng.onBookmarksChange = bump;
       engineRef.current = eng;
       setReady(true);
     })();
@@ -116,6 +157,7 @@ export default function DrawPaint({ boardId, onExit }: { boardId: string; onExit
     canvasRef.current!.setPointerCapture(e.pointerId);
     const [x, y] = worldPos(e);
     const pressure = e.pointerType === 'pen' ? Math.max(0.05, e.pressure || 0.5) : 1;
+    const radius = Math.max(2, brush.size / 2);
 
     if (tool === 'brush' || tool === 'eraser') {
       strokeRef.current = true;
@@ -152,6 +194,36 @@ export default function DrawPaint({ boardId, onExit }: { boardId: string; onExit
       gradientDrag.current = { x0: x, y0: y };
       return;
     }
+    if (tool === 'clone') {
+      if (e.altKey || !eng.hasCloneSource()) {
+        eng.setCloneSource(x, y);
+        setCloneArmed(true);
+        return;
+      }
+      strokeRef.current = true;
+      eng.beginClone(x, y, radius);
+      return;
+    }
+    if (tool === 'smudge') {
+      strokeRef.current = true;
+      eng.beginSmudge(x, y);
+      return;
+    }
+    if (tool === 'heal') {
+      eng.healAt(x, y, radius);
+      bump();
+      return;
+    }
+    if (tool === 'text') {
+      // Prevent the browser's default focus-follows-pointerdown behavior:
+      // without this, the native mousedown that follows this pointerdown
+      // re-focuses the canvas/body a tick after our autoFocus input mounts,
+      // firing a blur on the just-created input and instantly committing
+      // (and clearing) an empty text draft before the Captain can type.
+      e.preventDefault();
+      setTextDraft({ x, y, value: '' });
+      return;
+    }
   }
 
   function onPointerMove(e: RPointerEvent<HTMLCanvasElement>) {
@@ -160,6 +232,7 @@ export default function DrawPaint({ boardId, onExit }: { boardId: string; onExit
     if (!eng) return;
     const [x, y] = worldPos(e);
     const pressure = e.pointerType === 'pen' ? Math.max(0.05, e.pressure || 0.5) : 1;
+    const radius = Math.max(2, brush.size / 2);
 
     if (tool === 'brush' || tool === 'eraser') {
       eng.continueStroke(x, y, pressure, brush, tool === 'eraser');
@@ -188,6 +261,16 @@ export default function DrawPaint({ boardId, onExit }: { boardId: string; onExit
       ctx.restore();
       return;
     }
+    if (tool === 'clone') {
+      eng.continueClone(x, y, radius);
+      bump();
+      return;
+    }
+    if (tool === 'smudge') {
+      eng.continueSmudge(x, y, radius, brush.flow);
+      bump();
+      return;
+    }
   }
 
   function onPointerUp(e: RPointerEvent<HTMLCanvasElement>) {
@@ -213,6 +296,14 @@ export default function DrawPaint({ boardId, onExit }: { boardId: string; onExit
       gradientDrag.current = null;
     }
     if (tool === 'marquee') gradientDrag.current = null;
+    if (tool === 'clone') {
+      eng.endClone();
+      bump();
+    }
+    if (tool === 'smudge') {
+      eng.endSmudge();
+      bump();
+    }
   }
 
   /* ============ actions ============ */
@@ -227,12 +318,36 @@ export default function DrawPaint({ boardId, onExit }: { boardId: string; onExit
     engineRef.current?.applyHueSaturation(adjust.hue, adjust.sat, adjust.light);
     bump();
   }
+  function applyLevels() {
+    engineRef.current?.applyLevels(levels.black, levels.white, levels.gamma);
+    bump();
+  }
+  function applyCurve() {
+    engineRef.current?.applyCurve(curvePoints);
+    bump();
+  }
+  function applyColorBalance() {
+    engineRef.current?.applyColorBalance(colorBalance.shadows, colorBalance.mids, colorBalance.highlights);
+    bump();
+  }
+  function applyBW() {
+    engineRef.current?.applyBlackAndWhite();
+    bump();
+  }
   function applyBlur() {
-    engineRef.current?.applyBlur(adjust.blur);
+    engineRef.current?.applyBlur(filters.blur);
     bump();
   }
   function applySharpen() {
     engineRef.current?.applySharpen();
+    bump();
+  }
+  function applyNoise() {
+    engineRef.current?.applyNoise(filters.noise);
+    bump();
+  }
+  function applyPixelate() {
+    engineRef.current?.applyPixelate(filters.pixelate);
     bump();
   }
   function doResize() {
@@ -252,9 +367,44 @@ export default function DrawPaint({ boardId, onExit }: { boardId: string; onExit
     setTimeout(() => URL.revokeObjectURL(url), 2000);
     setPanel('none');
   }
+  function commitText() {
+    if (!textDraft) return;
+    engineRef.current?.stampText(textDraft.x, textDraft.y, textDraft.value, { size: Math.max(10, brush.size * 1.4), color: brush.color });
+    setTextDraft(null);
+    bump();
+  }
+  function pickSymmetry(mode: SymmetryMode) {
+    setSymmetryState(mode);
+    engineRef.current?.setSymmetry(mode);
+  }
+  function savePreset() {
+    const name = presetNameDraft.trim() || `Preset ${presets.length + 1}`;
+    const next = [...presets, { id: `bp-${Date.now().toString(36)}`, name, settings: { ...brush } }];
+    setPresets(next);
+    savePresets(next);
+    setPresetNameDraft('');
+  }
+  function deletePreset(id: string) {
+    const next = presets.filter((p) => p.id !== id);
+    setPresets(next);
+    savePresets(next);
+  }
+  function onReferenceFile(file: File | null) {
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => setReference({ url: String(reader.result), opacity: 0.4, visible: true });
+    reader.readAsDataURL(file);
+  }
+  function bookmarkCurrent() {
+    const label = bookmarkNameDraft.trim() || undefined;
+    engineRef.current?.bookmarkCurrent(label ?? '');
+    setBookmarkNameDraft('');
+  }
 
   const eng = engineRef.current;
   const layerOrder = eng ? [...eng.layers].reverse() : [];
+  const historyList = eng ? eng.historyList() : [];
+  const bookmarkList = eng ? eng.listBookmarks() : [];
 
   return (
     <div id="dpRoot">
@@ -271,6 +421,10 @@ export default function DrawPaint({ boardId, onExit }: { boardId: string; onExit
               ['fill', '🪣'],
               ['eyedropper', '💧'],
               ['gradient', '◐'],
+              ['clone', '⎘'],
+              ['smudge', '☁'],
+              ['heal', '✚'],
+              ['text', '🅣'],
             ] as [Tool, string][]
           ).map(([t, icon]) => (
             <span key={t} className={`tool ${tool === t ? 'on' : ''}`} onClick={() => setTool(t)} title={t}>
@@ -283,6 +437,8 @@ export default function DrawPaint({ boardId, onExit }: { boardId: string; onExit
           <button className="chip" disabled={!eng?.canRedo()} onClick={() => { engineRef.current?.redo(); bump(); }}>↻ REDO</button>
           <button className="chip" onClick={() => { engineRef.current?.clearSelection(); bump(); }}>DESELECT</button>
           <button className="chip" onClick={() => setPanel(panel === 'adjust' ? 'none' : 'adjust')}>ADJUST</button>
+          <button className="chip" onClick={() => setPanel(panel === 'filters' ? 'none' : 'filters')}>FILTERS</button>
+          <button className="chip" onClick={() => setPanel(panel === 'history' ? 'none' : 'history')}>HISTORY</button>
           <button className="chip" onClick={() => setPanel(panel === 'resize' ? 'none' : 'resize')}>RESIZE/CROP</button>
           <button className="chip" onClick={() => setPanel(panel === 'export' ? 'none' : 'export')}>EXPORT ▾</button>
         </div>
@@ -307,6 +463,53 @@ export default function DrawPaint({ boardId, onExit }: { boardId: string; onExit
             <input type="range" min={0} max={100} value={Math.round(brush.hardness * 100)} onChange={(e) => setBrush((s) => ({ ...s, hardness: +e.target.value / 100 }))} />
             <label>FLOW {Math.round(brush.flow * 100)}%</label>
             <input type="range" min={1} max={100} value={Math.round(brush.flow * 100)} onChange={(e) => setBrush((s) => ({ ...s, flow: +e.target.value / 100 }))} />
+
+            <h3 style={{ marginTop: 14 }}>SYMMETRY</h3>
+            <div id="dpSymmetryRow">
+              {(
+                [
+                  ['none', 'OFF'],
+                  ['vertical', '↕'],
+                  ['horizontal', '↔'],
+                  ['radial4', '✛'],
+                ] as [SymmetryMode, string][]
+              ).map(([m, label]) => (
+                <span key={m} className={`chip small ${symmetry === m ? 'on' : ''}`} onClick={() => pickSymmetry(m)}>
+                  {label}
+                </span>
+              ))}
+            </div>
+
+            <h3 style={{ marginTop: 14 }}>
+              BRUSH PRESETS
+            </h3>
+            <div id="dpPresetRow">
+              {presets.map((p) => (
+                <span key={p.id} className="presetChip" onClick={() => setBrush(p.settings)} title={p.name}>
+                  {p.name}
+                  <i className="presetDel" onClick={(e) => { e.stopPropagation(); deletePreset(p.id); }}>✕</i>
+                </span>
+              ))}
+              {!presets.length && <div className="rsub" style={{ fontSize: 8 }}>No saved presets yet.</div>}
+            </div>
+            <div id="dpPresetSave">
+              <input id="presetNameInput" placeholder="Preset name…" value={presetNameDraft} onChange={(e) => setPresetNameDraft(e.target.value)} />
+              <button className="wbtn" id="savePresetBtn" onClick={savePreset}>SAVE</button>
+            </div>
+
+            <h3 style={{ marginTop: 14 }}>REFERENCE IMAGE</h3>
+            <input ref={referenceInputRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={(e) => onReferenceFile(e.target.files?.[0] ?? null)} />
+            <button className="wbtn" id="refUploadBtn" onClick={() => referenceInputRef.current?.click()}>UPLOAD</button>
+            {reference && (
+              <div id="dpRefControls">
+                <label>OPACITY {Math.round(reference.opacity * 100)}%</label>
+                <input type="range" min={5} max={90} value={Math.round(reference.opacity * 100)} onChange={(e) => setReference((r) => (r ? { ...r, opacity: +e.target.value / 100 } : r))} />
+                <button className="chip small" onClick={() => setReference((r) => (r ? { ...r, visible: !r.visible } : r))}>
+                  {reference.visible ? 'HIDE' : 'SHOW'}
+                </button>
+                <button className="chip small" onClick={() => setReference(null)}>REMOVE</button>
+              </div>
+            )}
           </div>
         )}
         {(tool === 'wand' || tool === 'fill') && (
@@ -314,6 +517,39 @@ export default function DrawPaint({ boardId, onExit }: { boardId: string; onExit
             <h3>TOLERANCE</h3>
             <label>{tolerance}</label>
             <input type="range" min={1} max={120} value={tolerance} onChange={(e) => setTolerance(+e.target.value)} />
+          </div>
+        )}
+        {tool === 'clone' && (
+          <div id="dpBrushPanel" className="gpanel">
+            <h3>CLONE STAMP</h3>
+            <div className="rsub" style={{ fontSize: 9 }}>{(cloneArmed || eng?.hasCloneSource()) ? 'Source set — click/drag to paint from it.' : 'Alt-click (or just click) to set a clone source.'}</div>
+            <label>SIZE {Math.round(brush.size)}px</label>
+            <input type="range" min={4} max={200} value={brush.size} onChange={(e) => setBrush((s) => ({ ...s, size: +e.target.value }))} />
+          </div>
+        )}
+        {tool === 'smudge' && (
+          <div id="dpBrushPanel" className="gpanel">
+            <h3>SMUDGE</h3>
+            <label>SIZE {Math.round(brush.size)}px</label>
+            <input type="range" min={4} max={200} value={brush.size} onChange={(e) => setBrush((s) => ({ ...s, size: +e.target.value }))} />
+            <label>STRENGTH {Math.round(brush.flow * 100)}%</label>
+            <input type="range" min={5} max={100} value={Math.round(brush.flow * 100)} onChange={(e) => setBrush((s) => ({ ...s, flow: +e.target.value / 100 }))} />
+          </div>
+        )}
+        {tool === 'heal' && (
+          <div id="dpBrushPanel" className="gpanel">
+            <h3>SPOT HEAL</h3>
+            <div className="rsub" style={{ fontSize: 9 }}>Click a blemish to blend it into its surroundings.</div>
+            <label>SIZE {Math.round(brush.size)}px</label>
+            <input type="range" min={6} max={140} value={brush.size} onChange={(e) => setBrush((s) => ({ ...s, size: +e.target.value }))} />
+          </div>
+        )}
+        {tool === 'text' && (
+          <div id="dpBrushPanel" className="gpanel">
+            <h3>TEXT</h3>
+            <div className="rsub" style={{ fontSize: 9 }}>Click the canvas to place a text box.</div>
+            <label>SIZE {Math.round(brush.size)}</label>
+            <input type="range" min={8} max={160} value={brush.size} onChange={(e) => setBrush((s) => ({ ...s, size: +e.target.value }))} />
           </div>
         )}
 
@@ -334,11 +570,98 @@ export default function DrawPaint({ boardId, onExit }: { boardId: string; onExit
               <label>LIGHTNESS ×{adjust.light.toFixed(2)}</label>
               <input type="range" min={0} max={200} value={Math.round(adjust.light * 100)} onChange={(e) => setAdjust((a) => ({ ...a, light: +e.target.value / 100 }))} />
               <button className="wbtn" onClick={applyHueSat}>APPLY H/S/L</button>
-              <div style={{ height: 8 }} />
-              <label>BLUR RADIUS {adjust.blur}px</label>
-              <input type="range" min={1} max={16} value={adjust.blur} onChange={(e) => setAdjust((a) => ({ ...a, blur: +e.target.value }))} />
+
+              <div style={{ height: 10 }} />
+              <h3>LEVELS</h3>
+              <label>BLACK POINT {levels.black}</label>
+              <input type="range" min={0} max={250} value={levels.black} onChange={(e) => setLevels((l) => ({ ...l, black: +e.target.value }))} />
+              <label>WHITE POINT {levels.white}</label>
+              <input type="range" min={5} max={255} value={levels.white} onChange={(e) => setLevels((l) => ({ ...l, white: +e.target.value }))} />
+              <label>GAMMA ×{levels.gamma.toFixed(2)}</label>
+              <input type="range" min={20} max={300} value={Math.round(levels.gamma * 100)} onChange={(e) => setLevels((l) => ({ ...l, gamma: +e.target.value / 100 }))} />
+              <button className="wbtn" id="applyLevelsBtn" onClick={applyLevels}>APPLY LEVELS</button>
+
+              <div style={{ height: 10 }} />
+              <h3>CURVES</h3>
+              <CurveEditor points={curvePoints} onChange={setCurvePoints} />
+              <button className="wbtn" id="applyCurveBtn" onClick={applyCurve}>APPLY CURVE</button>
+
+              <div style={{ height: 10 }} />
+              <h3>COLOR BALANCE</h3>
+              {(
+                [
+                  ['SHADOWS', 'shadows'],
+                  ['MIDTONES', 'mids'],
+                  ['HIGHLIGHTS', 'highlights'],
+                ] as [string, 'shadows' | 'mids' | 'highlights'][]
+              ).map(([label, key]) => (
+                <div key={key} className="cbGroup">
+                  <label>{label}</label>
+                  {(['R', 'G', 'B'] as const).map((ch, i) => (
+                    <input
+                      key={ch}
+                      type="range"
+                      min={-100}
+                      max={100}
+                      value={colorBalance[key][i]}
+                      title={ch}
+                      onChange={(e) =>
+                        setColorBalance((cb) => {
+                          const arr = [...cb[key]] as [number, number, number];
+                          arr[i] = +e.target.value;
+                          return { ...cb, [key]: arr };
+                        })
+                      }
+                    />
+                  ))}
+                </div>
+              ))}
+              <button className="wbtn" id="applyColorBalanceBtn" onClick={applyColorBalance}>APPLY COLOR BALANCE</button>
+              <button className="wbtn ghost" id="applyBWBtn" onClick={applyBW}>CONVERT TO B&amp;W</button>
+            </div>
+          )}
+          {panel === 'filters' && (
+            <div id="dpAdjustPanel" className="gpanel">
+              <h3>FILTERS</h3>
+              <label>BLUR RADIUS {filters.blur}px</label>
+              <input type="range" min={1} max={16} value={filters.blur} onChange={(e) => setFilters((f) => ({ ...f, blur: +e.target.value }))} />
               <button className="wbtn" onClick={applyBlur}>APPLY BLUR</button>
+              <div style={{ height: 8 }} />
               <button className="wbtn ghost" onClick={applySharpen}>SHARPEN</button>
+              <div style={{ height: 8 }} />
+              <label>NOISE AMOUNT {filters.noise}</label>
+              <input type="range" min={2} max={100} value={filters.noise} onChange={(e) => setFilters((f) => ({ ...f, noise: +e.target.value }))} />
+              <button className="wbtn" id="applyNoiseBtn" onClick={applyNoise}>APPLY NOISE</button>
+              <div style={{ height: 8 }} />
+              <label>PIXELATE BLOCK {filters.pixelate}px</label>
+              <input type="range" min={2} max={60} value={filters.pixelate} onChange={(e) => setFilters((f) => ({ ...f, pixelate: +e.target.value }))} />
+              <button className="wbtn" id="applyPixelateBtn" onClick={applyPixelate}>APPLY PIXELATE</button>
+            </div>
+          )}
+          {panel === 'history' && (
+            <div id="dpAdjustPanel" className="gpanel">
+              <h3>HISTORY</h3>
+              <div id="dpHistoryList">
+                {!historyList.length && <div className="rsub" style={{ fontSize: 9 }}>No steps yet — make an edit.</div>}
+                {historyList.map((h) => (
+                  <div key={h.index} className="historyRow" onClick={() => { engineRef.current?.jumpToHistoryIndex(h.index); bump(); }}>
+                    {h.label}
+                  </div>
+                ))}
+                <div className="historyRow current">Now</div>
+              </div>
+              <div style={{ height: 10 }} />
+              <h3>BOOKMARKS</h3>
+              <div id="dpBookmarkRow">
+                <input placeholder="Bookmark name…" value={bookmarkNameDraft} onChange={(e) => setBookmarkNameDraft(e.target.value)} />
+                <button className="wbtn" id="addBookmarkBtn" onClick={bookmarkCurrent}>📌 SAVE</button>
+              </div>
+              {bookmarkList.map((b) => (
+                <div key={b.id} className="historyRow bookmark">
+                  <span onClick={() => { engineRef.current?.restoreBookmark(b.id); bump(); }}>📌 {b.label}</span>
+                  <i onClick={() => { engineRef.current?.deleteBookmark(b.id); bump(); }}>✕</i>
+                </div>
+              ))}
             </div>
           )}
           {panel === 'resize' && (
@@ -364,14 +687,44 @@ export default function DrawPaint({ boardId, onExit }: { boardId: string; onExit
           )}
 
           <div id="dpCanvasScroll">
-            <canvas
-              ref={canvasRef}
-              style={{ width: (eng?.width ?? DEFAULT_W) * zoom, height: (eng?.height ?? DEFAULT_H) * zoom, touchAction: 'none' }}
-              onPointerDown={onPointerDown}
-              onPointerMove={onPointerMove}
-              onPointerUp={onPointerUp}
-              onPointerLeave={onPointerUp}
-            />
+            <div style={{ position: 'relative', width: (eng?.width ?? DEFAULT_W) * zoom, height: (eng?.height ?? DEFAULT_H) * zoom }}>
+              {reference?.visible && (
+                <img
+                  id="dpReferenceOverlay"
+                  src={reference.url}
+                  style={{ opacity: reference.opacity, width: '100%', height: '100%', objectFit: 'contain', position: 'absolute', inset: 0, pointerEvents: 'none' }}
+                />
+              )}
+              <canvas
+                ref={canvasRef}
+                style={{ width: (eng?.width ?? DEFAULT_W) * zoom, height: (eng?.height ?? DEFAULT_H) * zoom, touchAction: 'none', position: 'relative' }}
+                onPointerDown={onPointerDown}
+                onPointerMove={onPointerMove}
+                onPointerUp={onPointerUp}
+                onPointerLeave={onPointerUp}
+              />
+              {symmetry === 'vertical' || symmetry === 'radial4' ? <div className="dpSymGuide vert" /> : null}
+              {symmetry === 'horizontal' || symmetry === 'radial4' ? <div className="dpSymGuide horiz" /> : null}
+              {textDraft && (
+                <div
+                  id="dpTextOverlay"
+                  style={{ left: textDraft.x * zoom, top: textDraft.y * zoom, fontSize: Math.max(10, brush.size * 1.4 * zoom), color: brush.color }}
+                >
+                  <input
+                    id="dpTextInput"
+                    autoFocus
+                    value={textDraft.value}
+                    style={{ fontSize: Math.max(10, brush.size * 1.4 * zoom), color: brush.color }}
+                    onChange={(e) => setTextDraft((t) => (t ? { ...t, value: e.target.value } : t))}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') commitText();
+                      if (e.key === 'Escape') setTextDraft(null);
+                    }}
+                    onBlur={commitText}
+                  />
+                </div>
+              )}
+            </div>
           </div>
           <div id="dpZoom">
             <span className="tool" onClick={() => setZoom((z) => Math.max(0.1, z - 0.1))}>－</span>
@@ -542,5 +895,79 @@ function ColorWheel({ color, onChange }: { color: string; onChange: (c: string) 
         onPointerLeave={handleUp}
       />
     </div>
+  );
+}
+
+/** A real, draggable piecewise-linear tone curve editor — points are actual
+ * (input, output) pairs the Captain can drag; DrawEngine.applyCurve()
+ * builds a 256-entry LUT from them. Click empty space to add a point,
+ * drag an existing point to move it, double-click a point to remove it
+ * (endpoints are protected so the curve always spans the full range). */
+function CurveEditor({ points, onChange }: { points: { x: number; y: number }[]; onChange: (pts: { x: number; y: number }[]) => void }) {
+  const size = 180;
+  const svgRef = useRef<SVGSVGElement>(null);
+  const dragIdx = useRef<number | null>(null);
+
+  function toLocal(e: React.PointerEvent<SVGSVGElement> | React.MouseEvent<SVGSVGElement>): { x: number; y: number } {
+    const rect = svgRef.current!.getBoundingClientRect();
+    const x = Math.max(0, Math.min(255, ((e.clientX - rect.left) / size) * 255));
+    const y = Math.max(0, Math.min(255, 255 - ((e.clientY - rect.top) / size) * 255));
+    return { x, y };
+  }
+
+  function onPointDown(i: number, e: React.PointerEvent<SVGCircleElement>) {
+    e.stopPropagation();
+    dragIdx.current = i;
+    (e.target as Element).setPointerCapture(e.pointerId);
+  }
+  function onSvgPointerMove(e: React.PointerEvent<SVGSVGElement>) {
+    if (dragIdx.current === null) return;
+    const { x, y } = toLocal(e);
+    const i = dragIdx.current;
+    const next = points.map((p, idx) => (idx === i ? { x: i === 0 ? 0 : i === points.length - 1 ? 255 : x, y } : p));
+    onChange(next);
+  }
+  function onSvgPointerUp() {
+    dragIdx.current = null;
+  }
+  function onSvgClick(e: React.MouseEvent<SVGSVGElement>) {
+    if (dragIdx.current !== null) return;
+    const { x, y } = toLocal(e);
+    const next = [...points, { x, y }].sort((a, b) => a.x - b.x);
+    onChange(next);
+  }
+  function removePoint(i: number) {
+    if (i === 0 || i === points.length - 1 || points.length <= 2) return;
+    onChange(points.filter((_, idx) => idx !== i));
+  }
+
+  const sorted = [...points].sort((a, b) => a.x - b.x);
+  const path = sorted.map((p, i) => `${i === 0 ? 'M' : 'L'} ${(p.x / 255) * size} ${size - (p.y / 255) * size}`).join(' ');
+
+  return (
+    <svg
+      id="dpCurveEditor"
+      ref={svgRef}
+      width={size}
+      height={size}
+      onPointerMove={onSvgPointerMove}
+      onPointerUp={onSvgPointerUp}
+      onClick={onSvgClick}
+    >
+      <rect x={0} y={0} width={size} height={size} fill="rgba(0,245,255,.04)" stroke="var(--edge)" />
+      <line x1={0} y1={size} x2={size} y2={0} stroke="rgba(255,255,255,.12)" strokeDasharray="3,3" />
+      <path d={path} fill="none" stroke="#00F5FF" strokeWidth={1.5} />
+      {sorted.map((p, i) => (
+        <circle
+          key={i}
+          className="curvePoint"
+          cx={(p.x / 255) * size}
+          cy={size - (p.y / 255) * size}
+          r={4}
+          onPointerDown={(e) => onPointDown(i, e)}
+          onDoubleClick={() => removePoint(i)}
+        />
+      ))}
+    </svg>
   );
 }

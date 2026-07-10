@@ -573,3 +573,47 @@ input[type=range]{width:100%;accent-color:#00F5FF}
 .sentimentChip .emoji{font-size:20px}
 .sentimentChip.on{border-color:var(--cyan);background:rgba(0,245,255,.08);box-shadow:0 0 12px rgba(0,245,255,.2)}
 #reflectNote{width:min(420px,92vw);min-height:64px;margin:0 auto 16px;display:block;background:var(--glass);border:1px solid var(--edge);color:var(--text);padding:10px;font-size:11px;resize:vertical}
+
+/* ---- Draw/Paint full-spec pass (Amendment v0.4 #1): symmetry, presets, reference overlay, retouch tools, text tool, adjustments, filters, history/bookmarks ---- */
+.chip.small{padding:4px 9px;font-size:9px}
+#dpSymmetryRow{display:flex;gap:4px;flex-wrap:wrap;margin-bottom:4px}
+
+#dpPresetRow{display:flex;flex-wrap:wrap;gap:5px;margin:4px 0 8px}
+.presetChip{display:inline-flex;align-items:center;gap:5px;border:1px solid var(--edge);color:var(--text-dim);padding:5px 8px;font-size:9px;letter-spacing:.5px;cursor:pointer;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.presetChip:hover{border-color:rgba(0,245,255,.5);color:var(--text)}
+.presetDel{font-style:normal;color:var(--text-dim);flex-shrink:0}
+.presetDel:hover{color:var(--magenta)}
+#dpPresetSave{display:flex;gap:6px;margin-bottom:4px}
+#dpPresetSave input{flex:1;min-width:0;background:var(--glass);border:1px solid var(--edge);color:var(--text);padding:6px 8px;font-size:10px}
+#dpPresetSave button{flex-shrink:0}
+
+#dpRefControls{margin-top:8px;display:flex;flex-direction:column;gap:6px}
+#dpRefControls .chip.small{display:inline-block;margin-right:6px}
+
+#dpReferenceOverlay{filter:saturate(0.9)}
+.dpSymGuide{position:absolute;z-index:5;pointer-events:none;background:rgba(0,245,255,.35);box-shadow:0 0 6px rgba(0,245,255,.4)}
+.dpSymGuide.vert{left:50%;top:0;bottom:0;width:1px;transform:translateX(-0.5px)}
+.dpSymGuide.horiz{top:50%;left:0;right:0;height:1px;transform:translateY(-0.5px)}
+
+#dpTextOverlay{position:absolute;z-index:20;transform:translate(-2px,-50%)}
+#dpTextInput{background:rgba(5,8,13,.55);border:1px dashed var(--cyan);outline:none;padding:2px 4px;font-family:inherit;min-width:80px}
+
+.cbGroup{display:flex;align-items:center;gap:6px;margin:6px 0}
+.cbGroup label{flex:0 0 62px;margin:0;font-size:8px}
+.cbGroup input[type=range]{flex:1;min-width:0}
+
+#dpCurveEditor{display:block;margin:6px auto;background:rgba(0,0,0,.2);cursor:crosshair}
+.curvePoint{fill:#00F5FF;stroke:#05080d;stroke-width:1;cursor:grab}
+.curvePoint:active{cursor:grabbing}
+
+#dpHistoryList{display:flex;flex-direction:column;gap:2px;max-height:220px;overflow-y:auto;margin-bottom:4px}
+.historyRow{padding:6px 8px;font-size:10px;letter-spacing:.5px;color:var(--text-dim);border:1px solid transparent;cursor:pointer;display:flex;justify-content:space-between;align-items:center}
+.historyRow:hover{border-color:var(--edge);color:var(--text)}
+.historyRow.current{color:var(--cyan);border-color:rgba(0,245,255,.4);background:rgba(0,245,255,.06);cursor:default}
+.historyRow.bookmark{color:var(--purple);cursor:default}
+.historyRow.bookmark span{cursor:pointer;flex:1}
+.historyRow.bookmark i{font-style:normal;color:var(--text-dim);cursor:pointer;padding:0 2px}
+.historyRow.bookmark i:hover{color:var(--magenta)}
+#dpBookmarkRow{display:flex;gap:6px;margin:6px 0}
+#dpBookmarkRow input{flex:1;min-width:0;background:var(--glass);border:1px solid var(--edge);color:var(--text);padding:6px 8px;font-size:10px}
+#dpBookmarkRow button{flex-shrink:0;white-space:nowrap}
