@@ -6,3 +6,9 @@ dist-ssr/
 .env.local
 .DS_Store
 *.tsbuildinfo
+
+# Scratch Playwright test harness (mounts <Studio active /> directly,
+# bypassing Supabase Auth, since Design Studio's board/tool data is pure
+# localStorage) — dev-only test scaffolding, deliberately never shipped.
+test-studio.html
+test-studio.tsx
