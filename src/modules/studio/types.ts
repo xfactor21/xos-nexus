@@ -1,4 +1,4 @@
-export type StudioItemType = 'frame' | 'sticky' | 'stickyM' | 'rect' | 'circle' | 'mood' | 'image';
+export type StudioItemType = 'frame' | 'sticky' | 'stickyM' | 'rect' | 'circle' | 'mood' | 'image' | 'component';
 
 export interface StudioItem {
   id: string;
@@ -14,6 +14,12 @@ export interface StudioItem {
   variant?: 'splash' | 'onboarding' | 'blank';
   bg?: string;
   fg?: string;
+  /** Wireframe/Prototype mode, Amendment v0.2: which reusable StudioComponent
+   * this canvas item is an instance of, and which of its named variants is
+   * the "resting" look shown in the editor — real hover/pressed previewing
+   * on top of this happens live via mouse events, not stored state. */
+  componentId?: string;
+  activeVariant?: ComponentVariantName;
 }
 
 export interface StudioArrow {
@@ -43,6 +49,50 @@ export interface StudioSnapshot {
   arrows: StudioArrow[];
   ink: InkStroke[];
   comments: CommentPin[];
+  /** Amendment v0.2 — Wireframe/Prototype interactivity: frame links let
+   * the Captain wire a click target (a specific button inside a frame, or
+   * the whole frame as a fallback) to another frame, then click through the
+   * whole flow in Play mode like a working app. */
+  links: PrototypeLink[];
+  /** Amendment v0.2 — reusable components with named variants (a button's
+   * default/hover/pressed states as one definition, not three copies). */
+  components: StudioComponent[];
+}
+
+/**
+ * Wireframe/Prototype mode, Amendment v0.2. A link's `hotspotKey` names
+ * which clickable region of the source item it's wired from: `'frame'`
+ * means "anywhere on the frame body that isn't a more specific hotspot",
+ * `'btn0'`/`'btn1'`/… address a specific button rendered inside a frame
+ * template (see ItemBody in Wireframe.tsx), and `'self'` addresses a
+ * whole component instance. One link per (sourceItemId, hotspotKey) pair —
+ * wiring a new target to an existing hotspot replaces the old link.
+ */
+export interface PrototypeLink {
+  id: string;
+  sourceItemId: string;
+  hotspotKey: string;
+  targetItemId: string;
+}
+
+/** Amendment v0.2 — Wireframe/Prototype mode component library: "a button's
+ * default/hover/pressed states as one reusable component" rather than three
+ * separate static shapes. `bg`/`fg` are real applied styles (not swatches
+ * standing in for them), and `label` is the text rendered in that variant —
+ * real per-state content, since a pressed state often reads differently
+ * ("Sending…" vs "Send") not just a different color. */
+export type ComponentVariantName = 'default' | 'hover' | 'pressed';
+
+export interface ComponentVariantStyle {
+  bg: string;
+  fg: string;
+  label: string;
+}
+
+export interface StudioComponent {
+  id: string;
+  name: string;
+  variants: Record<ComponentVariantName, ComponentVariantStyle>;
 }
 
 /**

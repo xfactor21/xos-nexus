@@ -12,4 +12,6 @@ export const SEED_STUDIO: StudioSnapshot = {
   arrows: [],
   ink: [],
   comments: [],
+  links: [],
+  components: [],
 };

@@ -446,3 +446,51 @@ input[type=range]{width:100%;accent-color:#00F5FF}
   #dpBody{flex-direction:column;overflow-y:auto}
   #dpBrushPanel,#dpRightRail{width:100%;flex:none}
 }
+
+/* ============================================================
+   BLUEPRINT v0.3 AMENDMENT v0.2 — Wireframe/Prototype mode
+   interactivity: frame links + click targets, Play/Preview mode,
+   and the Components library (default/hover/pressed states).
+   New rules only.
+   ============================================================ */
+
+#linkHint{position:absolute;left:50%;top:8px;transform:translateX(-50%);z-index:25;background:rgba(255,45,120,.14);border:1px solid var(--magenta);color:var(--magenta);font-size:9.5px;letter-spacing:1px;padding:6px 14px;pointer-events:none;white-space:nowrap}
+
+.wfb.linkable{cursor:crosshair}
+.wfb.linkable:hover{outline:1px dashed var(--magenta);outline-offset:-1px}
+.wfb.armed{outline:2px solid var(--magenta);outline-offset:-2px;box-shadow:0 0 16px rgba(255,45,120,.35)}
+.wbtn.linkable{cursor:crosshair;position:relative}
+.wbtn.linkable:hover{outline:1px dashed var(--magenta);outline-offset:2px}
+.hotspotLinked{margin-left:6px;font-size:9px;filter:drop-shadow(0 0 3px rgba(255,45,120,.7))}
+.frameLinked{position:absolute;right:8px;bottom:6px;font-size:11px}
+
+.comp-instance{background:transparent !important;border:none !important}
+.compBtn{width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:11px;letter-spacing:1px;position:relative;transition:background .1s,border-color .1s;user-select:none}
+.compBtn.linkable{cursor:crosshair}
+.compBtn.linkable:hover{outline:1px dashed var(--magenta);outline-offset:2px}
+.compBtn.armed{outline:2px solid var(--magenta);outline-offset:-2px}
+.compVariantPicker{position:absolute;left:50%;bottom:-24px;transform:translateX(-50%);display:flex;gap:2px;background:var(--glass);backdrop-filter:blur(10px);border:1px solid var(--edge);padding:2px;z-index:30}
+.compChip{width:16px;height:16px;display:grid;place-items:center;font-size:8px;color:var(--text-dim);cursor:pointer}
+.compChip.on{color:var(--cyan);background:rgba(0,245,255,.12)}
+
+#componentsPanel{position:absolute;left:8px;top:56px;z-index:22;width:220px;max-height:70vh;overflow-y:auto;background:var(--glass);backdrop-filter:blur(14px);border:1px solid var(--edge)}
+#componentsPanel h3{font-size:9px;letter-spacing:2px;color:var(--cyan-dim);padding:8px 10px;border-bottom:1px solid var(--edge);display:flex;align-items:center;gap:8px}
+.compPanelClose{margin-left:auto;cursor:pointer;color:var(--text-dim)}
+.compPanelClose:hover{color:var(--magenta)}
+#compList .layer-row .lyDup{opacity:.6}
+.compEmpty{padding:14px 10px;font-size:10px;color:var(--text-dim);line-height:1.5}
+#compEditor{padding:10px;border-top:1px solid var(--edge)}
+#compEditor h4{font-size:10px;letter-spacing:1px;color:var(--cyan);margin-bottom:8px}
+.compVariantRow{display:grid;grid-template-columns:52px 1fr 22px 22px;gap:4px;align-items:center;margin-bottom:6px}
+.compVariantRow label{font-size:8px;letter-spacing:1px;color:var(--text-dim)}
+.compVariantRow input[type=text]{background:rgba(0,0,0,.3);border:1px solid var(--edge);color:var(--text);font-size:10px;padding:4px 6px}
+.compVariantRow input[type=color]{width:22px;height:22px;padding:0;border:1px solid var(--edge);background:none;cursor:pointer}
+
+#playOverlay{position:absolute;inset:0;z-index:60;background:rgba(5,8,13,.92);backdrop-filter:blur(6px);display:flex;flex-direction:column;align-items:center}
+#playTopbar{width:100%;display:flex;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px solid var(--edge)}
+.playFrameName{margin-left:auto;margin-right:auto;font-size:10px;letter-spacing:2px;color:var(--cyan-dim)}
+#playPhone{margin-top:40px;width:375px;max-width:90vw;height:812px;max-height:75vh;background:var(--void);border:1px solid var(--edge);box-shadow:0 0 40px rgba(0,245,255,.15);overflow:hidden;display:flex;flex-direction:column}
+#playPhone .wfb{flex:1;padding:20px;cursor:default}
+#playPhone .wbtn{cursor:pointer}
+#playPhone .wbtn:hover{background:rgba(0,245,255,.08)}
+.playDead{margin-top:80px;color:var(--text-dim);font-size:12px;letter-spacing:1px}

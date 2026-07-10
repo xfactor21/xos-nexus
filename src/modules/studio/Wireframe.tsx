@@ -1,28 +1,44 @@
 import { useEffect, useRef, useState } from 'react';
 import type { MouseEvent as RMouseEvent, TouchEvent as RTouchEvent, ChangeEvent as RChangeEvent, WheelEvent as RWheelEvent, CSSProperties } from 'react';
-import type { StudioItem, StudioArrow, InkStroke, CommentPin, StudioSnapshot, StudioItemType } from './types';
+import type { StudioItem, StudioArrow, InkStroke, CommentPin, StudioSnapshot, StudioItemType, PrototypeLink, StudioComponent, ComponentVariantName } from './types';
 import { SEED_STUDIO } from './seed';
 
 const SNAP = 8; // world-space snap threshold, feature uplift: alignment guides
 
-type Tool = 'select' | 'pen' | 'frame' | 'sticky' | 'rect' | 'circle' | 'arrow' | 'image' | 'comment';
+type Tool = 'select' | 'pen' | 'frame' | 'sticky' | 'rect' | 'circle' | 'arrow' | 'image' | 'comment' | 'link';
 
 function storageKey(boardId: string) {
   return `xos-studio-wf-${boardId}`;
 }
 
+function emptySnapshot(): StudioSnapshot {
+  return { items: [], arrows: [], ink: [], comments: [], links: [], components: [] };
+}
+
 function loadSnapshot(boardId: string, seed: boolean): StudioSnapshot {
   try {
     const raw = localStorage.getItem(storageKey(boardId));
-    if (raw) return JSON.parse(raw) as StudioSnapshot;
+    if (raw) {
+      const parsed = JSON.parse(raw) as Partial<StudioSnapshot>;
+      // backward-compat: boards saved before the Amendment v0.2 prototyping
+      // rework won't have links/components at all — default them in rather
+      // than crashing on undefined.
+      return { items: [], arrows: [], ink: [], comments: [], links: [], components: [], ...parsed };
+    }
   } catch {
     /* ignore corrupt storage */
   }
-  return seed ? SEED_STUDIO : { items: [], arrows: [], ink: [], comments: [] };
+  return seed ? SEED_STUDIO : emptySnapshot();
 }
 
 let idc = 100;
 const nid = (p: string) => `${p}-${++idc}`;
+
+const DEFAULT_COMPONENT_VARIANTS: StudioComponent['variants'] = {
+  default: { bg: 'transparent', fg: 'var(--cyan)', label: 'Button' },
+  hover: { bg: 'rgba(0,245,255,.12)', fg: 'var(--cyan)', label: 'Button' },
+  pressed: { bg: 'rgba(0,245,255,.28)', fg: '#05080D', label: 'Button' },
+};
 
 /**
  * WIREFRAME / PROTOTYPE MODE — ported 1:1 from xos-prototype.html
@@ -51,6 +67,13 @@ export default function Wireframe({ boardId, isSeed, onExit }: { boardId: string
   const [marquee, setMarquee] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
   const [editingComment, setEditingComment] = useState<string | null>(null);
   const [initDone, setInitDone] = useState(false);
+
+  // Amendment v0.2 — prototyping: link tool arming state, and Play mode
+  // (which frame is showing full-screen + the back-stack of frames visited).
+  const [linkArmed, setLinkArmed] = useState<{ itemId: string; hotspotKey: string } | null>(null);
+  const [playing, setPlaying] = useState<string | null>(null);
+  const [playStack, setPlayStack] = useState<string[]>([]);
+  const [componentsPanelOpen, setComponentsPanelOpen] = useState(false);
 
   const past = useRef<StudioSnapshot[]>([]);
   const future = useRef<StudioSnapshot[]>([]);
@@ -140,8 +163,8 @@ export default function Wireframe({ boardId, isSeed, onExit }: { boardId: string
       name: extra.name ?? defaultNameFor(type),
       x,
       y,
-      w: type === 'sticky' || type === 'stickyM' ? 170 : type === 'circle' ? 120 : 230,
-      h: type === 'sticky' || type === 'stickyM' ? 100 : type === 'circle' ? 120 : type === 'rect' ? 140 : 180,
+      w: type === 'sticky' || type === 'stickyM' ? 170 : type === 'circle' ? 120 : type === 'component' ? 140 : 230,
+      h: type === 'sticky' || type === 'stickyM' ? 100 : type === 'circle' ? 120 : type === 'rect' ? 140 : type === 'component' ? 44 : 180,
       visible: true,
       text: type === 'sticky' || type === 'stickyM' ? 'New thought…' : undefined,
       variant: type === 'frame' ? 'blank' : undefined,
@@ -151,7 +174,96 @@ export default function Wireframe({ boardId, isSeed, onExit }: { boardId: string
     setSelected([base.id]);
   }
   function defaultNameFor(t: StudioItemType) {
-    return { frame: 'NEW FRAME', sticky: 'Note', stickyM: 'Note', rect: 'Rectangle', circle: 'Circle', mood: 'Swatch', image: 'Image' }[t];
+    return { frame: 'NEW FRAME', sticky: 'Note', stickyM: 'Note', rect: 'Rectangle', circle: 'Circle', mood: 'Swatch', image: 'Image', component: 'Component' }[t];
+  }
+
+  /* ============ PROTOTYPE LINKS (Amendment v0.2) ============ */
+  // Arming model: clicking a hotspot with nothing armed arms it as the
+  // link's source; clicking a *different* frame item while something is
+  // armed picks that whole frame as the target and commits the link.
+  // Navigation targets are always whole frames — sub-hotspot precision is
+  // only meaningful for the *source* end (which button triggers the jump).
+  function handleHotspotClick(itemId: string, hotspotKey: string) {
+    if (tool !== 'link') return;
+    if (!linkArmed) {
+      setLinkArmed({ itemId, hotspotKey });
+      return;
+    }
+    if (itemId === linkArmed.itemId) {
+      setLinkArmed(null); // clicking the armed source again cancels
+      return;
+    }
+    const target = snap.items.find((i) => i.id === itemId);
+    if (!target || target.type !== 'frame') return; // only frames are valid navigation targets
+    const link: PrototypeLink = { id: nid('lnk'), sourceItemId: linkArmed.itemId, hotspotKey: linkArmed.hotspotKey, targetItemId: itemId };
+    const links = snap.links.filter((l) => !(l.sourceItemId === linkArmed.itemId && l.hotspotKey === linkArmed.hotspotKey));
+    commit({ ...snap, links: [...links, link] });
+    setLinkArmed(null);
+  }
+  /* ============ PLAY / PREVIEW MODE (Amendment v0.2) ============ */
+  function startPlay() {
+    const selectedFrame = selected.map((id) => snap.items.find((i) => i.id === id)).find((i) => i?.type === 'frame');
+    const firstFrame = snap.items.find((i) => i.type === 'frame');
+    const start = selectedFrame ?? firstFrame;
+    if (!start) return;
+    setPlayStack([]);
+    setPlaying(start.id);
+  }
+  function navigatePlay(hotspotKey: string) {
+    if (!playing) return;
+    const link = snap.links.find((l) => l.sourceItemId === playing && l.hotspotKey === hotspotKey);
+    if (!link) return;
+    setPlayStack((s) => [...s, playing]);
+    setPlaying(link.targetItemId);
+  }
+  function playBack() {
+    setPlayStack((s) => {
+      if (!s.length) return s;
+      const next = [...s];
+      const prev = next.pop()!;
+      setPlaying(prev);
+      return next;
+    });
+  }
+  function exitPlay() {
+    setPlaying(null);
+    setPlayStack([]);
+  }
+
+  /* ============ COMPONENTS (Amendment v0.2) ============ */
+  function addComponent() {
+    const comp: StudioComponent = { id: nid('comp'), name: `Button ${snap.components.length + 1}`, variants: structuredClone(DEFAULT_COMPONENT_VARIANTS) };
+    commit({ ...snap, components: [...snap.components, comp] });
+    return comp.id;
+  }
+  function addComponentInstance(componentId: string) {
+    // offset well clear of the components panel itself (which floats at
+    // screen left:8/top:56) so a freshly-dropped instance isn't immediately
+    // hidden underneath the panel that just created it
+    const [x, y] = [-cam.current.ox / cam.current.scale + 280, -cam.current.oy / cam.current.scale + 100];
+    spawnItem('component', x, y, { componentId, activeVariant: 'default', name: snap.components.find((c) => c.id === componentId)?.name ?? 'Component' });
+  }
+  function setInstanceVariant(itemId: string, variant: ComponentVariantName) {
+    commit({ ...snap, items: snap.items.map((it) => (it.id === itemId ? { ...it, activeVariant: variant } : it)) });
+  }
+  function updateComponentVariantStyle(componentId: string, variant: ComponentVariantName, patch: Partial<StudioComponent['variants'][ComponentVariantName]>) {
+    commit(
+      {
+        ...snap,
+        components: snap.components.map((c) => (c.id === componentId ? { ...c, variants: { ...c.variants, [variant]: { ...c.variants[variant], ...patch } } } : c)),
+      },
+      false,
+    );
+  }
+  function commitComponentEdit() {
+    commit(snap, true);
+  }
+  function deleteComponent(componentId: string) {
+    commit({
+      ...snap,
+      components: snap.components.filter((c) => c.id !== componentId),
+      items: snap.items.filter((it) => it.componentId !== componentId),
+    });
   }
 
   /* ============ WRAP-LEVEL POINTER HANDLING ============ */
@@ -401,7 +513,11 @@ export default function Wireframe({ boardId, isSeed, onExit }: { boardId: string
   }
   function deleteSelected() {
     if (!selected.length) return;
-    commit({ ...snap, items: snap.items.filter((i) => !selected.includes(i.id)) });
+    commit({
+      ...snap,
+      items: snap.items.filter((i) => !selected.includes(i.id)),
+      links: snap.links.filter((l) => !selected.includes(l.sourceItemId) && !selected.includes(l.targetItemId)),
+    });
     setSelected([]);
   }
 
@@ -441,6 +557,17 @@ export default function Wireframe({ boardId, isSeed, onExit }: { boardId: string
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key !== 'Escape') return;
+      if (playing) exitPlay();
+      else if (linkArmed) setLinkArmed(null);
+    }
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [playing, linkArmed]);
+
   const layerOrder = [...snap.items].reverse(); // top of list = topmost z-order
 
   return (
@@ -470,16 +597,28 @@ export default function Wireframe({ boardId, isSeed, onExit }: { boardId: string
             ['arrow', '↗'],
             ['image', '🖼'],
             ['comment', '💬'],
+            ['link', '🔗'],
           ] as [Tool, string][]
         ).map(([t, label]) => (
-          <span key={t} className={`tool ${tool === t ? 'on' : ''}`} onClick={() => setTool(t)} title={t}>
+          <span key={t} className={`tool ${tool === t ? 'on' : ''}`} onClick={() => { setTool(t); setLinkArmed(null); }} title={t === 'link' ? 'link frames (click a hotspot, then a target frame)' : t}>
             {label}
           </span>
         ))}
         <span className="tool sep" />
+        <span className={`tool ${componentsPanelOpen ? 'on' : ''}`} onClick={() => setComponentsPanelOpen((v) => !v)} title="components">🧩</span>
+        <span className="tool sep" />
         <span className="tool" onClick={() => setZoom(1)}>＋</span>
         <span className="tool" onClick={() => setZoom(-1)}>－</span>
+        <span className="tool sep" />
+        <button className="wbtn" style={{ padding: '0 14px', height: 32 }} disabled={!snap.items.some((i) => i.type === 'frame')} onClick={startPlay} title="preview/play mode">
+          ▶ PLAY
+        </button>
       </div>
+      {tool === 'link' && (
+        <div id="linkHint">
+          {linkArmed ? 'Click a target frame to link to it — Esc to cancel' : 'Click a button or frame to start a link'}
+        </div>
+      )}
 
       <div id="stWorld" ref={worldRef}>
         <canvas id="stInk" ref={inkCanvasRef} width={5000} height={3500} />
@@ -508,7 +647,17 @@ export default function Wireframe({ boardId, isSeed, onExit }: { boardId: string
             onMouseDown={(e) => onItemDown(e, it.id)}
             onTouchStart={(e) => onItemDown(e, it.id)}
           >
-            <ItemBody item={it} onTextChange={(v) => updateText(it.id, v)} onTextBlur={commitTextEdit} />
+            <ItemBody
+              item={it}
+              onTextChange={(v) => updateText(it.id, v)}
+              onTextBlur={commitTextEdit}
+              links={snap.links}
+              components={snap.components}
+              linkMode={tool === 'link'}
+              linkArmedId={linkArmed?.itemId ?? null}
+              onHotspotClick={handleHotspotClick}
+              onInstanceVariantPick={selected.includes(it.id) && selected.length === 1 ? (v) => setInstanceVariant(it.id, v) : undefined}
+            />
             {selected.includes(it.id) && tool === 'select' && (
               <div className="resize-handle" onMouseDown={(e) => onResizeDown(e, it.id)} onTouchStart={(e) => onResizeDown(e, it.id)} />
             )}
@@ -573,12 +722,34 @@ export default function Wireframe({ boardId, isSeed, onExit }: { boardId: string
       </div>
 
       <input ref={fileInputRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={onFileChosen} />
+
+      {componentsPanelOpen && (
+        <ComponentsPanel
+          components={snap.components}
+          onAdd={() => addComponent()}
+          onAddInstance={addComponentInstance}
+          onUpdateVariant={updateComponentVariantStyle}
+          onCommit={commitComponentEdit}
+          onDelete={deleteComponent}
+          onClose={() => setComponentsPanelOpen(false)}
+        />
+      )}
+
+      {playing && (
+        <PlayOverlay
+          frame={snap.items.find((i) => i.id === playing) ?? null}
+          canBack={playStack.length > 0}
+          onHotspot={navigatePlay}
+          onBack={playBack}
+          onExit={exitPlay}
+        />
+      )}
     </div>
   );
 }
 
 function iconFor(t: StudioItemType) {
-  return { frame: '▭', sticky: '✦', stickyM: '✦', rect: '□', circle: '○', mood: '◆', image: '🖼' }[t];
+  return { frame: '▭', sticky: '✦', stickyM: '✦', rect: '□', circle: '○', mood: '◆', image: '🖼', component: '🧩' }[t];
 }
 function itemClass(it: StudioItem, sel: boolean) {
   const base = ['sitem'];
@@ -587,6 +758,7 @@ function itemClass(it: StudioItem, sel: boolean) {
   if (it.type === 'mood') base.push('mood');
   if (it.type === 'rect') base.push('shape-rect');
   if (it.type === 'circle') base.push('shape-circle');
+  if (it.type === 'component') base.push('comp-instance');
   if (sel) base.push('sel');
   return base.join(' ');
 }
@@ -606,7 +778,27 @@ function itemStyle(it: StudioItem): CSSProperties {
   return style;
 }
 
-function ItemBody({ item, onTextChange, onTextBlur }: { item: StudioItem; onTextChange: (v: string) => void; onTextBlur: () => void }) {
+function ItemBody({
+  item,
+  onTextChange,
+  onTextBlur,
+  links,
+  components,
+  linkMode,
+  linkArmedId,
+  onHotspotClick,
+  onInstanceVariantPick,
+}: {
+  item: StudioItem;
+  onTextChange: (v: string) => void;
+  onTextBlur: () => void;
+  links: PrototypeLink[];
+  components: StudioComponent[];
+  linkMode: boolean;
+  linkArmedId: string | null;
+  onHotspotClick: (itemId: string, hotspotKey: string) => void;
+  onInstanceVariantPick?: (v: ComponentVariantName) => void;
+}) {
   if (item.type === 'mood') return <>{item.name}</>;
   if (item.type === 'image') return null;
   if (item.type === 'sticky' || item.type === 'stickyM') {
@@ -632,21 +824,40 @@ function ItemBody({ item, onTextChange, onTextBlur }: { item: StudioItem; onText
       </div>
     );
   }
+  if (item.type === 'component') {
+    const comp = components.find((c) => c.id === item.componentId);
+    return (
+      <ComponentInstanceBody
+        item={item}
+        component={comp}
+        linkMode={linkMode}
+        isArmedSource={linkArmedId === item.id}
+        onHotspotClick={() => onHotspotClick(item.id, 'self')}
+        onVariantPick={onInstanceVariantPick}
+      />
+    );
+  }
   // frame
+  const linkedKeys = new Set(links.filter((l) => l.sourceItemId === item.id).map((l) => l.hotspotKey));
+  const isArmedSource = linkArmedId === item.id;
+  const hotspot = linkMode ? (key: string) => onHotspotClick(item.id, key) : undefined;
   return (
     <>
       <div className="ttl">
         {item.name} <span>375×812</span>
       </div>
-      <div className="wfb">
+      <div
+        className={`wfb ${linkMode ? 'linkable' : ''} ${isArmedSource ? 'armed' : ''}`}
+        onClick={hotspot ? (e) => { e.stopPropagation(); hotspot('frame'); } : undefined}
+      >
         {item.variant === 'splash' && (
           <>
             <div className="ph solid" style={{ height: 90 }}>🐝 LOGO MARK</div>
             <div className="ph" style={{ height: 16 }}>TAGLINE</div>
             <div className="ph" style={{ height: 110 }}>HERO ILLUSTRATION</div>
             <div className="btnrow">
-              <div className="wbtn">GET STARTED</div>
-              <div className="wbtn ghost">LOG IN</div>
+              <Hotspot label="GET STARTED" className="wbtn" hkey="btn0" hotspot={hotspot} linked={linkedKeys.has('btn0')} />
+              <Hotspot label="LOG IN" className="wbtn ghost" hkey="btn1" hotspot={hotspot} linked={linkedKeys.has('btn1')} />
             </div>
           </>
         )}
@@ -656,7 +867,7 @@ function ItemBody({ item, onTextChange, onTextBlur }: { item: StudioItem; onText
             <div className="ph solid" style={{ height: 130 }}>PICK YOUR SUBJECTS</div>
             <div className="ph" style={{ height: 34 }}>CHIP · CHIP · CHIP</div>
             <div className="btnrow">
-              <div className="wbtn">CONTINUE</div>
+              <Hotspot label="CONTINUE" className="wbtn" hkey="btn0" hotspot={hotspot} linked={linkedKeys.has('btn0')} />
             </div>
           </>
         )}
@@ -664,11 +875,218 @@ function ItemBody({ item, onTextChange, onTextBlur }: { item: StudioItem; onText
           <>
             <div className="ph" style={{ height: 140 }}>CANVAS</div>
             <div className="btnrow">
-              <div className="wbtn">ACTION</div>
+              <Hotspot label="ACTION" className="wbtn" hkey="btn0" hotspot={hotspot} linked={linkedKeys.has('btn0')} />
             </div>
           </>
         )}
+        {linkedKeys.has('frame') && <span className="hotspotLinked frameLinked" title="whole-frame link">🔗</span>}
       </div>
     </>
+  );
+}
+
+/** A clickable region inside a frame template that the Link tool can wire
+ * to another frame. Renders identically to the original static `.wbtn`
+ * when not in link mode — this is a real interaction layered on top of
+ * the existing visual language, not a new element type. */
+function Hotspot({ label, className, hkey, hotspot, linked }: { label: string; className: string; hkey: string; hotspot?: (key: string) => void; linked: boolean }) {
+  return (
+    <div className={`${className} ${hotspot ? 'linkable' : ''}`} onClick={hotspot ? (e) => { e.stopPropagation(); hotspot(hkey); } : undefined}>
+      {label}
+      {linked && <span className="hotspotLinked">🔗</span>}
+    </div>
+  );
+}
+
+/** A reusable component instance — Amendment v0.2: "a button's default/
+ * hover/pressed states as one reusable component" rendered with genuinely
+ * live mouse interaction (not three static swatches standing in for
+ * states). Resting look is the editor-authored `activeVariant`; hovering
+ * or holding the mouse down swaps to the component's real hover/pressed
+ * style for as long as the pointer is actually in that state. */
+function ComponentInstanceBody({
+  item,
+  component,
+  linkMode,
+  isArmedSource,
+  onHotspotClick,
+  onVariantPick,
+}: {
+  item: StudioItem;
+  component: StudioComponent | undefined;
+  linkMode: boolean;
+  isArmedSource: boolean;
+  onHotspotClick: () => void;
+  onVariantPick?: (v: ComponentVariantName) => void;
+}) {
+  const [live, setLive] = useState<'hover' | 'pressed' | null>(null);
+  if (!component) {
+    return <div className="ttl" style={{ color: 'var(--magenta)' }}>⚠ missing component</div>;
+  }
+  const resting = item.activeVariant ?? 'default';
+  const shown = live ?? resting;
+  const style = component.variants[shown];
+  return (
+    <div
+      className={`compBtn ${linkMode ? 'linkable' : ''} ${isArmedSource ? 'armed' : ''}`}
+      style={{ background: style.bg, color: style.fg, border: `1px solid ${shown === 'default' ? 'var(--edge)' : style.fg}` }}
+      onMouseEnter={() => !linkMode && setLive('hover')}
+      onMouseLeave={() => setLive(null)}
+      onMouseDown={() => !linkMode && setLive('pressed')}
+      onMouseUp={() => !linkMode && setLive('hover')}
+      onClick={linkMode ? (e) => { e.stopPropagation(); onHotspotClick(); } : undefined}
+    >
+      {style.label}
+      {onVariantPick && !linkMode && (
+        <div className="compVariantPicker" onMouseDown={(e) => e.stopPropagation()} onClick={(e) => e.stopPropagation()}>
+          {(['default', 'hover', 'pressed'] as ComponentVariantName[]).map((v) => (
+            <span key={v} className={`compChip ${resting === v ? 'on' : ''}`} onClick={() => onVariantPick(v)}>
+              {v[0].toUpperCase()}
+            </span>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** The Components library panel — define reusable components (seeded as a
+ * Button with default/hover/pressed variants) and drop instances onto the
+ * canvas. Editing a variant's color/label here updates every instance of
+ * that component, since they all reference the one definition. */
+function ComponentsPanel({
+  components,
+  onAdd,
+  onAddInstance,
+  onUpdateVariant,
+  onCommit,
+  onDelete,
+  onClose,
+}: {
+  components: StudioComponent[];
+  onAdd: () => string;
+  onAddInstance: (id: string) => void;
+  onUpdateVariant: (componentId: string, variant: ComponentVariantName, patch: Partial<ComponentVariantStylePatch>) => void;
+  onCommit: () => void;
+  onDelete: (id: string) => void;
+  onClose: () => void;
+}) {
+  const [editingId, setEditingId] = useState<string | null>(components[0]?.id ?? null);
+  const editing = components.find((c) => c.id === editingId) ?? null;
+  return (
+    <div id="componentsPanel" className="gpanel">
+      <h3>
+        COMPONENTS · {components.length}
+        <span className="lyAdd" onClick={() => setEditingId(onAdd())} title="new component">＋</span>
+        <span className="compPanelClose" onClick={onClose} title="close">✕</span>
+      </h3>
+      <div id="compList">
+        {components.map((c) => (
+          <div key={c.id} className={`layer-row ${editingId === c.id ? 'sel' : ''}`} onClick={() => setEditingId(c.id)}>
+            <span className="lbl">🧩 {c.name}</span>
+            <span className="lyDup" title="add to canvas" onClick={(e) => { e.stopPropagation(); onAddInstance(c.id); }}>⊕</span>
+            <span className="lyDel" title="delete component" onClick={(e) => { e.stopPropagation(); onDelete(c.id); }}>✕</span>
+          </div>
+        ))}
+        {!components.length && <div className="compEmpty">No components yet — ＋ to create one.</div>}
+      </div>
+      {editing && (
+        <div id="compEditor">
+          <h4>{editing.name}</h4>
+          {(['default', 'hover', 'pressed'] as ComponentVariantName[]).map((v) => (
+            <div key={v} className="compVariantRow">
+              <label>{v.toUpperCase()}</label>
+              <input
+                type="text"
+                value={editing.variants[v].label}
+                onChange={(e) => onUpdateVariant(editing.id, v, { label: e.target.value })}
+                onBlur={onCommit}
+              />
+              <input
+                type="color"
+                value={toHexColor(editing.variants[v].bg)}
+                onChange={(e) => onUpdateVariant(editing.id, v, { bg: e.target.value })}
+                onBlur={onCommit}
+              />
+              <input
+                type="color"
+                value={toHexColor(editing.variants[v].fg)}
+                onChange={(e) => onUpdateVariant(editing.id, v, { fg: e.target.value })}
+                onBlur={onCommit}
+              />
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+type ComponentVariantStylePatch = { bg: string; fg: string; label: string };
+function toHexColor(c: string): string {
+  // <input type=color> requires a #rrggbb value — component variants can
+  // start with rgba()/transparent/named colors from the seed defaults, so
+  // fall back to a neutral gray for the picker rather than crashing it.
+  if (/^#[0-9a-fA-F]{6}$/.test(c)) return c;
+  return '#808080';
+}
+
+/** Play/Preview mode — Amendment v0.2: "a real preview/play mode that lets
+ * the Captain click through their wireframe like a working app." Renders
+ * exactly one frame at phone-mockup scale, full-screen, with its actual
+ * hotspots wired to real navigation instead of the editor's select/drag
+ * behavior — this reuses the same frame-template markup as the canvas
+ * editor (via FrameContent) so preview never drifts from what's designed. */
+function PlayOverlay({ frame, canBack, onHotspot, onBack, onExit }: { frame: StudioItem | null; canBack: boolean; onHotspot: (key: string) => void; onBack: () => void; onExit: () => void }) {
+  if (!frame) {
+    return (
+      <div id="playOverlay">
+        <div id="playTopbar">
+          <button className="chip" onClick={onExit}>✕ EXIT PREVIEW</button>
+        </div>
+        <div className="playDead">This link points at a frame that no longer exists.</div>
+      </div>
+    );
+  }
+  return (
+    <div id="playOverlay">
+      <div id="playTopbar">
+        {canBack && <button className="chip" onClick={onBack}>◂ BACK</button>}
+        <span className="playFrameName">{frame.name}</span>
+        <button className="chip" onClick={onExit}>✕ EXIT PREVIEW</button>
+      </div>
+      <div id="playPhone">
+        <div className="wfb" onClick={(e) => { e.stopPropagation(); onHotspot('frame'); }}>
+          {frame.variant === 'splash' && (
+            <>
+              <div className="ph solid" style={{ height: 90 }}>🐝 LOGO MARK</div>
+              <div className="ph" style={{ height: 16 }}>TAGLINE</div>
+              <div className="ph" style={{ height: 110 }}>HERO ILLUSTRATION</div>
+              <div className="btnrow">
+                <div className="wbtn" onClick={(e) => { e.stopPropagation(); onHotspot('btn0'); }}>GET STARTED</div>
+                <div className="wbtn ghost" onClick={(e) => { e.stopPropagation(); onHotspot('btn1'); }}>LOG IN</div>
+              </div>
+            </>
+          )}
+          {frame.variant === 'onboarding' && (
+            <>
+              <div className="ph" style={{ height: 12, width: '60%' }}>PROGRESS ●○○</div>
+              <div className="ph solid" style={{ height: 130 }}>PICK YOUR SUBJECTS</div>
+              <div className="ph" style={{ height: 34 }}>CHIP · CHIP · CHIP</div>
+              <div className="btnrow">
+                <div className="wbtn" onClick={(e) => { e.stopPropagation(); onHotspot('btn0'); }}>CONTINUE</div>
+              </div>
+            </>
+          )}
+          {(!frame.variant || frame.variant === 'blank') && (
+            <>
+              <div className="ph" style={{ height: 140 }}>CANVAS</div>
+              <div className="btnrow">
+                <div className="wbtn" onClick={(e) => { e.stopPropagation(); onHotspot('btn0'); }}>ACTION</div>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
   );
 }
