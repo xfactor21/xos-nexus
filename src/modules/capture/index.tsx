@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react';
 import type { DissectedPiece } from '../../core/types';
+import { liveClassify, offlineCommit } from '../../lib/copilotClient';
 
 interface CapEntry {
   text: string;
@@ -70,12 +71,39 @@ export default function Capture({ active }: { active: boolean }) {
     setChanged(new Set());
   }
 
-  function commitCap() {
+  /** COMMIT — the dissect() preview above stays exactly as ported (same
+   * keyword heuristic, same instant feedback — the interaction model isn't
+   * being touched). Step 3 adds a real side effect underneath it: commit
+   * now actually calls the classify-capture pipeline via liveClassify(), so
+   * the thought becomes a real node the Captain's Realtime subscription
+   * will pick up — satisfying the handoff's literal acceptance test
+   * ("capture a thought in Neural Capture, watch it appear live in
+   * Projects and the Observatory without a refresh"). */
+  async function commitCap() {
     const v = raw.trim();
     if (!pieces) return;
-    setCaps((c) => [{ text: v, meta: `◈ DISSECTED → ${pieces.length} NODES`, time: 'JUST NOW' }, ...c]);
+    setCaps((c) => [{ text: v, meta: `◈ DISSECTED → ${pieces.length} NODES`, time: 'SENDING…' }, ...c]);
     setPieces(null);
     setRaw('');
+    try {
+      const result = await liveClassify(v);
+      setCaps((c) =>
+        c.map((entry, i) =>
+          i === 0 && entry.time === 'SENDING…'
+            ? { ...entry, time: result.liveAI ? '✓ JUST NOW (xAI LIVE)' : '✓ JUST NOW (fallback mode)' }
+            : entry,
+        ),
+      );
+    } catch (err) {
+      console.error('commitCap: liveClassify failed, writing via offline fallback', err);
+      try {
+        await offlineCommit(v);
+        setCaps((c) => c.map((entry, i) => (i === 0 && entry.time === 'SENDING…' ? { ...entry, time: '✓ JUST NOW (offline mock)' } : entry)));
+      } catch (fallbackErr) {
+        console.error('commitCap: offline fallback also failed', fallbackErr);
+        setCaps((c) => c.map((entry, i) => (i === 0 && entry.time === 'SENDING…' ? { ...entry, time: '⚠ NOT SAVED — retry later' } : entry)));
+      }
+    }
   }
 
   return (

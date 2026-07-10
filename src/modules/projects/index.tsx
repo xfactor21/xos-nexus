@@ -15,15 +15,19 @@ const feed = [
   '◈ "Onboarding Flow" promoted to Sprint 002 milestone · YESTERDAY',
 ];
 
-/** PROJECTS — ported 1:1 from xos-prototype.html: card list → StudyHive
- * workspace with board/docs/bugs/activity zones. Board + bugs now read from
- * the shared coreGraph store instead of local arrays. */
+/** PROJECTS — ported 1:1 from xos-prototype.html: card list → workspace
+ * with board/docs/bugs/activity zones. Board + bugs now read live from the
+ * shared coreGraph store (Step 3) instead of local arrays; the workspace
+ * opens whichever real project was tapped rather than a hardcoded
+ * StudyHive id (real Supabase projects don't carry the prototype's
+ * 'p-sh'-style ids). Docs/activity feed stay illustrative — there's no real
+ * `docs` table in the deployed schema yet. */
 export default function Projects({ active }: { active: boolean }) {
-  const [open, setOpen] = useState(false);
+  const [openId, setOpenId] = useState<string | null>(null);
   const [zone, setZone] = useState<Zone>('zboard');
   const projects = useCoreGraph((s) => s.projects);
-  const tasks = useCoreGraph((s) => s.tasks);
-  const bugs = useCoreGraph((s) => s.bugs);
+  const tasks = useCoreGraph((s) => s.tasks());
+  const bugs = useCoreGraph((s) => s.bugs());
   const advanceTask = useCoreGraph((s) => s.advanceTask);
   const cycleBug = useCoreGraph((s) => s.cycleBug);
 
@@ -33,23 +37,24 @@ export default function Projects({ active }: { active: boolean }) {
     [2, 'COMPLETE'],
   ];
 
+  const open = projects.find((p) => p.id === openId) ?? null;
+  const projectTasks = tasks.filter((t) => t.project_id === openId);
+  const projectBugs = bugs.filter((b) => b.project_id === openId);
+
   return (
     <section className={`room ${active ? 'on' : ''}`} id="r-projects">
       <h2 className="rh">📂 PROJECTS</h2>
       <div className="rsub">xOS DOESN'T CONTAIN PRODUCTS. IT MANAGES THEM.</div>
       {!open && (
         <div id="plist">
+          {!projects.length && <div className="rsub">No projects yet — capture a thought and xAI will start one.</div>}
           {projects.map((p) => (
-            <div
-              key={p.id}
-              className={`pcard gpanel ${p.status === 'stale' ? 'warn' : ''}`}
-              onClick={() => p.id === 'p-sh' && setOpen(true)}
-            >
+            <div key={p.id} className={`pcard gpanel ${p.isStale ? 'warn' : ''}`} onClick={() => setOpenId(p.id)}>
               <span className="ic">{p.icon}</span>
               <div>
                 <h3>{p.name.toUpperCase()}</h3>
                 <div className="mt">
-                  {p.status === 'stale' ? `⚠ ${p.idleDays} DAYS IDLE — CORE FLAGGED STALE` : `SPRINT 002 · ${tasks.filter((t) => t.project_id === p.id).length || 14} TASKS`}
+                  {p.isStale ? `⚠ ${p.idleDays} DAYS IDLE — CORE FLAGGED STALE` : `${tasks.filter((t) => t.project_id === p.id).length} TASKS`}
                 </div>
               </div>
               <span className="hp">
@@ -62,28 +67,28 @@ export default function Projects({ active }: { active: boolean }) {
       {open && (
         <div id="pws">
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-            <button className="chip" onClick={() => setOpen(false)}>
+            <button className="chip" onClick={() => setOpenId(null)}>
               ◂ ALL
             </button>
             <h2 className="rh" style={{ margin: 0 }}>
-              🐝 STUDYHIVE
+              {open.icon} {open.name.toUpperCase()}
             </h2>
           </div>
           <div id="vitals">
             <div className="vital">
-              <div className="n">{tasks.length}</div>
+              <div className="n">{projectTasks.length}</div>
               <div className="l">TASKS</div>
             </div>
             <div className="vital a">
-              <div className="n">{bugs.filter((b) => b.bugStatus !== 'fixed').length}</div>
+              <div className="n">{projectBugs.filter((b) => b.bugStatus !== 'fixed').length}</div>
               <div className="l">BUGS</div>
             </div>
             <div className="vital">
-              <div className="n">6</div>
+              <div className="n">{docs.length}</div>
               <div className="l">DOCS</div>
             </div>
             <div className="vital m">
-              <div className="n">80%</div>
+              <div className="n">{open.health}%</div>
               <div className="l">HEALTH</div>
             </div>
           </div>
@@ -107,7 +112,7 @@ export default function Projects({ active }: { active: boolean }) {
               {cols.map(([s, label]) => (
                 <div className={`col ${s === 1 ? 'doing' : s === 2 ? 'done' : ''}`} key={s}>
                   <h4>{label}</h4>
-                  {tasks
+                  {projectTasks
                     .filter((t) => t.taskStatus === s)
                     .map((t) => (
                       <div className="card" key={t.id} onClick={() => t.taskStatus < 2 && advanceTask(t.id)}>
@@ -120,6 +125,7 @@ export default function Projects({ active }: { active: boolean }) {
                         ))}
                       </div>
                     ))}
+                  {!projectTasks.filter((t) => t.taskStatus === s).length && <div className="rsub" style={{ fontSize: 9 }}>—</div>}
                 </div>
               ))}
             </div>
@@ -136,17 +142,18 @@ export default function Projects({ active }: { active: boolean }) {
             ))}
           </div>
           <div className={`subpanel ${zone === 'zbugs' ? 'on' : ''}`} id="zbugs">
-            {bugs
-              .filter((b) => b.project_id === 'p-sh' && b.bugStatus !== 'fixed')
+            {projectBugs
+              .filter((b) => b.bugStatus !== 'fixed')
               .map((b) => (
                 <div className="bug" key={b.id}>
                   {b.title} <span className="st" onClick={() => cycleBug(b.id)}>{b.bugStatus.toUpperCase()}</span>
                   <div className="mt">
-                    <span>{b.severity.toUpperCase()} · SPRINT 002</span>
-                    {b.similarity && <span className="link">◈ {Math.round(b.similarity * 100)}% SIMILAR TO SOLVED #14 — FIX ATTACHED</span>}
+                    <span>{b.severity.toUpperCase()}</span>
+                    {b.similarity && <span className="link">◈ {Math.round(b.similarity * 100)}% SIMILAR TO A SOLVED BUG — FIX ATTACHED</span>}
                   </div>
                 </div>
               ))}
+            {!projectBugs.filter((b) => b.bugStatus !== 'fixed').length && <div className="rsub">No open bugs — clean run.</div>}
           </div>
           <div className={`subpanel ${zone === 'zfeed' ? 'on' : ''}`} id="zfeed">
             {feed.map((f, i) => {

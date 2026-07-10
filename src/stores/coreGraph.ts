@@ -1,120 +1,33 @@
 import { create } from 'zustand';
+import type { RealtimeChannel } from '@supabase/supabase-js';
+import { supabase } from '../lib/supabase';
 import type {
   BugNode,
+  BugSeverity,
+  EdgeRecord,
   MemoryRecord,
   MilestoneRecord,
+  NodeRecord,
   ProjectRecord,
   TaskNode,
 } from '../core/types';
+import { bugStatusToDbStatus, nodeToBug, nodeToTask, rowToMemory, rowToProject, taskStatusToDbStatus } from '../core/mappers';
 
 /**
  * coreGraph — the single source-of-truth store every room reads from.
  *
- * Step 3 of the handoff ("Wire Realtime + Zustand Across All Rooms") calls
- * for this store to be populated from Supabase and subscribed to Realtime
- * per project channel. That wiring is still open — see the session log —
- * but every room in this port already reads from *this* store rather than
- * local component state or hardcoded markup, so Step 3 becomes "swap the
- * seed calls for Supabase queries + a realtime subscription" instead of a
- * rewrite.
+ * Step 3 of the handoff ("Wire Realtime + Zustand Across All Rooms") is now
+ * live: `nodes`/`edges`/`projects`/`memories` are populated from Supabase
+ * (scoped to the signed-in Captain via RLS) and kept in sync over a
+ * Postgres Changes subscription — every room reading `nodes`/`bugs`/`tasks`
+ * derived from this store reflects writes from anywhere (Neural Core,
+ * Neural Capture, another device) without a refresh.
+ *
+ * Milestones/Roadmaps are the one deliberate exception: there's no real
+ * table for them in the deployed schema, and adding one wasn't authorized
+ * by this step (no migration called for in the handoff for Step 3) — they
+ * stay on local seed state, same as before. Flagged in the session log.
  */
-
-const seedProjects: ProjectRecord[] = [
-  { id: 'p-sh', slug: 'studyhive', name: 'StudyHive', icon: '🐝', status: 'active', health: 80, idleDays: 0 },
-  { id: 'p-mu', slug: 'music', name: 'Music', icon: '🎵', status: 'active', health: 45, idleDays: 1 },
-  { id: 'p-we', slug: 'website', name: 'Website', icon: '🌐', status: 'stale', health: 25, idleDays: 6 },
-  { id: 'p-no', slug: 'novel', name: 'Novel', icon: '📖', status: 'active', health: 60, idleDays: 0 },
-];
-
-let uid = 0;
-const nextId = (prefix: string) => `${prefix}-${++uid}`;
-
-const seedTasks: TaskNode[] = [
-  mkTask('Implement dark mode toggle', 0, ['SPRINT 002', '◈ FROM CAPTURE']),
-  mkTask('Persist theme preference', 0, ['◈ FROM CAPTURE']),
-  mkTask('Fix login redirect loop (#17)', 1, ['BUG', '◈ FIX ATTACHED']),
-  mkTask('Onboarding copy — 3 screens', 1, ['SPRINT 002']),
-  mkTask('Splash screen v2', 2, ['SHIPPED']),
-  mkTask('Bee mascot motion study', 2, ['◈ FROM CAPTURE']),
-];
-function mkTask(title: string, taskStatus: 0 | 1 | 2, tags: string[]): TaskNode {
-  return {
-    id: nextId('task'),
-    owner_id: null,
-    project_id: 'p-sh',
-    kind: 'task',
-    title,
-    body: title,
-    source: 'seed',
-    ai_classified: tags.some((t) => t.includes('◈')),
-    ai_confidence: 0.9,
-    ai_reasoning: '',
-    status: 'open',
-    created_at: new Date().toISOString(),
-    taskStatus,
-    tags,
-  };
-}
-
-const seedBugs: BugNode[] = [
-  mkBug('#17 — Login redirect loop on mobile Safari', 'open', 'high', 'p-sh', {
-    linkedCommit: null,
-    duplicateOf: 'bug-solved-14',
-    similarity: 0.92,
-    assignee: null,
-  }),
-  mkBug('#16 — Subject chips overflow on small screens', 'open', 'medium', 'p-sh', {
-    linkedCommit: null,
-    duplicateOf: null,
-    similarity: null,
-    assignee: null,
-  }),
-  mkBug('#15 — Website contact form silent failure', 'open', 'low', 'p-we', {
-    linkedCommit: null,
-    duplicateOf: null,
-    similarity: null,
-    assignee: null,
-  }),
-  mkBug('#14 — OAuth token refresh failure', 'fixed', 'high', 'p-sh', {
-    linkedCommit: 'a1b2c3d — token rotation on 401',
-    duplicateOf: null,
-    similarity: null,
-    assignee: 'Captain',
-  }),
-];
-function mkBug(
-  title: string,
-  bugStatus: 'open' | 'doing' | 'fixed',
-  severity: BugNode['severity'],
-  project_id: string,
-  extra: Pick<BugNode, 'linkedCommit' | 'duplicateOf' | 'similarity' | 'assignee'>,
-): BugNode {
-  return {
-    id: nextId('bug'),
-    owner_id: null,
-    project_id,
-    kind: 'bug',
-    title,
-    body: title,
-    source: 'seed',
-    ai_classified: true,
-    ai_confidence: 0.9,
-    ai_reasoning: '',
-    status: bugStatus === 'fixed' ? 'done' : bugStatus === 'doing' ? 'in_progress' : 'open',
-    created_at: new Date().toISOString(),
-    bugStatus,
-    severity,
-    ...extra,
-  };
-}
-
-const seedMemories: MemoryRecord[] = [
-  { id: 'm1', kind: 'decision', content: '"Bee mascot = brand anchor" — all StudyHive visual identity flows from this.', recalledCount: 2, linkedNodeCount: 6, createdLabel: 'SPRINT 001' },
-  { id: 'm2', kind: 'learning', content: 'OAuth refresh fix pattern — token rotation on 401, documented in Auth Architecture.', recalledCount: 1, linkedNodeCount: 1, createdLabel: 'SPRINT 001' },
-  { id: 'm3', kind: 'pattern', content: '"Dark aesthetics cluster" — 6 related nodes across StudyHive + xOS itself.', recalledCount: 0, linkedNodeCount: 6, createdLabel: 'DETECTED TODAY' },
-  { id: 'm4', kind: 'decision', content: 'Observatory becomes the landing experience; Neural Core hub is the navigator.', recalledCount: 0, linkedNodeCount: 0, createdLabel: 'SPRINT 002' },
-  { id: 'm5', kind: 'pattern', content: 'Best focus sessions: 50-minute StudyHive blocks in the evening.', recalledCount: 3, linkedNodeCount: 0, createdLabel: 'THIS MONTH' },
-];
 
 const seedMilestones: MilestoneRecord[] = [
   {
@@ -134,6 +47,8 @@ const seedMilestones: MilestoneRecord[] = [
       { label: 'Notion Docs HQ', done: true },
       { label: 'Observatory + Awakening sequence', done: true },
       { label: 'Living Core redesign', done: true },
+      { label: 'Auth + real ownership', done: true },
+      { label: 'Realtime wired across rooms', done: true },
       { label: 'Shell decision: Electron vs Tauri', done: false },
     ],
   },
@@ -158,65 +73,191 @@ const seedMilestones: MilestoneRecord[] = [
 ];
 
 interface CoreGraphState {
+  ownerId: string | null;
   projects: ProjectRecord[];
-  tasks: TaskNode[];
-  bugs: BugNode[];
+  nodes: NodeRecord[];
+  edges: EdgeRecord[];
   memories: MemoryRecord[];
   milestones: MilestoneRecord[];
 
-  advanceTask: (id: string) => void;
-  cycleBug: (id: string) => void;
-  addBug: (bug: Omit<BugNode, 'id' | 'created_at' | 'kind' | 'owner_id' | 'source' | 'ai_classified' | 'ai_confidence' | 'ai_reasoning' | 'status' | 'body'>) => void;
-  updateBug: (id: string, patch: Partial<BugNode>) => void;
+  loading: boolean;
+  loaded: boolean;
+  error: string | null;
+
+  /** Derived, convenience views over `nodes` — computed on read, not
+   * separately synced state, so there's exactly one place realtime events
+   * have to land. */
+  tasks: () => TaskNode[];
+  bugs: () => BugNode[];
+
+  hydrate: (ownerId: string) => Promise<void>;
+  subscribe: (ownerId: string) => () => void;
+  reset: () => void;
+
+  advanceTask: (id: string) => Promise<void>;
+  cycleBug: (id: string) => Promise<void>;
+  addBug: (bug: { title: string; project_id: string | null; severity: BugSeverity }) => Promise<void>;
+  updateBug: (id: string, patch: Partial<Pick<BugNode, 'severity' | 'assignee' | 'linkedCommit' | 'duplicateOf' | 'similarity'>>) => Promise<void>;
+
   reorderMilestones: (orderedIds: string[]) => void;
   updateMilestoneDate: (id: string, date: string) => void;
   promoteMemoryToMilestone: (memoryId: string, milestoneId: string) => void;
 }
 
-export const useCoreGraph = create<CoreGraphState>((set) => ({
-  projects: seedProjects,
-  tasks: seedTasks,
-  bugs: seedBugs,
-  memories: seedMemories,
+function upsert<T extends { id: string }>(arr: T[], row: T): T[] {
+  const idx = arr.findIndex((x) => x.id === row.id);
+  if (idx === -1) return [row, ...arr];
+  const copy = arr.slice();
+  copy[idx] = row;
+  return copy;
+}
+function remove<T extends { id: string }>(arr: T[], id: string): T[] {
+  return arr.filter((x) => x.id !== id);
+}
+
+let channel: RealtimeChannel | null = null;
+
+export const useCoreGraph = create<CoreGraphState>((set, get) => ({
+  ownerId: null,
+  projects: [],
+  nodes: [],
+  edges: [],
+  memories: [],
   milestones: seedMilestones,
 
-  advanceTask: (id) =>
-    set((s) => ({
-      tasks: s.tasks.map((t) => (t.id === id && t.taskStatus < 2 ? { ...t, taskStatus: (t.taskStatus + 1) as 0 | 1 | 2 } : t)),
-    })),
+  loading: false,
+  loaded: false,
+  error: null,
 
-  cycleBug: (id) =>
-    set((s) => ({
-      bugs: s.bugs.map((b) => {
-        if (b.id !== id) return b;
-        const next = b.bugStatus === 'open' ? 'doing' : b.bugStatus === 'doing' ? 'fixed' : 'fixed';
-        return { ...b, bugStatus: next, status: next === 'fixed' ? 'done' : next === 'doing' ? 'in_progress' : 'open' };
-      }),
-    })),
+  tasks: () => get().nodes.filter((n) => n.kind === 'task').map(nodeToTask),
+  bugs: () => get().nodes.filter((n) => n.kind === 'bug').map(nodeToBug),
 
-  addBug: (bug) =>
-    set((s) => ({
-      bugs: [
-        {
-          ...bug,
-          id: nextId('bug'),
-          owner_id: null,
-          kind: 'bug',
-          source: 'capture_text',
-          ai_classified: false,
-          ai_confidence: 0,
-          ai_reasoning: '',
-          status: 'open',
-          body: bug.title,
-          created_at: new Date().toISOString(),
-        },
-        ...s.bugs,
-      ],
-    })),
+  hydrate: async (ownerId) => {
+    set({ loading: true, error: null, ownerId });
+    try {
+      const [projectsRes, nodesRes, edgesRes, memoriesRes] = await Promise.all([
+        supabase.from('projects').select('*').eq('owner_id', ownerId).order('created_at'),
+        supabase.from('nodes').select('*').eq('owner_id', ownerId).order('created_at', { ascending: false }),
+        supabase.from('edges').select('*').eq('owner_id', ownerId),
+        supabase.from('memories').select('*').eq('owner_id', ownerId).order('created_at', { ascending: false }),
+      ]);
+      const firstError = projectsRes.error || nodesRes.error || edgesRes.error || memoriesRes.error;
+      if (firstError) throw firstError;
 
-  updateBug: (id, patch) =>
-    set((s) => ({ bugs: s.bugs.map((b) => (b.id === id ? { ...b, ...patch } : b)) })),
+      const nodes = (nodesRes.data ?? []) as NodeRecord[];
+      const edges = (edgesRes.data ?? []) as EdgeRecord[];
+      const projects = (projectsRes.data ?? []).map((p) => rowToProject(p, nodes.filter((n) => n.project_id === p.id)));
+      const memories = (memoriesRes.data ?? []).map((m) => rowToMemory(m, edges));
 
+      set({ projects, nodes, edges, memories, loading: false, loaded: true });
+    } catch (err) {
+      console.error('coreGraph.hydrate failed', err);
+      set({ loading: false, error: err instanceof Error ? err.message : 'Failed to load your data.' });
+    }
+  },
+
+  subscribe: (ownerId) => {
+    if (channel) {
+      supabase.removeChannel(channel);
+      channel = null;
+    }
+    channel = supabase
+      .channel(`coreGraph:${ownerId}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'nodes', filter: `owner_id=eq.${ownerId}` }, (payload) => {
+        set((s) => ({
+          nodes: payload.eventType === 'DELETE' ? remove(s.nodes, (payload.old as NodeRecord).id) : upsert(s.nodes, payload.new as NodeRecord),
+        }));
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'edges', filter: `owner_id=eq.${ownerId}` }, (payload) => {
+        set((s) => ({
+          edges: payload.eventType === 'DELETE' ? remove(s.edges, (payload.old as EdgeRecord).id) : upsert(s.edges, payload.new as EdgeRecord),
+        }));
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'memories', filter: `owner_id=eq.${ownerId}` }, () => {
+        // Memory rows are cheap and infrequent — just re-pull + remap
+        // (linkedNodeCount depends on the current edges list anyway).
+        supabase
+          .from('memories')
+          .select('*')
+          .eq('owner_id', ownerId)
+          .order('created_at', { ascending: false })
+          .then(({ data }) => {
+            if (data) set((s) => ({ memories: data.map((m) => rowToMemory(m, s.edges)) }));
+          });
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'projects', filter: `owner_id=eq.${ownerId}` }, () => {
+        supabase
+          .from('projects')
+          .select('*')
+          .eq('owner_id', ownerId)
+          .order('created_at')
+          .then(({ data }) => {
+            if (data) set((s) => ({ projects: data.map((p) => rowToProject(p, s.nodes.filter((n) => n.project_id === p.id))) }));
+          });
+      })
+      .subscribe();
+
+    return () => {
+      if (channel) {
+        supabase.removeChannel(channel);
+        channel = null;
+      }
+    };
+  },
+
+  reset: () => set({ ownerId: null, projects: [], nodes: [], edges: [], memories: [], loaded: false, loading: false, error: null }),
+
+  advanceTask: async (id) => {
+    const n = get().nodes.find((x) => x.id === id);
+    if (!n) return;
+    const current = nodeToTask(n).taskStatus;
+    if (current >= 2) return;
+    const nextStatus = taskStatusToDbStatus((current + 1) as 0 | 1 | 2);
+    set((s) => ({ nodes: upsert(s.nodes, { ...n, status: nextStatus }) })); // optimistic
+    const { error } = await supabase.from('nodes').update({ status: nextStatus }).eq('id', id);
+    if (error) console.error('advanceTask failed', error);
+  },
+
+  cycleBug: async (id) => {
+    const n = get().nodes.find((x) => x.id === id);
+    if (!n) return;
+    const current = nodeToBug(n).bugStatus;
+    const next = current === 'open' ? 'doing' : 'fixed';
+    const nextStatus = bugStatusToDbStatus(next);
+    set((s) => ({ nodes: upsert(s.nodes, { ...n, status: nextStatus }) })); // optimistic
+    const { error } = await supabase.from('nodes').update({ status: nextStatus }).eq('id', id);
+    if (error) console.error('cycleBug failed', error);
+  },
+
+  addBug: async (bug) => {
+    const ownerId = get().ownerId;
+    if (!ownerId) return;
+    const { error } = await supabase.from('nodes').insert({
+      owner_id: ownerId,
+      project_id: bug.project_id,
+      kind: 'bug',
+      title: bug.title,
+      body: bug.title,
+      source: 'manual',
+      ai_classified: false,
+      status: 'open',
+      metadata: { severity: bug.severity },
+    });
+    if (error) console.error('addBug failed', error);
+    // realtime subscription picks up the INSERT — no local mutation needed
+  },
+
+  updateBug: async (id, patch) => {
+    const n = get().nodes.find((x) => x.id === id);
+    if (!n) return;
+    const meta = { ...((n.metadata ?? {}) as Record<string, unknown>), ...patch };
+    set((s) => ({ nodes: upsert(s.nodes, { ...n, metadata: meta }) })); // optimistic
+    const { error } = await supabase.from('nodes').update({ metadata: meta }).eq('id', id);
+    if (error) console.error('updateBug failed', error);
+  },
+
+  // Roadmaps/milestones: local-only, unchanged from the Step 5 pass — see
+  // the module doc comment above for why.
   reorderMilestones: (orderedIds) =>
     set((s) => ({
       milestones: orderedIds

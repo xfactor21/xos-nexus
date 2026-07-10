@@ -1,10 +1,15 @@
 import { useEffect } from 'react';
 import { useUiStore } from '../stores/uiStore';
+import { useAuthStore } from '../stores/authStore';
+import { useCoreGraph } from '../stores/coreGraph';
 import { ROOMS, ROOM_NAME, DOCK_CONTENT } from '../core/rooms';
 import RoomOutlet from './RoomOutlet';
 
 /** App chrome — ported 1:1 from xos-prototype.html's #hud/#sb/#dock markup
- * and body.sb / body.nodock toggle classes. */
+ * and body.sb / body.nodock toggle classes. Also where Step 3's "populated
+ * from Supabase, subscribed to Realtime" wiring kicks off — Shell only
+ * mounts once a Captain is signed in (see App.tsx), so it's the right place
+ * to hydrate coreGraph and open the Realtime subscription for their id. */
 export default function Shell() {
   const room = useUiStore((s) => s.room);
   const go = useUiStore((s) => s.go);
@@ -13,6 +18,18 @@ export default function Shell() {
   const toggleSidebar = useUiStore((s) => s.toggleSidebar);
   const closeSidebar = useUiStore((s) => s.closeSidebar);
   const toggleDock = useUiStore((s) => s.toggleDock);
+  const userId = useAuthStore((s) => s.user?.id);
+
+  useEffect(() => {
+    if (!userId) return;
+    const { hydrate, subscribe, reset } = useCoreGraph.getState();
+    hydrate(userId);
+    const unsubscribe = subscribe(userId);
+    return () => {
+      unsubscribe();
+      reset();
+    };
+  }, [userId]);
 
   useEffect(() => {
     document.body.classList.toggle('sb', sidebarOpen);

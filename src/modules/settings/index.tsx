@@ -1,14 +1,19 @@
 import { useState } from 'react';
 import { useUiStore } from '../../stores/uiStore';
+import { useAuthStore } from '../../stores/authStore';
 
 /** SETTINGS — ported 1:1 from xos-prototype.html: xAI autonomy, neon
  * intensity slider (wired to the same --glow var the core node glow uses),
- * shell target decision (Step 8, still undecided). */
+ * shell target decision (Step 8, still undecided). Account panel added for
+ * Step 1 (Auth) — no prototype equivalent, since the prototype never had a
+ * real session to sign out of. */
 export default function Settings({ active }: { active: boolean }) {
   const [autonomy, setAutonomy] = useState('SUGGEST');
   const [shell, setShell] = useState('UNDECIDED');
   const glow = useUiStore((s) => s.glow);
   const setGlow = useUiStore((s) => s.setGlow);
+  const user = useAuthStore((s) => s.user);
+  const signOut = useAuthStore((s) => s.signOut);
 
   return (
     <section className={`room ${active ? 'on' : ''}`} id="r-settings">
@@ -39,6 +44,15 @@ export default function Settings({ active }: { active: boolean }) {
               {o}
             </span>
           ))}
+        </div>
+      </div>
+      <div className="gpanel setrow">
+        <h3>◈ ACCOUNT</h3>
+        <div className="d">{user?.email ?? 'Not signed in'}</div>
+        <div className="optrow" style={{ margin: 0 }}>
+          <span className="chip" onClick={() => signOut()}>
+            SIGN OUT
+          </span>
         </div>
       </div>
     </section>

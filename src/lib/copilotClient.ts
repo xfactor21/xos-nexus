@@ -13,6 +13,16 @@
  */
 import { supabase } from './supabase';
 
+/**
+ * Step 1 ("Auth + Real Ownership") replaces the `owner_id: null` this
+ * shipped with — every capture surface now writes to the currently signed-in
+ * Captain's account instead of an orphaned row RLS would hide from everyone.
+ */
+async function currentOwnerId(): Promise<string | null> {
+  const { data } = await supabase.auth.getSession();
+  return data.session?.user.id ?? null;
+}
+
 export interface ClassifiedNode {
   kind: string;
   title: string;
@@ -28,12 +38,47 @@ export interface ClassifyResult {
   liveAI?: boolean;
 }
 
-export async function liveClassify(text: string, ownerId: string | null = null): Promise<ClassifyResult> {
+export async function liveClassify(text: string, ownerIdOverride: string | null = null): Promise<ClassifyResult> {
+  const ownerId = ownerIdOverride ?? (await currentOwnerId());
+  if (!ownerId) throw new Error('liveClassify: no signed-in Captain — sign in before capturing.');
   const { data, error } = await supabase.functions.invoke('classify-capture', {
     body: { text, owner_id: ownerId },
   });
   if (error) throw error;
   return data as ClassifyResult;
+}
+
+/**
+ * Step 3 addendum: when liveClassify() fails — offline, ANTHROPIC_API_KEY
+ * unset/out of credit, whatever — the app previously fell back to a
+ * visual-only demo that never touched Supabase, which meant a capture could
+ * silently vanish instead of becoming a real node. This still routes through
+ * the exact same offlineClassify() heuristic below (so the UI behaves
+ * identically to the original prototype fallback), but now actually writes
+ * the result as a real node, so "capture something, watch it appear live
+ * elsewhere" keeps holding even when live AI is unavailable. */
+export async function offlineCommit(text: string, ownerIdOverride: string | null = null): Promise<{ nodeId: string | null }> {
+  const ownerId = ownerIdOverride ?? (await currentOwnerId());
+  if (!ownerId) throw new Error('offlineCommit: no signed-in Captain — sign in before capturing.');
+  const c = offlineClassify(text);
+  const { data: project } = await supabase.from('projects').select('id').eq('owner_id', ownerId).eq('slug', c.proj).maybeSingle();
+  const kind = c.hops.includes('bugs') ? 'bug' : c.hops.includes('studio') ? 'design' : c.hops.includes('roadmaps') ? 'roadmap_item' : 'task';
+  const { data, error } = await supabase
+    .from('nodes')
+    .insert({
+      owner_id: ownerId,
+      project_id: project?.id ?? null,
+      kind,
+      title: text.length > 80 ? text.slice(0, 77) + '…' : text,
+      body: text,
+      source: 'capture_text',
+      ai_classified: false,
+      status: 'open',
+    })
+    .select('id')
+    .single();
+  if (error) throw error;
+  return { nodeId: data?.id ?? null };
 }
 
 /** Local fallback classifier — used when the Edge Function is unreachable

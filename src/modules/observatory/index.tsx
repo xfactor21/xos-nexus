@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { MouseEvent as RMouseEvent, TouchEvent as RTouchEvent, WheelEvent as RWheelEvent } from 'react';
+import { useCoreGraph } from '../../stores/coreGraph';
 
 type ViewMode = 'const' | 'neural' | 'time' | 'mission';
 
@@ -17,7 +18,12 @@ interface Star {
 }
 
 /** THE OBSERVATORY — ported 1:1 from xos-prototype.html (#uni canvas engine,
- * seed(), drawUni(), pan/pinch/zoom handlers, obsView chip switcher). */
+ * seed(), drawUni(), pan/pinch/zoom handlers, obsView chip switcher). Step 3
+ * replaces seed()'s hardcoded 4-project demo galaxy with real projects +
+ * nodes + edges from coreGraph — the rendering/interaction code below
+ * (drawUni loop, pan/zoom, tooltip) is untouched; only what populates
+ * stars.current/cons.current changed. Re-seeds whenever the live data
+ * changes, so a capture appears here without a refresh. */
 export default function Observatory({ active }: { active: boolean }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const sectionRef = useRef<HTMLElement>(null);
@@ -31,44 +37,77 @@ export default function Observatory({ active }: { active: boolean }) {
   const viewRef = useRef<ViewMode>('const');
   viewRef.current = view;
 
-  // seed — runs once
+  const projects = useCoreGraph((s) => s.projects);
+  const nodes = useCoreGraph((s) => s.nodes);
+  const edges = useCoreGraph((s) => s.edges);
+
+  // seed — re-runs whenever the live graph changes (hydrate or realtime)
   useEffect(() => {
-    const gal = [
-      { nm: 'STUDYHIVE', cx: 0.3, cy: 0.34, hue: '#00F5FF', n: 14, bright: 1, age: 1 },
-      { nm: 'MUSIC', cx: 0.72, cy: 0.3, hue: '#FF2D78', n: 8, bright: 0.7, age: 2 },
-      { nm: 'WEBSITE', cx: 0.26, cy: 0.72, hue: '#FFB800', n: 6, bright: 0.32, age: 3 },
-      { nm: 'NOVEL', cx: 0.72, cy: 0.7, hue: '#8B5CF6', n: 10, bright: 0.85, age: 2 },
-    ];
     const S: Star[] = [];
     const C: [number, number][] = [];
-    gal.forEach((g) => {
+    const starIndexByNodeId = new Map<string, number>();
+    const dayOf = (iso: string) => Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 86_400_000));
+
+    projects.forEach((p, i) => {
+      const angle = (i / Math.max(1, projects.length)) * 6.283 - Math.PI / 2;
+      const cx = 0.5 + Math.cos(angle) * 0.24;
+      const cy = 0.5 + Math.sin(angle) * 0.2;
+      const bright = Math.max(0.2, p.health / 100);
+      const projNodes = nodes.filter((n) => n.project_id === p.id);
       const first = S.length;
-      for (let i = 0; i < g.n; i++) {
+
+      projNodes.forEach((n) => {
         const a = Math.random() * 6.28,
           r = 0.045 + Math.random() * 0.12;
+        starIndexByNodeId.set(n.id, S.length);
         S.push({
-          x: g.cx + Math.cos(a) * r,
-          y: g.cy + Math.sin(a) * r * 0.8,
+          x: cx + Math.cos(a) * r,
+          y: cy + Math.sin(a) * r * 0.8,
           s: 1.2 + Math.random() * 2.2,
-          b: g.bright * (0.5 + Math.random() * 0.5),
-          hue: g.hue,
-          nm: g.nm + ' · NODE ' + (i + 1),
-          age: g.age + Math.floor(Math.random() * 3),
-          mission: Math.random() < 0.18,
+          b: bright * (0.5 + Math.random() * 0.5),
+          hue: p.color,
+          nm: p.name.toUpperCase() + ' · ' + n.title,
+          age: Math.min(4, Math.floor(dayOf(n.created_at) / 7) + 1),
+          mission: n.ai_classified,
           tw: Math.random() * 6.28,
         });
-      }
-      for (let i = first; i < S.length - 1; i++) C.push([i, i + 1]);
-      C.push([first, first + Math.floor(g.n / 2)]);
-      S.push({ x: g.cx, y: g.cy, s: 4.4, b: g.bright, hue: g.hue, nm: g.nm + ' — PROJECT HEART', age: g.age, mission: g.bright > 0.6, hub: true, tw: 0 });
-      C.push([first, S.length - 1]);
+      });
+      if (S.length > first) C.push([first, first + Math.floor((S.length - first) / 2)]);
+
+      starIndexByNodeId.set('__hub__' + p.id, S.length);
+      S.push({ x: cx, y: cy, s: 4.4, b: bright, hue: p.color, nm: p.name.toUpperCase() + ' — PROJECT HEART', age: p.isStale ? 3 : 1, mission: !p.isStale, hub: true, tw: 0 });
+      if (S.length > first + 1) C.push([first, S.length - 1]);
     });
-    for (let i = 0; i < 90; i++)
-      S.push({ x: Math.random(), y: Math.random(), s: 0.6 + Math.random(), b: 0.14 + Math.random() * 0.2, hue: '#7ad9e0', nm: 'UNCHARTED THOUGHT', age: 1 + Math.floor(Math.random() * 4), mission: false, tw: Math.random() * 6.28 });
+
+    // Nodes not attached to any project — the prototype's "uncharted thought" field.
+    nodes
+      .filter((n) => !n.project_id)
+      .forEach((n) => {
+        starIndexByNodeId.set(n.id, S.length);
+        S.push({
+          x: Math.random(),
+          y: Math.random(),
+          s: 0.6 + Math.random(),
+          b: 0.14 + Math.random() * 0.2,
+          hue: '#7ad9e0',
+          nm: 'UNCHARTED THOUGHT · ' + n.title,
+          age: Math.min(4, Math.floor(dayOf(n.created_at) / 7) + 1),
+          mission: n.ai_classified,
+          tw: Math.random() * 6.28,
+        });
+      });
+
+    // Real edges become constellation lines wherever both endpoints are stars.
+    edges.forEach((e) => {
+      const a = starIndexByNodeId.get(e.from_node);
+      const b = starIndexByNodeId.get(e.to_node);
+      if (a !== undefined && b !== undefined) C.push([a, b]);
+    });
+
     stars.current = S;
     cons.current = C;
-    web.current = [[3, 18], [9, 30], [22, 35], [5, 40], [15, 33], [1, 28]];
-  }, []);
+    web.current = C;
+  }, [projects, nodes, edges]);
 
   function resize() {
     const cv = canvasRef.current,

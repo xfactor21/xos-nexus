@@ -14,7 +14,7 @@ const SEVERITY_ORDER: BugSeverity[] = ['critical', 'high', 'medium', 'low', 'tri
  * affordance (not just a caption), full-text search, and saved filter
  * views. */
 export default function Bugs({ active }: { active: boolean }) {
-  const bugs = useCoreGraph((s) => s.bugs);
+  const bugs = useCoreGraph((s) => s.bugs());
   const cycleBug = useCoreGraph((s) => s.cycleBug);
   const updateBug = useCoreGraph((s) => s.updateBug);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');

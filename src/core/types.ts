@@ -36,11 +36,15 @@ export type BugStatus = 'open' | 'doing' | 'fixed';
 
 export interface EdgeRecord {
   id: string;
+  owner_id: string | null;
   from_node: string;
   to_node: string;
-  relation: string;
-  created_by: 'copilot' | 'captain';
-  ai_confidence?: number;
+  relation: 'relates_to' | 'duplicates' | 'blocks' | 'solves' | 'references' | 'derived_from' | 'affects';
+  /** Matches the live `created_by` CHECK constraint — 'user', not the
+   * 'captain' a naive read of the Blueprint's flavor text might suggest. */
+  created_by: 'user' | 'copilot';
+  ai_confidence?: number | null;
+  created_at?: string;
 }
 
 export interface NodeRecord {
@@ -80,20 +84,41 @@ export interface BugNode extends NodeRecord {
   similarity: number | null; // 0-1, drives the "92% similar" affordance
 }
 
+/**
+ * Verified against the live `projects` table (Step 3 session). The deployed
+ * `status` CHECK constraint is ('active'|'paused'|'archived') — there is no
+ * stored 'stale' status. "Stale" is a computed UI signal (`isStale`), derived
+ * client-side from `idleDays`, not a persisted value.
+ */
 export interface ProjectRecord {
   id: string;
   slug: string;
   name: string;
   icon: string;
-  status: 'active' | 'stale' | 'archived';
+  color: string;
+  status: 'active' | 'paused' | 'archived';
+  /** Computed client-side from that project's task completion ratio — not a
+   * stored column (none exists). Refreshed on hydrate/re-hydrate. */
   health: number; // 0-100
+  /** Computed client-side from the most recent related node's created_at
+   * (or the project's own updated_at if it has no nodes yet). */
   idleDays: number;
+  isStale: boolean;
 }
 
+/**
+ * The live `memories` table's `kind` CHECK constraint also allows
+ * 'preference' and 'history' beyond the three the prototype/UI use today.
+ * `recalledCount` has no backing column (not tracked yet) and always reads 0
+ * until a future step adds one; `linkedNodeCount` is computed client-side by
+ * counting edges touching `source_node`.
+ */
 export interface MemoryRecord {
   id: string;
+  project_id?: string | null;
+  source_node?: string | null;
   content: string;
-  kind: 'decision' | 'learning' | 'pattern';
+  kind: 'decision' | 'learning' | 'pattern' | 'preference' | 'history';
   recalledCount: number;
   linkedNodeCount: number;
   createdLabel: string;
