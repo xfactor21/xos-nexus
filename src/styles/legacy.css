@@ -652,3 +652,27 @@ input[type=range]{width:100%;accent-color:#00F5FF}
 .toolCanvasWrap{background:#0a0e14;background-image:linear-gradient(45deg,#0d131c 25%,transparent 25%),linear-gradient(-45deg,#0d131c 25%,transparent 25%),linear-gradient(45deg,transparent 75%,#0d131c 75%),linear-gradient(-45deg,transparent 75%,#0d131c 75%);background-size:20px 20px;background-position:0 0,0 10px,10px -10px,-10px 0;border:1px solid var(--edge);display:inline-block;line-height:0}
 .toolCanvasWrap canvas{display:block;max-width:100%}
 .toolHint{font-size:9px;letter-spacing:.5px;color:var(--text-dim);margin-top:6px}
+
+/* ============ Animation mode — Amendment v0.4 item 3 ============ */
+#animRoot{display:flex;flex-direction:column;height:calc(100vh - 150px);min-height:520px;border:1px solid var(--edge)}
+#animTopbar{display:flex;align-items:center;gap:10px;padding:8px;background:var(--glass);backdrop-filter:blur(14px);border-bottom:1px solid var(--edge);flex-wrap:wrap}
+#animToolgroup{display:flex;gap:2px;border:1px solid var(--edge);padding:2px}
+#animToolgroup .tool{width:34px;height:34px;display:grid;place-items:center;font-size:14px;color:var(--text-dim);cursor:pointer}
+#animToolgroup .tool.on{color:var(--cyan);background:rgba(0,245,255,.08);box-shadow:inset 0 -2px 0 var(--cyan)}
+#animTopActions{display:flex;align-items:center;gap:6px;margin-left:auto;flex-wrap:wrap}
+#animBody{display:flex;flex:1;min-height:0}
+#animSidebar{width:280px;flex-shrink:0;overflow-y:auto;padding:14px;border-right:1px solid var(--edge)}
+#animSidebar h3{font-size:10px;letter-spacing:2px;color:var(--cyan-dim);margin:0 0 8px}
+#animCanvasWrap{position:relative;flex:1;min-width:0;overflow:auto;background:#05080d;display:flex;align-items:center;justify-content:center;padding:16px}
+#animCanvasWrap canvas{background:#05080d;border:1px solid var(--edge);cursor:crosshair;touch-action:none}
+#animTimeline{border-top:1px solid var(--edge);background:var(--glass);backdrop-filter:blur(14px);padding:8px;flex-shrink:0}
+#animPlayControls{display:flex;align-items:center;gap:6px;margin-bottom:8px;flex-wrap:wrap}
+#animPlayBtn{width:26px;text-align:center}
+#animRulerWrap{overflow-x:auto;max-height:140px;overflow-y:auto}
+#animRuler{position:relative;height:20px;border-bottom:1px solid var(--edge);cursor:pointer}
+.animRulerTick{position:absolute;top:0;font-size:8px;color:var(--text-dim);transform:translateX(-50%);pointer-events:none}
+#animPlayhead{position:absolute;top:0;bottom:-2000px;width:2px;background:var(--cyan);box-shadow:0 0 6px var(--cyan);pointer-events:none;z-index:2}
+#animTracks{display:flex;flex-direction:column}
+.animTrackRow{position:relative;height:22px;border-bottom:1px solid rgba(0,245,255,.06);cursor:pointer}
+.animKeyDot{position:absolute;top:5px;width:11px;height:11px;transform:translateX(-50%) rotate(45deg);background:var(--purple);border:1px solid rgba(5,8,13,.6);cursor:pointer}
+.animKeyDot.sel{background:var(--cyan)}

@@ -146,9 +146,13 @@ export type StudioMode =
 export const IMPLEMENTED_MODES: StudioMode[] = [
   'draw',
   'wireframe',
-  // 'animation' is deliberately NOT here yet — it's Amendment v0.4 item 3,
-  // its own dedicated next pass, so it still shows honestly as not-yet-
-  // available in the picker until that pass actually builds it.
+  // Amendment v0.4 item 3: Animation mode built out fully — real per-
+  // property keyframe timeline + tweening, onion-skinning, a bone/puppet
+  // FK rig, and real GIF + PNG sprite-sheet export. See Animation.tsx and
+  // animation/AnimationEngine.ts for exactly what's real vs. deliberately
+  // deferred (inverse kinematics, mesh deform, particles/physics,
+  // audio-sync, nested symbols, Lottie/video export).
+  'animation',
   'imageConverter',
   'paletteGenerator',
   'quickPhotoEditor',

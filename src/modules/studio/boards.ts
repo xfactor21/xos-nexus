@@ -52,6 +52,7 @@ export function deleteBoard(id: string) {
   try {
     localStorage.removeItem(`xos-studio-draw-${id}`);
     localStorage.removeItem(`xos-studio-wf-${id}`);
+    localStorage.removeItem(`xos-studio-anim-${id}`);
   } catch {
     /* ignore */
   }

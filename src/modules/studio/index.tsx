@@ -5,6 +5,7 @@ import { IMPLEMENTED_MODES } from './types';
 import { loadBoards, createBoard, touchBoard, renameBoard, deleteBoard } from './boards';
 import DrawPaint from './draw/DrawPaint';
 import Wireframe from './Wireframe';
+import Animation from './Animation';
 import ImageConverter from './tools/ImageConverter';
 import PaletteGenerator from './tools/PaletteGenerator';
 import QuickPhotoEditor from './tools/QuickPhotoEditor';
@@ -202,6 +203,7 @@ export default function Studio({ active }: { active: boolean }) {
         </h2>
         {openBoard.mode === 'draw' && <DrawPaint boardId={openBoard.id} onExit={exitToBoards} />}
         {openBoard.mode === 'wireframe' && <Wireframe boardId={openBoard.id} isSeed={openBoard.id === seedBoardId} onExit={exitToBoards} />}
+        {openBoard.mode === 'animation' && <Animation boardId={openBoard.id} onExit={exitToBoards} />}
         {openBoard.mode === 'imageConverter' && <ImageConverter boardId={openBoard.id} onExit={exitToBoards} />}
         {openBoard.mode === 'paletteGenerator' && <PaletteGenerator boardId={openBoard.id} onExit={exitToBoards} />}
         {openBoard.mode === 'quickPhotoEditor' && <QuickPhotoEditor boardId={openBoard.id} onExit={exitToBoards} />}
