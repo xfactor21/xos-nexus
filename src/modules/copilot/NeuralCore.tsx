@@ -1,6 +1,10 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import type { KeyboardEvent as ReactKeyboardEvent } from 'react';
 import { liveClassify, offlineClassify } from '../../lib/copilotClient';
 import { commitOrQueue } from '../../lib/offlineSync';
+import { useCoreGraph } from '../../stores/coreGraph';
+import { ROOMS } from '../../core/rooms';
+import { pendingCaptureCount } from '../../lib/localDb';
 
 const modules = [
   { id: 'capture', ic: '💭', nm: 'CAPTURE' },
@@ -22,11 +26,31 @@ const projs = [
 const slugToProj: Record<string, string> = { studyhive: 'p-sh', music: 'p-mu', website: 'p-we', novel: 'p-no' };
 const allMeta = [...modules, ...projs];
 
-/** NEURAL CORE — ported 1:1 from xos-prototype.html: the "living mass" blob
- * canvas (drawCore), radial node layout (layoutCore), SVG routing-line
- * animation, and coreCapture() which calls the real classify-capture Edge
- * Function via lib/copilotClient's liveClassify(), falling back to the
- * offline mock classifier exactly as the prototype does. */
+const KIND_ICON: Record<string, string> = {
+  capture: '💭', task: '✅', note: '📝', doc: '📄', bug: '🐞', idea: '💡',
+  design: '🎨', roadmap_item: '🗺', release: '📦', conversation: '📡',
+};
+
+function relTime(iso: string) {
+  const ms = Date.now() - new Date(iso).getTime();
+  const m = Math.floor(ms / 60000);
+  if (m < 1) return 'just now';
+  if (m < 60) return `${m}m ago`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h ago`;
+  return `${Math.floor(h / 24)}d ago`;
+}
+
+/** NEURAL CORE — "a sci-fi command bridge HUD" (Amendment v0.2). Ported from
+ * xos-prototype.html's "living mass" blob canvas (drawCore), radial node
+ * layout (layoutCore), SVG routing-line animation, and coreCapture(), then
+ * uplifted with real bridge-HUD instrumentation: a live briefing line + node
+ * count driven by the actual graph, a rotating recent-activity ticker, a
+ * docking-flight transition when jumping to a room instead of an instant
+ * teleport, mood/health color grading of the blob itself from real project
+ * vitals + workload, and a Cmd/Ctrl+K command palette scoped to the Core
+ * ("...without leaving the Core" — Amendment v0.2 places this directive
+ * under Neural Core specifically, not as a global OS overlay). */
 export default function NeuralCore({ active }: { active: boolean }) {
   const cvRef = useRef<HTMLCanvasElement>(null);
   const stageRef = useRef<HTMLDivElement>(null);
@@ -44,9 +68,92 @@ export default function NeuralCore({ active }: { active: boolean }) {
   );
   const cStreams = useRef<{ a: number; d: number; hue: string }[]>([]);
   const nodePos = useRef<Record<string, [number, number]>>({});
+  /** Real project-health + 24h node-creation "workload" — read every frame
+   * by the draw loop to grade the blob's color/energy, refreshed whenever
+   * live graph data changes (kept in a ref so the RAF loop, set up once,
+   * doesn't need to be torn down/restarted on every data update). */
+  const moodRef = useRef({ health: 70, workload: 0 });
   const [msg, setMsg] = useState('');
-  const [stats, setStats] = useState('147 NODES · 312 EDGES · CORE LEARNING');
+  const [statsOverride, setStatsOverride] = useState<string | null>(null);
   const [thought, setThought] = useState('');
+  const [tickIdx, setTickIdx] = useState(0);
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  const [paletteQuery, setPaletteQuery] = useState('');
+  const [paletteSel, setPaletteSel] = useState(0);
+  const [pendingCount, setPendingCount] = useState(0);
+  const paletteInputRef = useRef<HTMLInputElement>(null);
+
+  const projects = useCoreGraph((s) => s.projects);
+  const nodes = useCoreGraph((s) => s.nodes);
+  const edges = useCoreGraph((s) => s.edges);
+
+  useEffect(() => {
+    const avgHealth = projects.length ? projects.reduce((s, p) => s + p.health, 0) / projects.length : 70;
+    const dayAgo = Date.now() - 86400000;
+    const workload = nodes.filter((n) => new Date(n.created_at).getTime() > dayAgo).length;
+    moodRef.current = { health: avgHealth, workload };
+  }, [projects, nodes]);
+
+  const greeting = useMemo(() => {
+    const h = new Date().getHours();
+    if (h < 5) return 'STILL AWAKE, CAPTAIN';
+    if (h < 12) return 'GOOD MORNING, CAPTAIN';
+    if (h < 18) return 'GOOD AFTERNOON, CAPTAIN';
+    return 'GOOD EVENING, CAPTAIN';
+  }, []);
+
+  const liveStats = useMemo(() => {
+    const openBugs = nodes.filter((n) => n.kind === 'bug' && n.status !== 'done' && n.status !== 'archived').length;
+    const activeProjects = projects.filter((p) => p.status === 'active').length;
+    return `${nodes.length} NODE${nodes.length === 1 ? '' : 'S'} · ${edges.length} EDGE${edges.length === 1 ? '' : 'S'} · ${activeProjects} PROJECT${activeProjects === 1 ? '' : 'S'} ACTIVE${openBugs ? ` · ${openBugs} BUG${openBugs === 1 ? '' : 'S'} OPEN` : ''} · CORE LEARNING`;
+  }, [nodes, edges, projects]);
+  const displayStats = statsOverride ?? liveStats;
+
+  const briefing = useMemo(() => {
+    if (!projects.length) return 'The graph is quiet — capture a thought below to begin.';
+    const dayAgo = Date.now() - 86400000;
+    const recent = nodes.filter((n) => new Date(n.created_at).getTime() > dayAgo);
+    const stalest = [...projects].sort((a, b) => b.idleDays - a.idleDays)[0];
+    const healthiest = [...projects].sort((a, b) => b.health - a.health)[0];
+    const parts: string[] = [];
+    if (recent.length) parts.push(`${recent.length} new node${recent.length === 1 ? '' : 's'} in the last day`);
+    if (stalest?.isStale) parts.push(`${stalest.name} has gone quiet — ${stalest.idleDays}d dark`);
+    else if (healthiest) parts.push(`${healthiest.name} is running healthiest at ${Math.round(healthiest.health)}%`);
+    return parts.length ? parts.join(' · ') : 'All systems nominal.';
+  }, [projects, nodes]);
+
+  const recentActivity = useMemo(
+    () => [...nodes].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()).slice(0, 8),
+    [nodes],
+  );
+  useEffect(() => {
+    if (recentActivity.length < 2) return;
+    const id = setInterval(() => setTickIdx((i) => (i + 1) % recentActivity.length), 4000);
+    return () => clearInterval(id);
+  }, [recentActivity.length]);
+  const tickerNode = recentActivity.length ? recentActivity[tickIdx % recentActivity.length] : null;
+
+  // Ambient thought-particle queue (Step 8's local outbox). Only ever
+  // non-zero inside the packaged Tauri shell — pendingCaptureCount()
+  // rejects on the web build, so this degrades to "render nothing" there
+  // rather than crashing or showing a permanently-empty widget.
+  useEffect(() => {
+    let alive = true;
+    async function poll() {
+      try {
+        const n = await pendingCaptureCount();
+        if (alive) setPendingCount(n);
+      } catch {
+        if (alive) setPendingCount(0);
+      }
+    }
+    poll();
+    const id = setInterval(poll, 4000);
+    return () => {
+      alive = false;
+      clearInterval(id);
+    };
+  }, []);
 
   function blobR(a: number, t: number, R: number) {
     return R * (1 + 0.1 * Math.sin(3 * a + t * 1.1) + 0.06 * Math.sin(5 * a - t * 1.7) + 0.05 * Math.sin(2 * a + t * 0.6) + 0.05 * Math.sin(t * 0.9) + 0.16 * Math.max(0, Math.sin(t * 0.45)) ** 6 * Math.sin(7 * a + t * 3));
@@ -58,6 +165,35 @@ export default function NeuralCore({ active }: { active: boolean }) {
     if (!stage || !cv) return;
     cv.width = stage.clientWidth;
     cv.height = stage.clientHeight;
+  }
+
+  /** Replaces the old instant `xos-go` dispatch: a small glowing ghost eases
+   * from the core center to the clicked node's real screen position over
+   * 350ms (CSS transition, since #coreStage's nodes are plain DOM), then
+   * fires navigation — a real docking-flight beat instead of a teleport. */
+  function dockAndGo(navId: string, posId: string) {
+    pulse(posId);
+    const stage = stageRef.current;
+    const core = nodePos.current.core;
+    const dest = nodePos.current[posId];
+    if (!stage || !core || !dest) {
+      window.dispatchEvent(new CustomEvent('xos-go', { detail: navId }));
+      return;
+    }
+    const ghost = document.createElement('div');
+    ghost.className = 'dockPulse';
+    ghost.style.left = core[0] + 'px';
+    ghost.style.top = core[1] + 'px';
+    stage.appendChild(ghost);
+    requestAnimationFrame(() => {
+      ghost.style.left = dest[0] + 'px';
+      ghost.style.top = dest[1] + 'px';
+      ghost.classList.add('arrived');
+    });
+    setTimeout(() => {
+      ghost.remove();
+      window.dispatchEvent(new CustomEvent('xos-go', { detail: navId }));
+    }, 350);
   }
 
   function layoutCore() {
@@ -93,8 +229,8 @@ export default function NeuralCore({ active }: { active: boolean }) {
       el.onclick = onClick;
       stage.appendChild(el);
     };
-    modules.forEach((m) => mkNode(m, 'mod', () => window.dispatchEvent(new CustomEvent('xos-go', { detail: m.id }))));
-    projs.forEach((p) => mkNode(p, 'proj', () => window.dispatchEvent(new CustomEvent('xos-go', { detail: 'projects' }))));
+    modules.forEach((m) => mkNode(m, 'mod', () => dockAndGo(m.id, m.id)));
+    projs.forEach((p) => mkNode(p, 'proj', () => dockAndGo('projects', p.id)));
 
     svg.innerHTML = '';
     svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
@@ -139,11 +275,23 @@ export default function NeuralCore({ active }: { active: boolean }) {
       cc.arc(cx, cy, R * 4.4, 0, 6.29);
       cc.fill();
       cc.globalCompositeOperation = 'lighter';
+
+      // Mood/health color grading: healthT drives the dominant layer's hue
+      // (red = unhealthy -> cyan/green = healthy, the same mapping
+      // Observatory uses for project-health nebulae, so the Core's own
+      // "vitals" read consistently with the rest of the OS). workloadT
+      // drives the amber "activity" layer's brightness and the particle
+      // energy below — both computed from the real graph, not fixed.
+      const mood = moodRef.current;
+      const healthT = Math.max(0, Math.min(1, mood.health / 100));
+      const domHue = `${Math.round(255 - healthT * 210)},${Math.round(70 + healthT * 175)},${Math.round(90 + healthT * 90)}`;
+      const workloadT = Math.max(0, Math.min(1.4, mood.workload / 8));
+
       const layers = [
         { hue: '138,92,246', ph: 0, sc: 1.22, al: 0.3 },
         { hue: '255,45,120', ph: 2.1, sc: 1.1, al: 0.26 },
-        { hue: '255,184,0', ph: 4.2, sc: 1.0, al: 0.16 },
-        { hue: '0,245,255', ph: 1.05, sc: 0.92, al: 0.55 },
+        { hue: '255,184,0', ph: 4.2, sc: 1.0, al: 0.16 + workloadT * 0.08 },
+        { hue: domHue, ph: 1.05, sc: 0.92, al: 0.4 + healthT * 0.25 },
       ];
       layers.forEach((L) => {
         cc.beginPath();
@@ -187,7 +335,7 @@ export default function NeuralCore({ active }: { active: boolean }) {
       cc.globalAlpha = 1;
       const orbBase = Math.min(W, H);
       cParts.current.forEach((p) => {
-        p.a += p.sp * 0.012;
+        p.a += p.sp * 0.012 * (1 + workloadT * 0.6);
         const wob = 1 + 0.08 * Math.sin(t * 2 + p.a * 3);
         const x = cx + Math.cos(p.a) * p.r * orbBase * wob,
           y = cy + Math.sin(p.a) * p.r * orbBase * 0.8 * wob;
@@ -197,7 +345,7 @@ export default function NeuralCore({ active }: { active: boolean }) {
         cc.arc(x, y, p.s, 0, 6.29);
         cc.fill();
       });
-      if (Math.random() < 0.05) cStreams.current.push({ a: Math.random() * 6.29, d: 1, hue: ['#00F5FF', '#FF2D78', '#8B5CF6'][Math.floor(Math.random() * 3)] });
+      if (Math.random() < 0.05 + workloadT * 0.05) cStreams.current.push({ a: Math.random() * 6.29, d: 1, hue: ['#00F5FF', '#FF2D78', '#8B5CF6'][Math.floor(Math.random() * 3)] });
       cStreams.current = cStreams.current.filter((s) => s.d > 0.12);
       cStreams.current.forEach((s) => {
         s.d -= 0.016;
@@ -228,6 +376,60 @@ export default function NeuralCore({ active }: { active: boolean }) {
   useEffect(() => {
     if (active) setTimeout(() => { coreResize(); layoutCore(); }, 50);
   }, [active]);
+
+  // Command palette (Cmd/Ctrl+K) — scoped to fire only while the Core room
+  // is active, per the Amendment's own placement of this directive under
+  // Neural Core ("jump to any room without leaving the Core").
+  useEffect(() => {
+    if (!active) return;
+    function onKey(e: KeyboardEvent) {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        setPaletteQuery('');
+        setPaletteOpen((v) => !v);
+      } else if (e.key === 'Escape') {
+        setPaletteOpen(false);
+      }
+    }
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [active]);
+
+  useEffect(() => {
+    if (paletteOpen) setTimeout(() => paletteInputRef.current?.focus(), 30);
+  }, [paletteOpen]);
+
+  useEffect(() => {
+    setPaletteSel(0);
+  }, [paletteQuery, paletteOpen]);
+
+  const filteredRooms = ROOMS.filter((r) => r.name.toLowerCase().includes(paletteQuery.trim().toLowerCase()));
+
+  function goToRoom(id: string) {
+    setPaletteOpen(false);
+    window.dispatchEvent(new CustomEvent('xos-go', { detail: id }));
+  }
+
+  function paletteKeyDown(e: ReactKeyboardEvent<HTMLInputElement>) {
+    if (e.key === 'Escape') {
+      setPaletteOpen(false);
+      return;
+    }
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      setPaletteSel((i) => Math.min(i + 1, Math.max(0, filteredRooms.length - 1)));
+      return;
+    }
+    if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      setPaletteSel((i) => Math.max(i - 1, 0));
+      return;
+    }
+    if (e.key === 'Enter') {
+      const room = filteredRooms[paletteSel];
+      if (room) goToRoom(room.id);
+    }
+  }
 
   function pulse(id: string) {
     const el = document.getElementById('n-' + id);
@@ -300,7 +502,8 @@ export default function NeuralCore({ active }: { active: boolean }) {
         const tag = liveResult!.liveAI ? '◈ xAI (LIVE)' : '◈ xAI (KEY NOT SET)';
         setMsg(`${tag} · ${first.kind.toUpperCase()} → ${path.slice(1).map(nameOf).join(' → ')} · "${first.reasoning}"`);
         setTimeout(() => setMsg(''), 5200);
-        setStats(liveResult!.liveAI ? 'LIVE NODE WRITTEN TO SUPABASE · CORE LEARNING' : 'NODE WRITTEN (fallback mode) · SET ANTHROPIC_API_KEY FOR LIVE AI');
+        setStatsOverride(liveResult!.liveAI ? 'LIVE NODE WRITTEN TO SUPABASE · CORE LEARNING' : 'NODE WRITTEN (fallback mode) · SET ANTHROPIC_API_KEY FOR LIVE AI');
+        setTimeout(() => setStatsOverride(null), 4500);
       }, t);
       return;
     }
@@ -330,7 +533,8 @@ export default function NeuralCore({ active }: { active: boolean }) {
     setTimeout(() => {
       setMsg(`◈ ${c.label} (OFFLINE MOCK) → ${path.slice(1).map(nameOf).join(' → ')} · NODE CREATED`);
       setTimeout(() => setMsg(''), 3600);
-      setStats('148 NODES · 314 EDGES · CORE LEARNING');
+      setStatsOverride('NODE QUEUED (offline mock) · CORE LEARNING');
+      setTimeout(() => setStatsOverride(null), 4500);
     }, t);
   }
 
@@ -340,16 +544,30 @@ export default function NeuralCore({ active }: { active: boolean }) {
       <div id="coreStage" ref={stageRef}>
         <svg id="lines" ref={svgRef} />
         <div id="coreGreet">
-          <h1>GOOD EVENING, CAPTAIN</h1>
-          <p id="coreStats">{stats}</p>
+          <h1>{greeting}</h1>
+          <p id="coreStats">{displayStats}</p>
+          <p id="coreBriefing">{briefing}</p>
+          {tickerNode && (
+            <p id="coreTicker" key={tickerNode.id}>
+              {KIND_ICON[tickerNode.kind] ?? '◈'} {(tickerNode.title || tickerNode.body || '').slice(0, 48)} · {relTime(tickerNode.created_at)}
+            </p>
+          )}
         </div>
       </div>
       <div id="capWrap">
+        {pendingCount > 0 && (
+          <div id="pendingQueue" title={`${pendingCount} thought${pendingCount === 1 ? '' : 's'} queued offline`}>
+            {Array.from({ length: Math.min(pendingCount, 6) }).map((_, i) => (
+              <span key={i} className="pendingDot" style={{ animationDelay: `${i * 0.15}s` }} />
+            ))}
+            <span className="pendingLabel">{pendingCount} QUEUED OFFLINE</span>
+          </div>
+        )}
         <div id="capMsg">{msg}</div>
         <div id="capBar">
           <input
             id="thought"
-            placeholder="Tell the Core anything…"
+            placeholder="Tell the Core anything… (⌘K to jump anywhere)"
             autoComplete="off"
             value={thought}
             onChange={(e) => setThought(e.target.value)}
@@ -358,6 +576,36 @@ export default function NeuralCore({ active }: { active: boolean }) {
           <button onClick={coreCapture}>◈</button>
         </div>
       </div>
+      {paletteOpen && (
+        <div id="cmdPaletteOverlay" onClick={() => setPaletteOpen(false)}>
+          <div id="cmdPalette" onClick={(e) => e.stopPropagation()}>
+            <input
+              ref={paletteInputRef}
+              id="cmdPaletteInput"
+              placeholder="Jump to a room…"
+              value={paletteQuery}
+              onChange={(e) => setPaletteQuery(e.target.value)}
+              onKeyDown={paletteKeyDown}
+            />
+            <div id="cmdPaletteList">
+              {filteredRooms.length === 0 && <div className="cmdEmpty">No rooms match "{paletteQuery}"</div>}
+              {filteredRooms.map((r, i) => (
+                <div
+                  key={r.id}
+                  className={`cmdRow ${i === paletteSel ? 'sel' : ''}`}
+                  onMouseEnter={() => setPaletteSel(i)}
+                  onClick={() => goToRoom(r.id)}
+                >
+                  <span className="cmdIcon">{r.icon}</span>
+                  <span className="cmdName">{r.name}</span>
+                  <span className="cmdSection">{r.section}</span>
+                </div>
+              ))}
+            </div>
+            <div id="cmdPaletteHint">↑↓ navigate · ↵ jump · esc close</div>
+          </div>
+        </div>
+      )}
     </section>
   );
 }
