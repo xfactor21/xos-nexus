@@ -1,5 +1,6 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useCoreGraph } from '../../stores/coreGraph';
+import { nodeToBug, nodeToTask } from '../../core/mappers';
 
 type Zone = 'zboard' | 'zdocs' | 'zbugs' | 'zfeed';
 
@@ -26,8 +27,14 @@ export default function Projects({ active }: { active: boolean }) {
   const [openId, setOpenId] = useState<string | null>(null);
   const [zone, setZone] = useState<Zone>('zboard');
   const projects = useCoreGraph((s) => s.projects);
-  const tasks = useCoreGraph((s) => s.tasks());
-  const bugs = useCoreGraph((s) => s.bugs());
+  // Select the raw, store-stable `nodes` array and derive tasks/bugs locally
+  // via useMemo, rather than a store selector that builds a fresh array on
+  // every call (`(s) => s.tasks()` style) — that pattern makes
+  // useSyncExternalStore's snapshot unstable and can cascade into "Maximum
+  // update depth exceeded". Found and fixed across all rooms that used it.
+  const nodes = useCoreGraph((s) => s.nodes);
+  const tasks = useMemo(() => nodes.filter((n) => n.kind === 'task').map(nodeToTask), [nodes]);
+  const bugs = useMemo(() => nodes.filter((n) => n.kind === 'bug').map(nodeToBug), [nodes]);
   const advanceTask = useCoreGraph((s) => s.advanceTask);
   const cycleBug = useCoreGraph((s) => s.cycleBug);
 

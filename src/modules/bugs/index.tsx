@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useCoreGraph } from '../../stores/coreGraph';
+import { nodeToBug } from '../../core/mappers';
 import type { BugSeverity, BugStatus } from '../../core/types';
 
 type StatusFilter = 'all' | 'open' | 'fixed';
@@ -14,7 +15,11 @@ const SEVERITY_ORDER: BugSeverity[] = ['critical', 'high', 'medium', 'low', 'tri
  * affordance (not just a caption), full-text search, and saved filter
  * views. */
 export default function Bugs({ active }: { active: boolean }) {
-  const bugs = useCoreGraph((s) => s.bugs());
+  // See Projects room for why this derives locally via useMemo instead of
+  // a `(s) => s.bugs()`-style store selector (unstable snapshot → risk of
+  // "Maximum update depth exceeded").
+  const nodes = useCoreGraph((s) => s.nodes);
+  const bugs = useMemo(() => nodes.filter((n) => n.kind === 'bug').map(nodeToBug), [nodes]);
   const cycleBug = useCoreGraph((s) => s.cycleBug);
   const updateBug = useCoreGraph((s) => s.updateBug);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');

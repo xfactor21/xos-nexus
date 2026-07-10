@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react';
 import type { DissectedPiece } from '../../core/types';
-import { liveClassify, offlineCommit } from '../../lib/copilotClient';
+import { liveClassify } from '../../lib/copilotClient';
+import { commitOrQueue } from '../../lib/offlineSync';
 
 interface CapEntry {
   text: string;
@@ -97,8 +98,17 @@ export default function Capture({ active }: { active: boolean }) {
     } catch (err) {
       console.error('commitCap: liveClassify failed, writing via offline fallback', err);
       try {
-        await offlineCommit(v);
-        setCaps((c) => c.map((entry, i) => (i === 0 && entry.time === 'SENDING…' ? { ...entry, time: '✓ JUST NOW (offline mock)' } : entry)));
+        // Step 8: commitOrQueue is offlineCommit with one extra path — if
+        // Supabase itself is unreachable (genuinely offline, not just "AI
+        // unavailable") and we're running inside the packaged Tauri shell,
+        // the capture is queued to local SQLite instead of failing, and
+        // syncEngine drains it back to Supabase once the network returns.
+        const { queued } = await commitOrQueue(v);
+        setCaps((c) =>
+          c.map((entry, i) =>
+            i === 0 && entry.time === 'SENDING…' ? { ...entry, time: queued ? '◈ QUEUED — will sync when reconnected' : '✓ JUST NOW (offline mock)' } : entry,
+          ),
+        );
       } catch (fallbackErr) {
         console.error('commitCap: offline fallback also failed', fallbackErr);
         setCaps((c) => c.map((entry, i) => (i === 0 && entry.time === 'SENDING…' ? { ...entry, time: '⚠ NOT SAVED — retry later' } : entry)));

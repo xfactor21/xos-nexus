@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
-import { liveClassify, offlineClassify, offlineCommit } from '../../lib/copilotClient';
+import { liveClassify, offlineClassify } from '../../lib/copilotClient';
+import { commitOrQueue } from '../../lib/offlineSync';
 
 const modules = [
   { id: 'capture', ic: '💭', nm: 'CAPTURE' },
@@ -307,8 +308,11 @@ export default function NeuralCore({ active }: { active: boolean }) {
     // fallback: local mock classifier — Step 3 also writes a real node here
     // now (fire-and-forget; the animation below isn't gated on it) so a
     // capture still shows up live in Projects/Observatory even when live AI
-    // is unavailable, instead of just being a visual-only demo.
-    offlineCommit(v).catch((err) => console.error('coreCapture: offline fallback write failed', err));
+    // is unavailable, instead of just being a visual-only demo. Step 8:
+    // commitOrQueue additionally queues to local SQLite (inside the Tauri
+    // shell only) instead of losing the capture if Supabase itself is
+    // unreachable.
+    commitOrQueue(v).catch((err) => console.error('coreCapture: offline fallback write failed', err));
     const c = offlineClassify(v);
     const path = ['core', ...c.hops.slice(1), c.proj];
     animLine([bar.left + bar.width / 2 - st.left, bar.top - st.top], nodePos.current.core, '#FF2D78');

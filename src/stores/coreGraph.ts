@@ -9,7 +9,6 @@ import type {
   MilestoneRecord,
   NodeRecord,
   ProjectRecord,
-  TaskNode,
 } from '../core/types';
 import { bugStatusToDbStatus, nodeToBug, nodeToTask, rowToMemory, rowToProject, taskStatusToDbStatus } from '../core/mappers';
 
@@ -84,12 +83,6 @@ interface CoreGraphState {
   loaded: boolean;
   error: string | null;
 
-  /** Derived, convenience views over `nodes` — computed on read, not
-   * separately synced state, so there's exactly one place realtime events
-   * have to land. */
-  tasks: () => TaskNode[];
-  bugs: () => BugNode[];
-
   hydrate: (ownerId: string) => Promise<void>;
   subscribe: (ownerId: string) => () => void;
   reset: () => void;
@@ -128,9 +121,6 @@ export const useCoreGraph = create<CoreGraphState>((set, get) => ({
   loading: false,
   loaded: false,
   error: null,
-
-  tasks: () => get().nodes.filter((n) => n.kind === 'task').map(nodeToTask),
-  bugs: () => get().nodes.filter((n) => n.kind === 'bug').map(nodeToBug),
 
   hydrate: async (ownerId) => {
     set({ loading: true, error: null, ownerId });

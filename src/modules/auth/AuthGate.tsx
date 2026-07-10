@@ -47,6 +47,12 @@ export default function AuthGate() {
         else if (needsConfirmation) setNotice(`◈ ACCOUNT CREATED — check ${email.trim()} to confirm, then sign in.`);
         // else: confirmation is off for this project, session started immediately
       }
+    } catch (err) {
+      // Belt-and-suspenders: any unexpected throw (not just an {error}
+      // result) still lands as a normal on-screen message instead of an
+      // unhandled rejection.
+      console.error('AuthGate.submit failed unexpectedly', err);
+      setError(err instanceof Error ? err.message : 'Something went wrong — try again.');
     } finally {
       setBusy(false);
     }

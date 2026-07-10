@@ -23,6 +23,15 @@ interface AuthState {
   signUpWithPassword: (email: string, password: string) => Promise<{ error: string | null; needsConfirmation: boolean }>;
   sendMagicLink: (email: string) => Promise<{ error: string | null }>;
   signOut: () => Promise<void>;
+  /** Step 7 ("Onboarding"): persists `has_completed_onboarding` on the
+   * Captain's own auth record via `user_metadata` — no migration needed
+   * (there's no `profiles` table in the deployed schema, and `memories.kind`'s
+   * CHECK constraint doesn't allow a 'system' row type, so a new column or a
+   * fake memory row were both non-starters without a schema change nobody
+   * asked for). `updateUser` round-trips the full, fresh user object back
+   * from Supabase, so `user` here stays in sync with what's actually
+   * persisted rather than being set optimistically. */
+  markOnboardingComplete: () => Promise<void>;
 }
 
 let initialized = false;
@@ -77,5 +86,17 @@ export const useAuthStore = create<AuthState>((set) => ({
 
   signOut: async () => {
     await supabase.auth.signOut();
+  },
+
+  markOnboardingComplete: async () => {
+    const { data, error } = await supabase.auth.updateUser({ data: { has_completed_onboarding: true } });
+    if (!error && data.user) {
+      set({ user: data.user });
+    } else if (error) {
+      // Non-fatal: worst case the Captain sees the full cinematic again
+      // next login instead of the abbreviated one. Never block entry to
+      // the app over this.
+      console.error('markOnboardingComplete failed', error);
+    }
   },
 }));
