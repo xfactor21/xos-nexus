@@ -53,7 +53,9 @@ npm run tauri dev     # run the desktop shell in dev mode
 npm run tauri build   # produce a packaged installer for the current platform
 ```
 
-`src-tauri/` is a standard Tauri 2 project. It was scaffolded and built (Linux `.deb`, verified to launch cleanly) from this Linux cloud sandbox; Windows/macOS installers need to be built on those platforms (or via a CI matrix) — that's a normal Tauri cross-platform constraint, not something specific to this app.
+`src-tauri/` is a standard Tauri 2 project. It was scaffolded and built (Linux `.deb`, verified to launch cleanly) from this Linux cloud sandbox; Windows/macOS installers need to be built on those platforms — a normal Tauri cross-platform constraint (its bundler shells out to platform-native tooling: WiX/NSIS on Windows, `hdiutil` on macOS), not something specific to this app.
+
+**Windows/macOS/Linux installers via CI:** `.github/workflows/tauri-build.yml` builds all three on GitHub-hosted runners — trigger it manually from the repo's Actions tab (`Build Tauri Shell` → `Run workflow`), or push a `v*` tag. Installers land as downloadable artifacts on the workflow run (no public GitHub Release is created).
 
 Offline-first capture: `src/lib/localDb.ts` + `src/lib/offlineSync.ts` implement an outbox queue against a local SQLite database (`@tauri-apps/plugin-sql`) rather than a full bidirectional mirror of every Supabase table. A capture made while offline (inside the packaged shell) lands in `pending_captures` instead of being lost; `startSyncEngine()` (wired in `App.tsx`, no-ops outside Tauri) drains it back to Supabase the moment connectivity returns. This is scoped to what the handoff's Step 8 acceptance test actually requires ("disconnect network, capture a thought, reconnect — it appears in Supabase without data loss"), not a general-purpose sync engine for every table.
 

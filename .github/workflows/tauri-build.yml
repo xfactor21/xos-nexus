@@ -1,0 +1,85 @@
+name: Build Tauri Shell
+
+# Step 8 ("Shell Packaging"): produces real, installable desktop packages
+# for Windows/macOS/Linux. Windows and macOS installers can only be built
+# on their own platforms (Tauri's bundler shells out to platform-native
+# tooling — WiX/NSIS on Windows, hdiutil on macOS — cross-compiling them
+# from Linux isn't supported), so this runs the matrix on GitHub-hosted
+# runners for each OS rather than trying to do it from one machine.
+#
+# Trigger manually from the Actions tab (workflow_dispatch) whenever you
+# want fresh installers, or push a `v*` tag for a version-stamped build.
+# This does NOT create a public GitHub Release — it just uploads the
+# installers as downloadable workflow artifacts, so nothing goes out
+# publicly until you decide to ship it somewhere.
+
+on:
+  workflow_dispatch: {}
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: windows-latest
+            artifact-name: xos-nexus-windows
+          - platform: macos-latest
+            artifact-name: xos-nexus-macos
+          - platform: ubuntu-24.04
+            artifact-name: xos-nexus-linux
+
+    runs-on: ${{ matrix.platform }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Linux system dependencies
+        if: matrix.platform == 'ubuntu-24.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libgtk-3-dev \
+            librsvg2-dev \
+            patchelf \
+            libayatana-appindicator3-dev \
+            libjavascriptcoregtk-4.1-dev \
+            libsoup-3.0-dev \
+            build-essential
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Build Tauri shell
+        run: npm run tauri build
+
+      - name: Upload installers
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact-name }}
+          path: |
+            src-tauri/target/release/bundle/msi/*.msi
+            src-tauri/target/release/bundle/nsis/*.exe
+            src-tauri/target/release/bundle/dmg/*.dmg
+            src-tauri/target/release/bundle/macos/*.app
+            src-tauri/target/release/bundle/deb/*.deb
+            src-tauri/target/release/bundle/appimage/*.AppImage
+          if-no-files-found: ignore
