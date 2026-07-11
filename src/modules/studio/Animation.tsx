@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { AnimationEngine, ANIM_PROPS } from './animation/AnimationEngine';
 import type { AnimObject, AnimProp, EaseType } from './animation/AnimationEngine';
+import Icon from '../../design-system/icons/Icon';
+import type { IconName } from '../../design-system/icons/registry';
 
 type Tool = 'select' | 'rect' | 'ellipse' | 'text' | 'bone';
 
@@ -304,29 +306,29 @@ export default function Animation({ boardId, onExit }: { boardId: string; onExit
     <div id="animRoot">
       <div id="animTopbar">
         <button className="chip" onClick={onExit}>
-          ◂ ALL BOARDS
+          <Icon name="chevronLeft" size={12} /> ALL BOARDS
         </button>
         <div id="animToolgroup">
           {(
             [
-              ['select', '▽', 'Select / Move'],
-              ['rect', '▭', 'Add Rectangle'],
-              ['ellipse', '◯', 'Add Ellipse'],
-              ['text', '🅣', 'Add Text'],
-              ['bone', '🦴', 'Add Root Bone'],
-            ] as [Tool, string, string][]
+              ['select', 'select', 'Select / Move'],
+              ['rect', 'rect', 'Add Rectangle'],
+              ['ellipse', 'circle', 'Add Ellipse'],
+              ['text', 'text', 'Add Text'],
+              ['bone', 'bone', 'Add Root Bone'],
+            ] as [Tool, IconName, string][]
           ).map(([t, icon, label]) => (
             <span key={t} className={`tool ${tool === t ? 'on' : ''}`} onClick={() => setTool(t)} title={label}>
-              {icon}
+              <Icon name={icon} size={14} />
             </span>
           ))}
         </div>
         <div id="animTopActions">
           <button className="chip" disabled={!eng.canUndo()} onClick={() => { eng.undo(); bump(); }}>
-            ↺ UNDO
+            <Icon name="undo" size={12} /> UNDO
           </button>
           <button className="chip" disabled={!eng.canRedo()} onClick={() => { eng.redo(); bump(); }}>
-            ↻ REDO
+            <Icon name="redo" size={12} /> REDO
           </button>
           <span
             className={`chip small ${eng.doc.onionSkin ? 'on' : ''}`}
@@ -379,7 +381,7 @@ export default function Animation({ boardId, onExit }: { boardId: string; onExit
                 style={{ borderColor: selectedId === o.id ? 'var(--cyan)' : undefined, cursor: 'pointer' }}
               >
                 <span className="lbl">
-                  {o.type === 'bone' ? '🦴' : o.type === 'rect' ? '▭' : o.type === 'ellipse' ? '◯' : '🅣'} {o.name}
+                  <Icon name={o.type === 'bone' ? 'bone' : o.type === 'rect' ? 'rect' : o.type === 'ellipse' ? 'circle' : 'text'} size={12} /> {o.name}
                 </span>
               </div>
             ))}
@@ -452,11 +454,11 @@ export default function Animation({ boardId, onExit }: { boardId: string; onExit
                         data-prop={p}
                         data-testid={`anim-key-${p}`}
                       >
-                        {hasKey ? '◆' : '◇'}
+                        <Icon name="diamond" size={10} glow={hasKey ? 'cyan' : 'none'} style={hasKey ? undefined : { opacity: 0.4 }} />
                       </span>
                       {hasKey && (
                         <span className="chip small" onClick={() => deleteKeyAt(p)} title="Remove keyframe">
-                          ✕
+                          <Icon name="close" size={11} />
                         </span>
                       )}
                     </div>
@@ -493,16 +495,19 @@ export default function Animation({ boardId, onExit }: { boardId: string; onExit
       <div id="animTimeline">
         <div id="animPlayControls">
           <span className="chip small" onClick={() => setFrame(0)}>
-            ⏮
+            <Icon name="skipBack" size={12} />
           </span>
           <span className="chip small" onClick={() => setFrame((f) => Math.max(0, f - 1))}>
-            ◀
+            <Icon name="chevronLeft" size={12} />
           </span>
           <span className="chip small" onClick={() => setIsPlaying((p) => !p)} id="animPlayBtn">
-            {isPlaying ? '⏸' : '▶'}
+            <Icon name={isPlaying ? 'pause' : 'play'} size={14} />
           </span>
+          {/* step forward one frame — the mirror of the chevronLeft step-back
+              button above (this button sets frame to f+1, it does not play
+              to the end), so chevronRight reads truer than reusing `play`. */}
           <span className="chip small" onClick={() => setFrame((f) => Math.min(eng.doc.frameCount - 1, f + 1))}>
-            ▶|
+            <Icon name="chevronRight" size={12} />
           </span>
           <span
             className={`chip small ${eng.doc.loop ? 'on' : ''}`}

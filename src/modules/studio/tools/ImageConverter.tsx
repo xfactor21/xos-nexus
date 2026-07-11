@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import ToolShell from './ToolShell';
+import Icon from '../../../design-system/icons/Icon';
 
 type OutFormat = 'png' | 'jpeg' | 'webp';
 
@@ -215,7 +216,7 @@ export default function ImageConverter({ boardId, onExit }: { boardId: string; o
 
         {resultBlob && sourceFile && (
           <div className="toolHint">
-            {kb(sourceFile.size)} → {kb(resultBlob.size)} ({pctChange !== null && pctChange > 0 ? '+' : ''}
+            {kb(sourceFile.size)} <Icon name="arrowRight" size={11} /> {kb(resultBlob.size)} ({pctChange !== null && pctChange > 0 ? '+' : ''}
             {pctChange}%)
           </div>
         )}

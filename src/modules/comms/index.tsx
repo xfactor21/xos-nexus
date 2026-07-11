@@ -1,4 +1,6 @@
 import { useState } from 'react';
+import Icon from '../../design-system/icons/Icon';
+import AmbientField from '../../design-system/background/AmbientField';
 
 interface Msg {
   who: 'ai' | 'me';
@@ -29,20 +31,31 @@ export default function Comms({ active }: { active: boolean }) {
   }
 
   return (
-    <section className={`room ${active ? 'on' : ''}`} id="r-comms">
-      <h2 className="rh">📡 COMMS</h2>
+    <section className={`room ambient ${active ? 'on' : ''}`} id="r-comms">
+      <AmbientField mood="cyan" density={22} active={active} parallax />
+      <div className="roomInner">
+      <h2 className="rh">
+        <Icon name="comms" size={16} glow="cyan" /> COMMS
+      </h2>
       <div className="rsub">TRANSMISSION LINE TO xAI. ASK ABOUT YOUR UNIVERSE.</div>
       <div id="chat">
         {msgs.map((m, i) => (
           <div className={`msg ${m.who}`} key={i}>
-            {m.who === 'ai' && <b>◈ xAI</b>}
+            {m.who === 'ai' && (
+              <b>
+                <Icon name="xai" size={12} glow="cyan" /> xAI
+              </b>
+            )}
             {m.text}
           </div>
         ))}
       </div>
       <div id="chatBar">
         <input placeholder="Transmit to xAI…" autoComplete="off" value={val} onChange={(e) => setVal(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && send()} />
-        <button onClick={send}>▸</button>
+        <button onClick={send}>
+          <Icon name="send" size={14} />
+        </button>
+      </div>
       </div>
     </section>
   );

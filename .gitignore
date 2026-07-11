@@ -12,3 +12,9 @@ dist-ssr/
 # localStorage) — dev-only test scaffolding, deliberately never shipped.
 test-studio.html
 test-studio.tsx
+
+# Scratch Playwright/screenshot harness (mounts <Shell /> directly, bypassing
+# Supabase Auth, for internal design-system screenshot verification) — same
+# dev-only precedent as test-studio.* above, deliberately never shipped.
+test-shell.html
+test-shell.tsx

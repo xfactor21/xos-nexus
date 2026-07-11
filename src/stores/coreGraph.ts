@@ -30,7 +30,7 @@ import { bugStatusToDbStatus, nodeToBug, nodeToTask, rowToMemory, rowToProject, 
 
 const seedMilestones: MilestoneRecord[] = [
   {
-    id: 'v0.1.0', version: 'v0.1.0', title: 'FOUNDATION', statusLabel: '✓ SHIPPED · SPRINT 001', state: 'shipped',
+    id: 'v0.1.0', version: 'v0.1.0', title: 'FOUNDATION', statusLabel: 'SHIPPED · SPRINT 001', state: 'shipped',
     releaseDate: '2026-06-20', order: 0,
     items: [
       { label: 'Boot screen · dashboard · sidebar', done: true },
@@ -39,7 +39,7 @@ const seedMilestones: MilestoneRecord[] = [
     ],
   },
   {
-    id: 'v0.5.0', version: 'v0.5.0', title: 'ROOMS ONLINE', statusLabel: '▸ CURRENT · SPRINT 002', state: 'current',
+    id: 'v0.5.0', version: 'v0.5.0', title: 'ROOMS ONLINE', statusLabel: 'CURRENT · SPRINT 002', state: 'current',
     releaseDate: '2026-07-15', order: 1,
     items: [
       { label: 'Supabase Neural Core schema', done: true },
@@ -267,7 +267,10 @@ export const useCoreGraph = create<CoreGraphState>((set, get) => ({
       if (!mem) return s;
       return {
         milestones: s.milestones.map((m) =>
-          m.id === milestoneId ? { ...m, items: [...m.items, { label: `◈ ${mem.content}`, done: false }] } : m,
+          // Amendment v0.6 step 1: `fromMemory` flag replaces the embedded ◈
+          // text marker — the render site (Roadmaps) renders the xAI icon
+          // itself instead of matching on string content.
+          m.id === milestoneId ? { ...m, items: [...m.items, { label: mem.content, done: false, fromMemory: true }] } : m,
         ),
       };
     }),

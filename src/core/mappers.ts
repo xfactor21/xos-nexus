@@ -15,7 +15,13 @@ import type { BugNode, BugSeverity, EdgeRecord, MemoryRecord, NodeRecord, Projec
 export function nodeToTask(n: NodeRecord): TaskNode {
   const taskStatus = n.status === 'done' || n.status === 'archived' ? 2 : n.status === 'in_progress' ? 1 : 0;
   const meta = (n.metadata ?? {}) as Record<string, unknown>;
-  const tags = Array.isArray(meta.tags) ? (meta.tags as string[]) : n.ai_classified ? ['◈ FROM CAPTURE'] : [];
+  // Amendment v0.6 step 1: tag text no longer embeds the ◈ glyph as an
+  // ad-hoc "this is AI-authored" marker for downstream regex-matching —
+  // that was a fragile pattern (a UI concern smuggled into data). The tag
+  // reads as plain text; call sites that want to style AI-authored tags
+  // differently match on the text itself (see Projects' `/FROM CAPTURE/`
+  // check) or, better, should read `n.ai_classified` directly.
+  const tags = Array.isArray(meta.tags) ? (meta.tags as string[]) : n.ai_classified ? ['FROM CAPTURE'] : [];
   return { ...n, kind: 'task', taskStatus, tags };
 }
 
@@ -63,7 +69,12 @@ export function rowToProject(
     id: p.id,
     slug: p.slug,
     name: p.name,
-    icon: p.icon ?? '📂',
+    // Amendment v0.6 step 1: default is now an IconName ('projects', the
+    // same key the sidebar's Projects room icon uses) instead of a raw
+    // emoji fallback. An existing row's own `p.icon` may still legitimately
+    // be a legacy emoji or Captain-chosen character — see DataIcon.tsx for
+    // why that's a disclosed exception, not silently broken.
+    icon: p.icon ?? 'projects',
     color: p.color ?? '#00F5FF',
     status: (p.status as ProjectRecord['status']) ?? 'active',
     health,

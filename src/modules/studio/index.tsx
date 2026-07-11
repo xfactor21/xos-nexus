@@ -2,6 +2,9 @@ import { useEffect, useState } from 'react';
 import type { MouseEvent as RMouseEvent } from 'react';
 import type { StudioBoard, StudioMode } from './types';
 import { IMPLEMENTED_MODES } from './types';
+import Icon from '../../design-system/icons/Icon';
+import type { IconName } from '../../design-system/icons/registry';
+import AmbientField from '../../design-system/background/AmbientField';
 import { loadBoards, createBoard, touchBoard, renameBoard, deleteBoard } from './boards';
 import DrawPaint from './draw/DrawPaint';
 import Wireframe from './Wireframe';
@@ -20,7 +23,7 @@ import BackgroundRemover from './tools/BackgroundRemover';
 
 interface ModeMeta {
   label: string;
-  icon: string;
+  icon: IconName;
   blurb: string;
   ref: string;
   category: 'primary' | 'utility';
@@ -39,32 +42,32 @@ interface ModeMeta {
  */
 const MODE_META: Record<StudioMode, ModeMeta> = {
   // ---- primary 8 ----
-  draw: { label: 'Draw / Paint', icon: '🖌', blurb: 'Layers, real brushes, blend modes, filters', ref: 'Photoshop-caliber', category: 'primary' },
-  wireframe: { label: 'Wireframe / Prototype', icon: '▭', blurb: 'Infinite canvas, frames, sticky notes, flows', ref: 'Figma-caliber', category: 'primary' },
-  animation: { label: 'Animation', icon: '🎬', blurb: 'Timeline, keyframes, tweening', ref: 'After Effects-caliber', category: 'primary' },
-  vector: { label: 'Vector / Illustration', icon: '✒', blurb: 'Bezier pen, paths, boolean ops', ref: 'Illustrator-caliber', category: 'primary' },
-  diagram: { label: 'Diagram / Flowchart', icon: '🔗', blurb: 'Flowcharts, connectors, swimlanes', ref: 'Whimsical-caliber', category: 'primary' },
-  moodboard: { label: 'Moodboard / Collage', icon: '◆', blurb: 'Swatches, references, style tiles', ref: 'Milanote-caliber', category: 'primary' },
-  presentation: { label: 'Presentation / Slide Deck', icon: '▤', blurb: 'Slides, layouts, speaker notes', ref: 'Keynote-caliber', category: 'primary' },
-  iconDesign: { label: 'Icon Design', icon: '◉', blurb: 'Pixel-grid + vector icon sets', ref: 'Icon-kit-caliber', category: 'primary' },
+  draw: { label: 'Draw / Paint', icon: 'brush', blurb: 'Layers, real brushes, blend modes, filters', ref: 'Photoshop-caliber', category: 'primary' },
+  wireframe: { label: 'Wireframe / Prototype', icon: 'rect', blurb: 'Infinite canvas, frames, sticky notes, flows', ref: 'Figma-caliber', category: 'primary' },
+  animation: { label: 'Animation', icon: 'clapper', blurb: 'Timeline, keyframes, tweening', ref: 'After Effects-caliber', category: 'primary' },
+  vector: { label: 'Vector / Illustration', icon: 'penTool', blurb: 'Bezier pen, paths, boolean ops', ref: 'Illustrator-caliber', category: 'primary' },
+  diagram: { label: 'Diagram / Flowchart', icon: 'diagram', blurb: 'Flowcharts, connectors, swimlanes', ref: 'Whimsical-caliber', category: 'primary' },
+  moodboard: { label: 'Moodboard / Collage', icon: 'image', blurb: 'Swatches, references, style tiles', ref: 'Milanote-caliber', category: 'primary' },
+  presentation: { label: 'Presentation / Slide Deck', icon: 'slidedeck', blurb: 'Slides, layouts, speaker notes', ref: 'Keynote-caliber', category: 'primary' },
+  iconDesign: { label: 'Icon Design', icon: 'hexagon', blurb: 'Pixel-grid + vector icon sets', ref: 'Icon-kit-caliber', category: 'primary' },
   // ---- utility tools ("Show More") ----
-  imageConverter: { label: 'Image Converter', icon: '⇄', blurb: 'Real PNG/JPEG/WebP conversion', ref: 'utility', category: 'utility' },
-  backgroundRemover: { label: 'Background Remover', icon: '✂', blurb: 'Edge-seeded color-distance cutout', ref: 'utility', category: 'utility' },
-  paletteGenerator: { label: 'Color Palette Generator', icon: '🎨', blurb: 'From an image or a base color', ref: 'utility', category: 'utility' },
-  quickPhotoEditor: { label: 'Quick Photo Editor', icon: '🖼', blurb: 'Crop, rotate, flip, brightness/contrast', ref: 'utility', category: 'utility' },
-  logoMaker: { label: 'Logo Maker', icon: '◈', blurb: 'Icon + wordmark combiner', ref: 'utility', category: 'utility' },
-  pixelArt: { label: 'Pixel Art Editor', icon: '▦', blurb: 'Grid painter, crisp nearest-neighbor export', ref: 'utility', category: 'utility' },
-  videoTrimmer: { label: 'Video Trimmer', icon: '▶', blurb: 'Trim a clip to a real exported cut', ref: 'utility', category: 'utility' },
-  audioTrimmer: { label: 'Audio Waveform Trimmer', icon: '〜', blurb: 'Real waveform, trim, export WAV', ref: 'utility', category: 'utility' },
-  pdfMarkup: { label: 'PDF Markup / Annotator', icon: '📄', blurb: 'Mark up an existing PDF', ref: 'utility', category: 'utility' },
-  qrGenerator: { label: 'QR / Barcode Generator', icon: '▧', blurb: 'Real scannable QR encoding', ref: 'utility', category: 'utility' },
-  memeGenerator: { label: 'Meme Generator', icon: '💬', blurb: 'Classic caption-and-image tool', ref: 'utility', category: 'utility' },
-  fontPairing: { label: 'Font Pairing Explorer', icon: 'Aa', blurb: 'Real Google Fonts, live preview', ref: 'utility', category: 'utility' },
-  screenshotAnnotator: { label: 'Screenshot Annotator', icon: '↗', blurb: 'Arrows, shapes, callouts on an image', ref: 'utility', category: 'utility' },
-  gifMaker: { label: 'GIF Maker', icon: '▣', blurb: 'Frames-to-GIF exporter', ref: 'utility', category: 'utility' },
-  chartBuilder: { label: 'Chart / Graph Builder', icon: '📊', blurb: 'Real bar/line/pie from your data', ref: 'utility', category: 'utility' },
-  printLayout: { label: 'Print Layout Designer', icon: '▥', blurb: 'Multi-page print layout', ref: 'utility', category: 'utility' },
-  modelViewer: { label: '3D Model Viewer', icon: '⬡', blurb: 'Preview a 3D model file', ref: 'stretch', category: 'utility' },
+  imageConverter: { label: 'Image Converter', icon: 'swap', blurb: 'Real PNG/JPEG/WebP conversion', ref: 'utility', category: 'utility' },
+  backgroundRemover: { label: 'Background Remover', icon: 'scissors', blurb: 'Edge-seeded color-distance cutout', ref: 'utility', category: 'utility' },
+  paletteGenerator: { label: 'Color Palette Generator', icon: 'droplet', blurb: 'From an image or a base color', ref: 'utility', category: 'utility' },
+  quickPhotoEditor: { label: 'Quick Photo Editor', icon: 'image', blurb: 'Crop, rotate, flip, brightness/contrast', ref: 'utility', category: 'utility' },
+  logoMaker: { label: 'Logo Maker', icon: 'stamp', blurb: 'Icon + wordmark combiner', ref: 'utility', category: 'utility' },
+  pixelArt: { label: 'Pixel Art Editor', icon: 'gridDense', blurb: 'Grid painter, crisp nearest-neighbor export', ref: 'utility', category: 'utility' },
+  videoTrimmer: { label: 'Video Trimmer', icon: 'play', blurb: 'Trim a clip to a real exported cut', ref: 'utility', category: 'utility' },
+  audioTrimmer: { label: 'Audio Waveform Trimmer', icon: 'music', blurb: 'Real waveform, trim, export WAV', ref: 'utility', category: 'utility' },
+  pdfMarkup: { label: 'PDF Markup / Annotator', icon: 'file', blurb: 'Mark up an existing PDF', ref: 'utility', category: 'utility' },
+  qrGenerator: { label: 'QR / Barcode Generator', icon: 'grid', blurb: 'Real scannable QR encoding', ref: 'utility', category: 'utility' },
+  memeGenerator: { label: 'Meme Generator', icon: 'message', blurb: 'Classic caption-and-image tool', ref: 'utility', category: 'utility' },
+  fontPairing: { label: 'Font Pairing Explorer', icon: 'text', blurb: 'Real Google Fonts, live preview', ref: 'utility', category: 'utility' },
+  screenshotAnnotator: { label: 'Screenshot Annotator', icon: 'arrowUpRight', blurb: 'Arrows, shapes, callouts on an image', ref: 'utility', category: 'utility' },
+  gifMaker: { label: 'GIF Maker', icon: 'clapper', blurb: 'Frames-to-GIF exporter', ref: 'utility', category: 'utility' },
+  chartBuilder: { label: 'Chart / Graph Builder', icon: 'chart', blurb: 'Real bar/line/pie from your data', ref: 'utility', category: 'utility' },
+  printLayout: { label: 'Print Layout Designer', icon: 'rows', blurb: 'Multi-page print layout', ref: 'utility', category: 'utility' },
+  modelViewer: { label: '3D Model Viewer', icon: 'hexagon', blurb: 'Preview a 3D model file', ref: 'stretch', category: 'utility' },
 };
 
 const PRIMARY_ORDER: StudioMode[] = ['draw', 'wireframe', 'animation', 'vector', 'diagram', 'moodboard', 'presentation', 'iconDesign'];
@@ -197,9 +200,9 @@ export default function Studio({ active }: { active: boolean }) {
 
   if (openBoard) {
     return (
-      <section className={`room ${active ? 'on' : ''}`} id="r-studio" style={{ maxWidth: 'none', padding: '56px 8px 90px' }}>
+      <section className={`room ${active ? 'on' : ''}`} id="r-studio" style={{ maxWidth: 'none', padding: '56px 8px 90px 76px' }}>
         <h2 className="rh" style={{ paddingLeft: 4 }}>
-          🎨 DESIGN STUDIO <span style={{ opacity: 0.5, fontWeight: 400 }}>/ {openBoard.name}</span>
+          <Icon name="designStudio" size={18} /> DESIGN STUDIO <span style={{ opacity: 0.5, fontWeight: 400 }}>/ {openBoard.name}</span>
         </h2>
         {openBoard.mode === 'draw' && <DrawPaint boardId={openBoard.id} onExit={exitToBoards} />}
         {openBoard.mode === 'wireframe' && <Wireframe boardId={openBoard.id} isSeed={openBoard.id === seedBoardId} onExit={exitToBoards} />}
@@ -220,9 +223,17 @@ export default function Studio({ active }: { active: boolean }) {
   }
 
   return (
-    <section className={`room ${active ? 'on' : ''}`} id="r-studio" style={{ maxWidth: 'none', padding: '56px 8px 90px' }}>
+    <section className={`room ambient ${active ? 'on' : ''}`} id="r-studio" style={{ maxWidth: 'none', padding: '56px 8px 90px 76px' }}>
+      {/* Amendment v0.6 step 3: only the board-grid/mode-picker landing view
+          gets the ambient field — the `if (openBoard)` branch above hands
+          off entirely to a sub-tool (DrawPaint/Wireframe/Animation/etc.),
+          each with its own full canvas; a drifting particle layer behind
+          active creative-tool work is out of scope / would be a distraction,
+          not a room "feeling alive". */}
+      <AmbientField mood="chromatic" density={30} active={active} parallax />
+      <div className="roomInner">
       <h2 className="rh" style={{ paddingLeft: 4 }}>
-        🎨 DESIGN STUDIO
+        <Icon name="designStudio" size={18} /> DESIGN STUDIO
       </h2>
       <div className="rsub" style={{ paddingLeft: 4 }}>
         A BOARD PER PROJECT · PICK A MODE LIKE PICKING A FILE TYPE · EVERYTHING FEEDS THE CORE
@@ -230,13 +241,19 @@ export default function Studio({ active }: { active: boolean }) {
 
       <div id="dpBoardGrid">
         <div className="dpBoardCard dpNew" onClick={() => setCreating(true)}>
-          <div className="dpNewPlus">＋</div>
+          <div className="dpNewPlus">
+            <Icon name="plus" size={22} />
+          </div>
           <div>NEW BOARD</div>
         </div>
         {boards.map((b) => (
           <div key={b.id} className="dpBoardCard" onClick={() => openBoardById(b.id)}>
-            <button className="dpBoardDel" onClick={(e) => handleDelete(b.id, e)} title="delete board">✕</button>
-            <div className="dpBoardIcon">{MODE_META[b.mode].icon}</div>
+            <button className="dpBoardDel" onClick={(e) => handleDelete(b.id, e)} title="delete board">
+              <Icon name="trash" size={12} />
+            </button>
+            <div className="dpBoardIcon">
+              <Icon name={MODE_META[b.mode].icon} size={20} />
+            </div>
             {renamingId === b.id ? (
               <input
                 autoFocus
@@ -285,7 +302,7 @@ export default function Studio({ active }: { active: boolean }) {
 
             {!showMore && (
               <button id="dpShowMoreBtn" onClick={() => setShowMore(true)}>
-                SHOW MORE — {UTILITY_ORDER.length} MORE PROJECT TYPES ▾
+                SHOW MORE — {UTILITY_ORDER.length} MORE PROJECT TYPES <Icon name="chevronDown" size={12} />
               </button>
             )}
 
@@ -309,6 +326,7 @@ export default function Studio({ active }: { active: boolean }) {
           </div>
         </div>
       )}
+      </div>
     </section>
   );
 }
@@ -333,7 +351,9 @@ function ModeCard({
       onClick={() => implemented && onSelect()}
       title={implemented ? meta.blurb : `${meta.blurb} — not yet available`}
     >
-      <div className="dpModeIcon">{meta.icon}</div>
+      <div className="dpModeIcon">
+        <Icon name={meta.icon} size={22} />
+      </div>
       <div className="dpModeLabel">{meta.label}</div>
       <div className="dpModeBlurb">{meta.blurb}</div>
       {!implemented && <div className="dpModeNotYet">{meta.ref === 'stretch' ? 'Stretch goal' : 'Not yet available'}</div>}

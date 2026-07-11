@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import ToolShell from './ToolShell';
+import Icon from '../../../design-system/icons/Icon';
 
 /**
  * Amendment v0.4 item 2 (New Project modal redesign) — Amendment v0.3
@@ -271,11 +272,11 @@ export default function AudioTrimmer({ boardId, onExit }: { boardId: string; onE
           <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
             {!isPlaying ? (
               <button className="wbtn" onClick={playTrimmed}>
-                ▶ PLAY TRIMMED
+                <Icon name="play" size={12} /> PLAY TRIMMED
               </button>
             ) : (
               <button className="wbtn ghost" onClick={stopPlayback}>
-                ■ STOP
+                <Icon name="stop" size={12} /> STOP
               </button>
             )}
             <button className="wbtn" onClick={exportTrimmedWav}>

@@ -2,6 +2,8 @@ import { useMemo, useState } from 'react';
 import { useCoreGraph } from '../../stores/coreGraph';
 import { nodeToBug } from '../../core/mappers';
 import type { BugSeverity, BugStatus } from '../../core/types';
+import Icon from '../../design-system/icons/Icon';
+import AmbientField from '../../design-system/background/AmbientField';
 
 type StatusFilter = 'all' | 'open' | 'fixed';
 type SavedView = 'none' | 'critical' | 'unassigned' | 'mine';
@@ -49,8 +51,14 @@ export default function Bugs({ active }: { active: boolean }) {
   }
 
   return (
-    <section className={`room ${active ? 'on' : ''}`} id="r-bugs">
-      <h2 className="rh">🐞 BUG TRACKER</h2>
+    <section className={`room ambient ${active ? 'on' : ''}`} id="r-bugs">
+      {/* Amendment v0.6 step 3: Bug Tracker gets the "slightly warmer" mood
+          variation the amendment names explicitly. */}
+      <AmbientField mood="warm" density={26} active={active} parallax />
+      <div className="roomInner">
+      <h2 className="rh">
+        <Icon name="bugTracker" size={18} /> BUG TRACKER
+      </h2>
       <div className="rsub">NOT A LIST — A WEB. EVERY BUG KNOWS ITS RELATIVES. TAP STATUS TO CYCLE, TAP SEVERITY TO RECLASSIFY.</div>
 
       <input id="bugSearch" placeholder="Search bugs… try “redirect” or “#17”" value={query} onChange={(e) => setQuery(e.target.value)} />
@@ -66,16 +74,16 @@ export default function Bugs({ active }: { active: boolean }) {
       {/* Feature uplift: saved filter views */}
       <div className="optrow" style={{ marginTop: -6 }}>
         <span className={`savedview ${savedView === 'none' ? 'on' : ''}`} onClick={() => setSavedView('none')}>
-          ★ MY DEFAULT VIEW
+          <Icon name="star" size={11} /> MY DEFAULT VIEW
         </span>
         <span className={`savedview ${savedView === 'critical' ? 'on' : ''}`} onClick={() => setSavedView('critical')}>
-          ★ CRITICAL + HIGH
+          <Icon name="star" size={11} /> CRITICAL + HIGH
         </span>
         <span className={`savedview ${savedView === 'unassigned' ? 'on' : ''}`} onClick={() => setSavedView('unassigned')}>
-          ★ UNASSIGNED
+          <Icon name="star" size={11} /> UNASSIGNED
         </span>
         <span className={`savedview ${savedView === 'mine' ? 'on' : ''}`} onClick={() => setSavedView('mine')}>
-          ★ ASSIGNED TO ME
+          <Icon name="star" size={11} /> ASSIGNED TO ME
         </span>
       </div>
 
@@ -88,13 +96,17 @@ export default function Bugs({ active }: { active: boolean }) {
             {b.title} <span className="st" onClick={() => cycleBug(b.id)}>{nextStatusLabel(b.bugStatus)}</span>
             <div className="mt">
               <span>{b.severity.toUpperCase()} · SPRINT 002</span>
-              {b.linkedCommit && <span className="link">⎇ {b.linkedCommit}</span>}
+              {b.linkedCommit && (
+                <span className="link">
+                  <Icon name="branch" size={12} /> {b.linkedCommit}
+                </span>
+              )}
               <span
                 className="assignee-pill"
                 onClick={() => setEditingAssignee(editingAssignee === b.id ? null : b.id)}
                 style={{ cursor: 'pointer' }}
               >
-                {b.assignee ? `◈ ${b.assignee}` : '◈ UNASSIGNED'}
+                <Icon name="user" size={12} /> {b.assignee ?? 'UNASSIGNED'}
               </span>
             </div>
             {editingAssignee === b.id && (
@@ -118,7 +130,7 @@ export default function Bugs({ active }: { active: boolean }) {
             {b.duplicateOf && b.similarity && (
               <div className="dup-banner" onClick={() => updateBug(b.id, { duplicateOf: null, similarity: null })}>
                 <span>
-                  ◈ {Math.round(b.similarity * 100)}% SIMILAR TO SOLVED #14 — FIX ATTACHED
+                  <Icon name="xai" size={12} glow="cyan" /> {Math.round(b.similarity * 100)}% SIMILAR TO SOLVED #14 — FIX ATTACHED
                 </span>
                 <span style={{ textDecoration: 'underline' }}>DISMISS</span>
               </div>
@@ -126,6 +138,7 @@ export default function Bugs({ active }: { active: boolean }) {
           </div>
         ))}
         {!filtered.length && <div className="rsub">No bugs match this view.</div>}
+      </div>
       </div>
     </section>
   );

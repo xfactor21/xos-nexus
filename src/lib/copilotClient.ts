@@ -12,6 +12,7 @@
  * xos-prototype.html's coreCapture() does.
  */
 import { supabase } from './supabase';
+import type { IconName } from '../design-system/icons/registry';
 
 /**
  * Step 1 ("Auth + Real Ownership") replaces the `owner_id: null` this
@@ -81,6 +82,14 @@ export async function offlineCommit(text: string, ownerIdOverride: string | null
   return { nodeId: data?.id ?? null };
 }
 
+/** Icon-name + text pair for the offline-mock capture label, rendered via
+ * `<Icon>` at the JSX call site (this is a plain .ts file, so it can't embed
+ * JSX itself) — mirrors the `ZONE_LABEL` pattern in projects/index.tsx. */
+export interface OfflineLabel {
+  icon: IconName;
+  text: string;
+}
+
 /** Local fallback classifier — used when the Edge Function is unreachable
  * (offline, key not set). Mirrors the prototype's classify() so the demo
  * flow never breaks even without live AI. */
@@ -101,6 +110,10 @@ export function offlineClassify(text: string) {
   if (/roadmap|milestone|release|version|someday/.test(l)) hops.push('roadmaps');
   if (/focus|session|deep work/.test(l)) hops.push('focus');
   if (!hops.includes('projects')) hops.splice(1, 0, 'projects');
-  const label = hops.includes('bugs') ? '🐞 BUG' : hops.includes('studio') ? '🎨 DESIGN' : '◆ IDEA';
+  const label: OfflineLabel = hops.includes('bugs')
+    ? { icon: 'bugTracker', text: 'BUG' }
+    : hops.includes('studio')
+      ? { icon: 'designStudio', text: 'DESIGN' }
+      : { icon: 'diamond', text: 'IDEA' };
   return { hops, proj, label };
 }

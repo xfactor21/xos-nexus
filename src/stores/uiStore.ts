@@ -21,7 +21,11 @@ export const useUiStore = create<UiState>((set) => ({
   sidebarOpen: false,
   dockOpen: true,
   glow: 1,
-  go: (r) => set({ room: r, sidebarOpen: false }),
+  // Amendment v0.6 step 2: the sidebar is now a persistent "neural spine"
+  // (always at least visible as a collapsed dot-rail, never fully hidden —
+  // see Shell.tsx), so selecting a room no longer force-collapses it the
+  // way the old off-canvas mobile-drawer pattern did.
+  go: (r) => set({ room: r }),
   toggleSidebar: () => set((s) => ({ sidebarOpen: !s.sidebarOpen })),
   closeSidebar: () => set({ sidebarOpen: false }),
   toggleDock: () => set((s) => ({ dockOpen: !s.dockOpen })),

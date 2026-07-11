@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import type { MouseEvent as RMouseEvent, TouchEvent as RTouchEvent, WheelEvent as RWheelEvent } from 'react';
 import { useCoreGraph } from '../../stores/coreGraph';
+import Icon from '../../design-system/icons/Icon';
+import type { IconName } from '../../design-system/icons/registry';
 
 type ViewMode = 'const' | 'neural' | 'time' | 'mission';
 
@@ -394,7 +396,8 @@ export default function Observatory({ active }: { active: boolean }) {
         ux.globalAlpha = 0.9;
         ux.fillStyle = '#607080';
         ux.font = '9px Share Tech Mono';
-        ux.fillText('⌛ SPRINT ' + Math.min(4, Math.ceil(ph)) + (autoTime ? ' — FLYING THROUGH HISTORY' : ' — SCRUBBING'), 12, cv.height - 34);
+        // Canvas 2D fillText — non-JSX context, glyph stripped (Amendment v0.6 step 1)
+        ux.fillText('SPRINT ' + Math.min(4, Math.ceil(ph)) + (autoTime ? ' — FLYING THROUGH HISTORY' : ' — SCRUBBING'), 12, cv.height - 34);
       }
 
       // comet events — a real comet animates between two stars whenever a
@@ -493,7 +496,8 @@ export default function Observatory({ active }: { active: boolean }) {
       const r = cv.getBoundingClientRect(),
         mx = e.clientX - r.left,
         my = e.clientY - r.top;
-      tip.textContent = '✦ ' + h.nm + (h.mission ? ' · ▸ TODAY' : '') + (h.b < 0.4 ? ' · DIMMING' : '');
+      // DOM textContent — non-JSX context, glyphs stripped (Amendment v0.6 step 1)
+      tip.textContent = h.nm + (h.mission ? ' · TODAY' : '') + (h.b < 0.4 ? ' · DIMMING' : '');
       tip.style.left = Math.min(mx + 14, cv.width - 180) + 'px';
       tip.style.top = my - 8 + 'px';
       tip.style.opacity = '1';
@@ -545,29 +549,37 @@ export default function Observatory({ active }: { active: boolean }) {
       <div id="views">
         {(
           [
-            ['const', '✨ CONSTELLATION'],
-            ['neural', '🧠 NEURAL'],
-            ['time', '⌛ TIMELINE'],
-            ['mission', '▸ MISSION'],
-          ] as [ViewMode, string][]
-        ).map(([v, label]) => (
+            ['const', 'sparkles', 'CONSTELLATION'],
+            ['neural', 'neuralCore', 'NEURAL'],
+            ['time', 'hourglass', 'TIMELINE'],
+            ['mission', 'mission', 'MISSION'],
+          ] as [ViewMode, IconName, string][]
+        ).map(([v, icon, label]) => (
           <span key={v} className={`chip ${view === v ? 'on' : ''}`} onClick={() => setView(v)}>
-            {label}
+            <Icon name={icon} size={12} /> {label}
           </span>
         ))}
         <span className="chip" onClick={exportSnapshot} title="export a PNG snapshot of the current view">
-          📷 SNAPSHOT
+          <Icon name="camera" size={12} /> SNAPSHOT
         </span>
         {focused && (
           <span className="chip on" onClick={() => flyTo(null)}>
-            ◂ ZOOM OUT
+            <Icon name="chevronLeft" size={12} /> ZOOM OUT
           </span>
         )}
       </div>
       {view === 'time' && (
         <div id="obsScrub">
           <span className={`chip ${autoTime ? 'on' : ''}`} onClick={() => setAutoTime((v) => !v)}>
-            {autoTime ? '▶ AUTO' : '✋ MANUAL'}
+            {autoTime ? (
+              <>
+                <Icon name="play" size={12} /> AUTO
+              </>
+            ) : (
+              <>
+                <Icon name="hand" size={12} /> MANUAL
+              </>
+            )}
           </span>
           <input
             type="range"

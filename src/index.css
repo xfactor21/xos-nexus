@@ -1,6 +1,7 @@
 @import 'tailwindcss';
 @import './styles/tokens.css';
 @import './styles/legacy.css';
+@import './design-system/design-system.css';
 
 @theme {
   --color-void: var(--void);
@@ -46,8 +47,20 @@ textarea {
   outline: none;
 }
 
-h1,
-h2,
+/* Amendment v0.6 step 6: real weight variation, not letter-spacing tricks.
+   Every h1/h2/h3 in the app previously rendered at the same weight (500) —
+   hierarchy came entirely from font-size + letter-spacing, which is the
+   root cause the amendment calls out. h1 (room titles like "THE
+   OBSERVATORY") is the heaviest; h3 (in-panel sub-headers) is the
+   lightest of the three, one deliberate step down each level. */
+h1 {
+  font-family: var(--font-disp);
+  font-weight: 700;
+}
+h2 {
+  font-family: var(--font-disp);
+  font-weight: 600;
+}
 h3 {
   font-family: var(--font-disp);
   font-weight: 500;

@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import type { MouseEvent as RMouseEvent, TouchEvent as RTouchEvent, ChangeEvent as RChangeEvent, WheelEvent as RWheelEvent, CSSProperties } from 'react';
 import type { StudioItem, StudioArrow, InkStroke, CommentPin, StudioSnapshot, StudioItemType, PrototypeLink, StudioComponent, ComponentVariantName } from './types';
 import { SEED_STUDIO } from './seed';
+import Icon from '../../design-system/icons/Icon';
+import type { IconName } from '../../design-system/icons/registry';
 
 const SNAP = 8; // world-space snap threshold, feature uplift: alignment guides
 
@@ -584,34 +586,34 @@ export default function Wireframe({ boardId, isSeed, onExit }: { boardId: string
       onWheel={onWheel}
     >
       <div id="stTools">
-        <span className="tool" onClick={onExit} title="all boards">◂</span>
+        <span className="tool" onClick={onExit} title="all boards"><Icon name="chevronLeft" size={14} /></span>
         <span className="tool sep" />
         {(
           [
-            ['select', '▲'],
-            ['pen', '✎'],
-            ['frame', '▭'],
-            ['sticky', '✦'],
-            ['rect', '□'],
-            ['circle', '○'],
-            ['arrow', '↗'],
-            ['image', '🖼'],
-            ['comment', '💬'],
-            ['link', '🔗'],
-          ] as [Tool, string][]
-        ).map(([t, label]) => (
+            ['select', 'select'],
+            ['pen', 'penTool'],
+            ['frame', 'rect'],
+            ['sticky', 'note'],
+            ['rect', 'square'],
+            ['circle', 'circle'],
+            ['arrow', 'arrowUpRight'],
+            ['image', 'image'],
+            ['comment', 'message'],
+            ['link', 'link'],
+          ] as [Tool, IconName][]
+        ).map(([t, icon]) => (
           <span key={t} className={`tool ${tool === t ? 'on' : ''}`} onClick={() => { setTool(t); setLinkArmed(null); }} title={t === 'link' ? 'link frames (click a hotspot, then a target frame)' : t}>
-            {label}
+            <Icon name={icon} size={14} />
           </span>
         ))}
         <span className="tool sep" />
-        <span className={`tool ${componentsPanelOpen ? 'on' : ''}`} onClick={() => setComponentsPanelOpen((v) => !v)} title="components">🧩</span>
+        <span className={`tool ${componentsPanelOpen ? 'on' : ''}`} onClick={() => setComponentsPanelOpen((v) => !v)} title="components"><Icon name="puzzle" size={14} /></span>
         <span className="tool sep" />
-        <span className="tool" onClick={() => setZoom(1)}>＋</span>
-        <span className="tool" onClick={() => setZoom(-1)}>－</span>
+        <span className="tool" onClick={() => setZoom(1)}><Icon name="plus" size={14} /></span>
+        <span className="tool" onClick={() => setZoom(-1)}><Icon name="minus" size={14} /></span>
         <span className="tool sep" />
         <button className="wbtn" style={{ padding: '0 14px', height: 32 }} disabled={!snap.items.some((i) => i.type === 'frame')} onClick={startPlay} title="preview/play mode">
-          ▶ PLAY
+          <Icon name="play" size={12} /> PLAY
         </button>
       </div>
       {tool === 'link' && (
@@ -666,7 +668,7 @@ export default function Wireframe({ boardId, isSeed, onExit }: { boardId: string
 
         {snap.comments.map((c) => (
           <div key={c.id} className="commentpin" style={{ left: c.x, top: c.y }} onClick={() => setEditingComment(c.id)}>
-            <span>💬</span>
+            <span><Icon name="message" size={11} /></span>
             {editingComment === c.id && (
               <div
                 className="gpanel"
@@ -702,9 +704,9 @@ export default function Wireframe({ boardId, isSeed, onExit }: { boardId: string
             onClick={() => setSelected([it.id])}
           >
             <span className={`vis ${it.visible ? '' : 'off'}`} onClick={(e) => { e.stopPropagation(); toggleVisible(it.id); }}>
-              {it.visible ? '◉' : '○'}
+              <Icon name={it.visible ? 'eye' : 'eyeOff'} size={12} />
             </span>
-            <span className="lbl">{iconFor(it.type)} {it.name}</span>
+            <span className="lbl"><Icon name={iconFor(it.type)} size={12} /> {it.name}</span>
           </div>
         ))}
         {selected.length > 0 && (
@@ -717,8 +719,8 @@ export default function Wireframe({ boardId, isSeed, onExit }: { boardId: string
       </div>
 
       <div id="stUndoRedo">
-        <button onClick={undo} disabled={!past.current.length}>↺</button>
-        <button onClick={redo} disabled={!future.current.length}>↻</button>
+        <button onClick={undo} disabled={!past.current.length}><Icon name="undo" size={14} /></button>
+        <button onClick={redo} disabled={!future.current.length}><Icon name="redo" size={14} /></button>
       </div>
 
       <input ref={fileInputRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={onFileChosen} />
@@ -748,8 +750,8 @@ export default function Wireframe({ boardId, isSeed, onExit }: { boardId: string
   );
 }
 
-function iconFor(t: StudioItemType) {
-  return { frame: '▭', sticky: '✦', stickyM: '✦', rect: '□', circle: '○', mood: '◆', image: '🖼', component: '🧩' }[t];
+function iconFor(t: StudioItemType): IconName {
+  return { frame: 'rect', sticky: 'note', stickyM: 'note', rect: 'square', circle: 'circle', mood: 'diamond', image: 'image', component: 'puzzle' }[t] as IconName;
 }
 function itemClass(it: StudioItem, sel: boolean) {
   const base = ['sitem'];
@@ -804,7 +806,7 @@ function ItemBody({
   if (item.type === 'sticky' || item.type === 'stickyM') {
     return (
       <>
-        <div className="tag">{item.type === 'stickyM' ? '◆ IDEA' : '◆ FROM CAPTURE'}</div>
+        <div className="tag"><Icon name="diamond" size={10} /> {item.type === 'stickyM' ? 'IDEA' : 'FROM CAPTURE'}</div>
         <div
           className="txt"
           contentEditable
@@ -852,7 +854,7 @@ function ItemBody({
       >
         {item.variant === 'splash' && (
           <>
-            <div className="ph solid" style={{ height: 90 }}>🐝 LOGO MARK</div>
+            <div className="ph solid" style={{ height: 90 }}><Icon name="image" size={14} /> LOGO MARK</div>
             <div className="ph" style={{ height: 16 }}>TAGLINE</div>
             <div className="ph" style={{ height: 110 }}>HERO ILLUSTRATION</div>
             <div className="btnrow">
@@ -863,7 +865,9 @@ function ItemBody({
         )}
         {item.variant === 'onboarding' && (
           <>
-            <div className="ph" style={{ height: 12, width: '60%' }}>PROGRESS ●○○</div>
+            <div className="ph" style={{ height: 12, width: '60%' }}>
+              PROGRESS <span className="wfDot on" /><span className="wfDot" /><span className="wfDot" />
+            </div>
             <div className="ph solid" style={{ height: 130 }}>PICK YOUR SUBJECTS</div>
             <div className="ph" style={{ height: 34 }}>CHIP · CHIP · CHIP</div>
             <div className="btnrow">
@@ -879,7 +883,7 @@ function ItemBody({
             </div>
           </>
         )}
-        {linkedKeys.has('frame') && <span className="hotspotLinked frameLinked" title="whole-frame link">🔗</span>}
+        {linkedKeys.has('frame') && <span className="hotspotLinked frameLinked" title="whole-frame link"><Icon name="link" size={11} /></span>}
       </div>
     </>
   );
@@ -893,7 +897,7 @@ function Hotspot({ label, className, hkey, hotspot, linked }: { label: string; c
   return (
     <div className={`${className} ${hotspot ? 'linkable' : ''}`} onClick={hotspot ? (e) => { e.stopPropagation(); hotspot(hkey); } : undefined}>
       {label}
-      {linked && <span className="hotspotLinked">🔗</span>}
+      {linked && <span className="hotspotLinked"><Icon name="link" size={11} /></span>}
     </div>
   );
 }
@@ -921,7 +925,11 @@ function ComponentInstanceBody({
 }) {
   const [live, setLive] = useState<'hover' | 'pressed' | null>(null);
   if (!component) {
-    return <div className="ttl" style={{ color: 'var(--magenta)' }}>⚠ missing component</div>;
+    return (
+      <div className="ttl" style={{ color: 'var(--magenta)' }}>
+        <Icon name="warning" size={12} glow="magenta" /> missing component
+      </div>
+    );
   }
   const resting = item.activeVariant ?? 'default';
   const shown = live ?? resting;
@@ -977,18 +985,22 @@ function ComponentsPanel({
     <div id="componentsPanel" className="gpanel">
       <h3>
         COMPONENTS · {components.length}
-        <span className="lyAdd" onClick={() => setEditingId(onAdd())} title="new component">＋</span>
-        <span className="compPanelClose" onClick={onClose} title="close">✕</span>
+        <span className="lyAdd" onClick={() => setEditingId(onAdd())} title="new component"><Icon name="plus" size={12} /></span>
+        <span className="compPanelClose" onClick={onClose} title="close"><Icon name="close" size={12} /></span>
       </h3>
       <div id="compList">
         {components.map((c) => (
           <div key={c.id} className={`layer-row ${editingId === c.id ? 'sel' : ''}`} onClick={() => setEditingId(c.id)}>
-            <span className="lbl">🧩 {c.name}</span>
-            <span className="lyDup" title="add to canvas" onClick={(e) => { e.stopPropagation(); onAddInstance(c.id); }}>⊕</span>
-            <span className="lyDel" title="delete component" onClick={(e) => { e.stopPropagation(); onDelete(c.id); }}>✕</span>
+            <span className="lbl"><Icon name="puzzle" size={12} /> {c.name}</span>
+            <span className="lyDup" title="add to canvas" onClick={(e) => { e.stopPropagation(); onAddInstance(c.id); }}><Icon name="plus" size={11} /></span>
+            <span className="lyDel" title="delete component" onClick={(e) => { e.stopPropagation(); onDelete(c.id); }}><Icon name="trash" size={11} /></span>
           </div>
         ))}
-        {!components.length && <div className="compEmpty">No components yet — ＋ to create one.</div>}
+        {!components.length && (
+          <div className="compEmpty">
+            No components yet — <Icon name="plus" size={10} /> to create one.
+          </div>
+        )}
       </div>
       {editing && (
         <div id="compEditor">
@@ -1041,7 +1053,7 @@ function PlayOverlay({ frame, canBack, onHotspot, onBack, onExit }: { frame: Stu
     return (
       <div id="playOverlay">
         <div id="playTopbar">
-          <button className="chip" onClick={onExit}>✕ EXIT PREVIEW</button>
+          <button className="chip" onClick={onExit}><Icon name="close" size={12} /> EXIT PREVIEW</button>
         </div>
         <div className="playDead">This link points at a frame that no longer exists.</div>
       </div>
@@ -1050,15 +1062,15 @@ function PlayOverlay({ frame, canBack, onHotspot, onBack, onExit }: { frame: Stu
   return (
     <div id="playOverlay">
       <div id="playTopbar">
-        {canBack && <button className="chip" onClick={onBack}>◂ BACK</button>}
+        {canBack && <button className="chip" onClick={onBack}><Icon name="chevronLeft" size={12} /> BACK</button>}
         <span className="playFrameName">{frame.name}</span>
-        <button className="chip" onClick={onExit}>✕ EXIT PREVIEW</button>
+        <button className="chip" onClick={onExit}><Icon name="close" size={12} /> EXIT PREVIEW</button>
       </div>
       <div id="playPhone">
         <div className="wfb" onClick={(e) => { e.stopPropagation(); onHotspot('frame'); }}>
           {frame.variant === 'splash' && (
             <>
-              <div className="ph solid" style={{ height: 90 }}>🐝 LOGO MARK</div>
+              <div className="ph solid" style={{ height: 90 }}><Icon name="image" size={14} /> LOGO MARK</div>
               <div className="ph" style={{ height: 16 }}>TAGLINE</div>
               <div className="ph" style={{ height: 110 }}>HERO ILLUSTRATION</div>
               <div className="btnrow">
@@ -1069,7 +1081,9 @@ function PlayOverlay({ frame, canBack, onHotspot, onBack, onExit }: { frame: Stu
           )}
           {frame.variant === 'onboarding' && (
             <>
-              <div className="ph" style={{ height: 12, width: '60%' }}>PROGRESS ●○○</div>
+              <div className="ph" style={{ height: 12, width: '60%' }}>
+                PROGRESS <span className="wfDot on" /><span className="wfDot" /><span className="wfDot" />
+              </div>
               <div className="ph solid" style={{ height: 130 }}>PICK YOUR SUBJECTS</div>
               <div className="ph" style={{ height: 34 }}>CHIP · CHIP · CHIP</div>
               <div className="btnrow">

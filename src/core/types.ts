@@ -133,7 +133,7 @@ export interface MilestoneRecord {
   state: 'shipped' | 'current' | 'future';
   releaseDate: string | null; // ISO date, editable
   order: number;
-  items: { label: string; done: boolean }[];
+  items: { label: string; done: boolean; fromMemory?: boolean }[];
 }
 
 export interface DissectedPiece {

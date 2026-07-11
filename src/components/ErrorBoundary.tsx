@@ -1,5 +1,6 @@
 import { Component } from 'react';
 import type { ErrorInfo, ReactNode } from 'react';
+import Icon from '../design-system/icons/Icon';
 
 interface Props {
   children: ReactNode;
@@ -38,13 +39,15 @@ export default class ErrorBoundary extends Component<Props, State> {
           <div className="logo">
             xOS <em>//</em> neXus
           </div>
-          <div className="tag">◈ SOMETHING GLITCHED</div>
+          <div className="tag">
+            <Icon name="xai" size={13} glow="magenta" /> SOMETHING GLITCHED
+          </div>
           <div className="authcard">
             <div className="autherr">
               The Core hit an unexpected error and had to stop. This has been logged — reloading should recover cleanly.
             </div>
             <button className="bigbtn" onClick={() => window.location.reload()}>
-              RELOAD ▸
+              RELOAD <Icon name="chevronRight" size={14} />
             </button>
           </div>
         </div>

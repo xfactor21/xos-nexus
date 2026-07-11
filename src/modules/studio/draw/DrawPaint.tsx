@@ -3,14 +3,16 @@ import type { PointerEvent as RPointerEvent } from 'react';
 import { DrawEngine, hexToRgb, hsbToRgb, rgbToHex, rgbToHsb } from './DrawEngine';
 import type { SymmetryMode } from './DrawEngine';
 import type { BlendMode, BrushSettings, BrushType, DrawDocument } from '../types';
+import Icon from '../../../design-system/icons/Icon';
+import type { IconName } from '../../../design-system/icons/registry';
 
 type Tool = 'brush' | 'eraser' | 'marquee' | 'lasso' | 'wand' | 'fill' | 'eyedropper' | 'gradient' | 'clone' | 'smudge' | 'heal' | 'text';
 
-const BRUSH_TYPES: { key: BrushType; label: string; icon: string }[] = [
-  { key: 'pencil', label: 'Pencil', icon: '✎' },
-  { key: 'ink', label: 'Ink', icon: '🖊' },
-  { key: 'airbrush', label: 'Airbrush', icon: '💨' },
-  { key: 'texture', label: 'Texture', icon: '▦' },
+const BRUSH_TYPES: { key: BrushType; label: string; icon: IconName }[] = [
+  { key: 'pencil', label: 'Pencil', icon: 'pencil' },
+  { key: 'ink', label: 'Ink', icon: 'pen' },
+  { key: 'airbrush', label: 'Airbrush', icon: 'wind' },
+  { key: 'texture', label: 'Texture', icon: 'gridDense' },
 ];
 
 const BLEND_MODES: BlendMode[] = ['normal', 'multiply', 'screen', 'overlay', 'darken', 'lighten', 'color-dodge', 'color-burn', 'hard-light', 'soft-light', 'difference', 'exclusion', 'hue', 'saturation', 'color', 'luminosity'];
@@ -409,38 +411,41 @@ export default function DrawPaint({ boardId, onExit }: { boardId: string; onExit
   return (
     <div id="dpRoot">
       <div id="dpTopbar">
-        <button className="chip" onClick={onExit}>◂ ALL BOARDS</button>
+        <button className="chip" onClick={onExit}><Icon name="chevronLeft" size={12} /> ALL BOARDS</button>
         <div id="dpToolgroup">
           {(
             [
-              ['brush', '🖌'],
-              ['eraser', '🧹'],
-              ['marquee', '▭'],
-              ['lasso', '⤾'],
-              ['wand', '✨'],
-              ['fill', '🪣'],
-              ['eyedropper', '💧'],
-              ['gradient', '◐'],
-              ['clone', '⎘'],
-              ['smudge', '☁'],
-              ['heal', '✚'],
-              ['text', '🅣'],
-            ] as [Tool, string][]
+              ['brush', 'brush'],
+              ['eraser', 'eraser'],
+              ['marquee', 'rect'],
+              // no dedicated "lasso" glyph exists in the shared icon set —
+              // `select` (a generic pointer/selection icon) is the closest
+              // available stand-in for a free-form selection tool.
+              ['lasso', 'select'],
+              ['wand', 'wand'],
+              ['fill', 'bucket'],
+              ['eyedropper', 'droplet'],
+              ['gradient', 'radial'],
+              ['clone', 'stamp'],
+              ['smudge', 'smudge'],
+              ['heal', 'heal'],
+              ['text', 'text'],
+            ] as [Tool, IconName][]
           ).map(([t, icon]) => (
             <span key={t} className={`tool ${tool === t ? 'on' : ''}`} onClick={() => setTool(t)} title={t}>
-              {icon}
+              <Icon name={icon} size={14} />
             </span>
           ))}
         </div>
         <div id="dpTopActions">
-          <button className="chip" disabled={!eng?.canUndo()} onClick={() => { engineRef.current?.undo(); bump(); }}>↺ UNDO</button>
-          <button className="chip" disabled={!eng?.canRedo()} onClick={() => { engineRef.current?.redo(); bump(); }}>↻ REDO</button>
+          <button className="chip" disabled={!eng?.canUndo()} onClick={() => { engineRef.current?.undo(); bump(); }}><Icon name="undo" size={12} /> UNDO</button>
+          <button className="chip" disabled={!eng?.canRedo()} onClick={() => { engineRef.current?.redo(); bump(); }}><Icon name="redo" size={12} /> REDO</button>
           <button className="chip" onClick={() => { engineRef.current?.clearSelection(); bump(); }}>DESELECT</button>
           <button className="chip" onClick={() => setPanel(panel === 'adjust' ? 'none' : 'adjust')}>ADJUST</button>
           <button className="chip" onClick={() => setPanel(panel === 'filters' ? 'none' : 'filters')}>FILTERS</button>
           <button className="chip" onClick={() => setPanel(panel === 'history' ? 'none' : 'history')}>HISTORY</button>
           <button className="chip" onClick={() => setPanel(panel === 'resize' ? 'none' : 'resize')}>RESIZE/CROP</button>
-          <button className="chip" onClick={() => setPanel(panel === 'export' ? 'none' : 'export')}>EXPORT ▾</button>
+          <button className="chip" onClick={() => setPanel(panel === 'export' ? 'none' : 'export')}>EXPORT <Icon name="chevronDown" size={12} /></button>
         </div>
       </div>
 
@@ -451,7 +456,7 @@ export default function DrawPaint({ boardId, onExit }: { boardId: string; onExit
             <div id="dpBrushTypes">
               {BRUSH_TYPES.map((b) => (
                 <span key={b.key} className={`bt ${brush.type === b.key ? 'on' : ''}`} onClick={() => setBrush((s) => ({ ...s, type: b.key }))} title={b.label}>
-                  {b.icon}
+                  <Icon name={b.icon} size={14} />
                 </span>
               ))}
             </div>
@@ -468,14 +473,14 @@ export default function DrawPaint({ boardId, onExit }: { boardId: string; onExit
             <div id="dpSymmetryRow">
               {(
                 [
-                  ['none', 'OFF'],
-                  ['vertical', '↕'],
-                  ['horizontal', '↔'],
-                  ['radial4', '✛'],
-                ] as [SymmetryMode, string][]
-              ).map(([m, label]) => (
-                <span key={m} className={`chip small ${symmetry === m ? 'on' : ''}`} onClick={() => pickSymmetry(m)}>
-                  {label}
+                  ['none', null, 'OFF', 'No symmetry'],
+                  ['vertical', 'arrowUpDown', undefined, 'Vertical symmetry'],
+                  ['horizontal', 'swap', undefined, 'Horizontal symmetry'],
+                  ['radial4', 'radial', undefined, '4-way radial symmetry'],
+                ] as [SymmetryMode, IconName | null, string | undefined, string][]
+              ).map(([m, icon, label, title]) => (
+                <span key={m} className={`chip small ${symmetry === m ? 'on' : ''}`} onClick={() => pickSymmetry(m)} title={title}>
+                  {icon ? <Icon name={icon} size={12} /> : label}
                 </span>
               ))}
             </div>
@@ -487,7 +492,7 @@ export default function DrawPaint({ boardId, onExit }: { boardId: string; onExit
               {presets.map((p) => (
                 <span key={p.id} className="presetChip" onClick={() => setBrush(p.settings)} title={p.name}>
                   {p.name}
-                  <i className="presetDel" onClick={(e) => { e.stopPropagation(); deletePreset(p.id); }}>✕</i>
+                  <i className="presetDel" onClick={(e) => { e.stopPropagation(); deletePreset(p.id); }}><Icon name="trash" size={11} /></i>
                 </span>
               ))}
               {!presets.length && <div className="rsub" style={{ fontSize: 8 }}>No saved presets yet.</div>}
@@ -654,12 +659,12 @@ export default function DrawPaint({ boardId, onExit }: { boardId: string; onExit
               <h3>BOOKMARKS</h3>
               <div id="dpBookmarkRow">
                 <input placeholder="Bookmark name…" value={bookmarkNameDraft} onChange={(e) => setBookmarkNameDraft(e.target.value)} />
-                <button className="wbtn" id="addBookmarkBtn" onClick={bookmarkCurrent}>📌 SAVE</button>
+                <button className="wbtn" id="addBookmarkBtn" onClick={bookmarkCurrent}><Icon name="pin" size={12} /> SAVE</button>
               </div>
               {bookmarkList.map((b) => (
                 <div key={b.id} className="historyRow bookmark">
-                  <span onClick={() => { engineRef.current?.restoreBookmark(b.id); bump(); }}>📌 {b.label}</span>
-                  <i onClick={() => { engineRef.current?.deleteBookmark(b.id); bump(); }}>✕</i>
+                  <span onClick={() => { engineRef.current?.restoreBookmark(b.id); bump(); }}><Icon name="pin" size={11} /> {b.label}</span>
+                  <i onClick={() => { engineRef.current?.deleteBookmark(b.id); bump(); }}><Icon name="trash" size={11} /></i>
                 </div>
               ))}
             </div>
@@ -727,9 +732,9 @@ export default function DrawPaint({ boardId, onExit }: { boardId: string; onExit
             </div>
           </div>
           <div id="dpZoom">
-            <span className="tool" onClick={() => setZoom((z) => Math.max(0.1, z - 0.1))}>－</span>
+            <span className="tool" onClick={() => setZoom((z) => Math.max(0.1, z - 0.1))}><Icon name="minus" size={12} /></span>
             <span>{Math.round(zoom * 100)}%</span>
-            <span className="tool" onClick={() => setZoom((z) => Math.min(4, z + 0.1))}>＋</span>
+            <span className="tool" onClick={() => setZoom((z) => Math.min(4, z + 0.1))}><Icon name="plus" size={12} /></span>
           </div>
         </div>
 
@@ -748,16 +753,16 @@ export default function DrawPaint({ boardId, onExit }: { boardId: string; onExit
           <div id="layersPanel" className="gpanel">
             <h3>
               LAYERS · {eng?.layers.length ?? 0}
-              <span className="lyAdd" onClick={() => { engineRef.current?.addLayer(); bump(); }}>＋</span>
+              <span className="lyAdd" onClick={() => { engineRef.current?.addLayer(); bump(); }}><Icon name="plus" size={12} /></span>
             </h3>
             {layerOrder.map((l) => (
               <div key={l.meta.id} className={`layer-row ${eng?.activeLayerId === l.meta.id ? 'sel' : ''}`} onClick={() => { if (eng) { eng.activeLayerId = l.meta.id; bump(); } }}>
                 <span className={`vis ${l.meta.visible ? '' : 'off'}`} onClick={(e) => { e.stopPropagation(); engineRef.current?.setLayerProp(l.meta.id, 'visible', !l.meta.visible); bump(); }}>
-                  {l.meta.visible ? '◉' : '○'}
+                  <Icon name={l.meta.visible ? 'eye' : 'eyeOff'} size={12} />
                 </span>
                 <span className="lbl">{l.meta.name}</span>
-                <span className="lyDup" onClick={(e) => { e.stopPropagation(); engineRef.current?.duplicateLayer(l.meta.id); bump(); }} title="Duplicate">⧉</span>
-                <span className="lyDel" onClick={(e) => { e.stopPropagation(); engineRef.current?.deleteLayer(l.meta.id); bump(); }} title="Delete">✕</span>
+                <span className="lyDup" onClick={(e) => { e.stopPropagation(); engineRef.current?.duplicateLayer(l.meta.id); bump(); }} title="Duplicate"><Icon name="copy" size={12} /></span>
+                <span className="lyDel" onClick={(e) => { e.stopPropagation(); engineRef.current?.deleteLayer(l.meta.id); bump(); }} title="Delete"><Icon name="trash" size={12} /></span>
               </div>
             ))}
             {eng?.activeLayerId && (

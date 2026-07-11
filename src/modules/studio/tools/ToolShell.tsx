@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import Icon from '../../../design-system/icons/Icon';
 
 /**
  * Amendment v0.4 item 2 (New Project modal redesign) — Amendment v0.3
@@ -22,7 +23,7 @@ export default function ToolShell({
     <div className="toolShell">
       <div className="toolShellBar">
         <button className="chip" onClick={onExit}>
-          ◂ ALL BOARDS
+          <Icon name="chevronLeft" size={12} /> ALL BOARDS
         </button>
         <h3 className="toolShellTitle">{title}</h3>
         <div className="toolShellActions">{actions}</div>

@@ -1,6 +1,30 @@
 import { useEffect, useRef } from 'react';
+import Icon from '../../design-system/icons/Icon';
 
 type Mode = 'full' | 'returning';
+
+/**
+ * Amendment v0.6 step 1: this file's cinematic scene engine builds scenes as
+ * raw HTML strings assigned via `.innerHTML` (a canvas/DOM sequencer, not
+ * React JSX) — the shared `<Icon>` component is a React component and can't
+ * be interpolated into those strings. Where the target is `.innerHTML`
+ * (which *does* accept markup), these small inline-SVG string builders
+ * mirror the exact same lucide-react path data + stroke/glow treatment the
+ * shared Icon component uses, so the rendered result is visually identical.
+ * Where the target is `.textContent` (plain text only, no markup allowed —
+ * see `obsClick`'s star-hint tooltip below), the glyph is simply stripped.
+ */
+function svgIconHtml(paths: string, size = 13, glowVar: string | null = '--cyan'): string {
+  const color = glowVar ? `var(${glowVar})` : 'var(--text-dim)';
+  const glow = glowVar ? `filter:drop-shadow(0 0 2px ${color}) drop-shadow(0 0 6px ${color});` : '';
+  return `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block;vertical-align:-0.15em;color:${color};${glow}">${paths}</svg>`;
+}
+// xAI presence glyph — same path data as design-system/icons/XaiGlyph.tsx.
+const XAI_SVG = svgIconHtml('<path d="M12 2 L20 12 L12 22 L4 12 Z"/><path d="M12 2 L12 22 M4 12 L20 12" stroke-opacity="0.55"/><circle cx="12" cy="12" r="2.1" fill="currentColor" stroke="none"/>', 13);
+// chevron-right — same path data as lucide-react's ChevronRight (registry's "chevronRight").
+const CHEVRON_RIGHT_SVG = svgIconHtml('<path d="m9 18 6-6-6-6"/>', 13);
+// square (mission checkbox) — same path data as lucide-react's Square (registry's "square"), no glow (a checklist glyph, not a brand/status marker).
+const SQUARE_SVG = svgIconHtml('<rect width="18" height="18" x="3" y="3" rx="2"/>', 12, null);
 
 /**
  * ONBOARDING — Step 7 ("Persistent Launch Sequence + Returning-Captain
@@ -309,7 +333,7 @@ export default function Onboarding({ mode, onComplete }: { mode: Mode; onComplet
     }
     let holoSayTimeout: number | undefined;
     function holoSay(text: string, dur = 3200) {
-      holoCap!.innerHTML = '<b>◈ xAI</b>' + text;
+      holoCap!.innerHTML = `<b>${XAI_SVG} xAI</b>` + text;
       holoCap!.classList.add('on');
       holoTalk = 1;
       if (holoSayTimeout) clearTimeout(holoSayTimeout);
@@ -450,7 +474,7 @@ export default function Onboarding({ mode, onComplete }: { mode: Mode; onComplet
       after(500, () => holoSay('Welcome back, Captain.', 1600));
       after(2200, () => holoSay('Neural Core online. Your universe is waiting.', 2400));
       after(4700, () => {
-        setScene('<button id="fsCta" class="fs-cta">ENTER xOS ▸</button>', true, () => {
+        setScene(`<button id="fsCta" class="fs-cta">ENTER xOS ${CHEVRON_RIGHT_SVG}</button>`, true, () => {
           document.getElementById('fsCta')?.addEventListener('click', finish);
         });
       });
@@ -634,7 +658,9 @@ export default function Onboarding({ mode, onComplete }: { mode: Mode; onComplet
       });
       if (hit) {
         const h = hit as WorldStar;
-        starHint!.textContent = '✦ ' + h.label;
+        // textContent is plain-text-only (no markup allowed) — the ✦ glyph
+        // is simply dropped rather than swapped for an <Icon>.
+        starHint!.textContent = h.label;
         starHint!.style.left = e.clientX + 12 + 'px';
         starHint!.style.top = e.clientY - 10 + 'px';
         starHint!.style.opacity = '1';
@@ -683,9 +709,9 @@ export default function Onboarding({ mode, onComplete }: { mode: Mode; onComplet
       setScene(
         '<div class="fs-line" style="animation-delay:.1s;letter-spacing:4px">MISSION</div>' +
           '<div id="fsMissions">' +
-          '<div class="fs-mcard" style="animation-delay:.5s"><span>□</span> Design your first feature</div>' +
-          '<div class="fs-mcard" style="animation-delay:.9s"><span>□</span> Capture three ideas</div>' +
-          '<div class="fs-mcard" style="animation-delay:1.3s"><span>□</span> Complete one milestone</div>' +
+          `<div class="fs-mcard" style="animation-delay:.5s"><span>${SQUARE_SVG}</span> Design your first feature</div>` +
+          `<div class="fs-mcard" style="animation-delay:.9s"><span>${SQUARE_SVG}</span> Capture three ideas</div>` +
+          `<div class="fs-mcard" style="animation-delay:1.3s"><span>${SQUARE_SVG}</span> Complete one milestone</div>` +
           '</div>',
       );
       after(5200, scene12);
@@ -702,7 +728,7 @@ export default function Onboarding({ mode, onComplete }: { mode: Mode; onComplet
       after(900, () => holoSay('Good work today, Captain.', 1800));
       after(2900, () => holoSay('Your universe is growing.', 2600));
       after(5200, () => {
-        setScene('<button id="fsCta" class="fs-cta">ENTER xOS ▸</button>', true, () => {
+        setScene(`<button id="fsCta" class="fs-cta">ENTER xOS ${CHEVRON_RIGHT_SVG}</button>`, true, () => {
           document.getElementById('fsCta')?.addEventListener('click', finish);
         });
       });
@@ -764,7 +790,7 @@ export default function Onboarding({ mode, onComplete }: { mode: Mode; onComplet
       <div id="fsHoloCap" ref={holoCapRef} />
       <div id="fsScene" ref={sceneRef} />
       <div id="fsSkip" onClick={() => onCompleteRef.current()}>
-        SKIP ▸
+        SKIP <Icon name="chevronRight" size={12} />
       </div>
       <div id="fsDots" ref={dotsRef} />
       <div id="fsStarHint" ref={starHintRef} />

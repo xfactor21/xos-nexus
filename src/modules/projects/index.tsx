@@ -14,27 +14,35 @@ import {
   type WidgetId,
 } from './local';
 import type { NodeRecord, ProjectRecord } from '../../core/types';
+import Icon from '../../design-system/icons/Icon';
+import DataIcon from '../../design-system/icons/DataIcon';
+import type { IconName } from '../../design-system/icons/registry';
+import AmbientField from '../../design-system/background/AmbientField';
 
 type Zone = 'zoverview' | 'zboard' | 'zdocs' | 'zbugs' | 'zfeed';
 
+// Amendment v0.6 step 1: mock/demo copy no longer embeds icon glyphs in the
+// string data itself (📄/◈ prefixes) — icons render at the JSX call site
+// instead, driven by an explicit `fromAI` flag rather than a text marker.
 const docs = [
-  { t: '📄 Dark Mode — Requirements', meta: '◈ CREATED FROM NEURAL CAPTURE', tag: 'NEW' },
-  { t: '📄 Onboarding Flow Spec', meta: 'LINKED TO 4 TASKS', tag: '◈ AI-DRAFTED' },
-  { t: '📄 Auth Architecture', meta: 'SPRINT 001', tag: '◈ RECALLED TODAY FOR BUG #17' },
-  { t: '📄 Brand Voice Guide', meta: '6 DAYS AGO', tag: '' },
+  { t: 'Dark Mode — Requirements', meta: 'CREATED FROM NEURAL CAPTURE', fromAI: true, tag: 'NEW' },
+  { t: 'Onboarding Flow Spec', meta: 'LINKED TO 4 TASKS', fromAI: false, tag: 'AI-DRAFTED' },
+  { t: 'Auth Architecture', meta: 'SPRINT 001', fromAI: false, tag: 'RECALLED TODAY FOR BUG #17' },
+  { t: 'Brand Voice Guide', meta: '6 DAYS AGO', fromAI: false, tag: '' },
 ];
 const feed = [
-  '◈ xAI linked bug #17 → solved #14 (92% similarity) · 5H AGO',
-  'Neural Capture routed 4 nodes into this project · YESTERDAY',
-  '◈ "Onboarding Flow" promoted to Sprint 002 milestone · YESTERDAY',
+  // ASCII "->" (not a Unicode arrow) since `body` renders as plain text, not JSX.
+  { body: 'xAI linked bug #17 -> solved #14 (92% similarity)', time: '5H AGO', fromAI: true },
+  { body: 'Neural Capture routed 4 nodes into this project', time: 'YESTERDAY', fromAI: false },
+  { body: '"Onboarding Flow" promoted to Sprint 002 milestone', time: 'YESTERDAY', fromAI: true },
 ];
 
-const ZONE_LABEL: Record<Zone, string> = {
-  zoverview: '◈ OVERVIEW',
-  zboard: '▦ BOARD',
-  zdocs: '▤ DOCS',
-  zbugs: '🐞 BUGS',
-  zfeed: '⌁ ACTIVITY',
+const ZONE_LABEL: Record<Zone, { icon: IconName; label: string }> = {
+  zoverview: { icon: 'xai', label: 'OVERVIEW' },
+  zboard: { icon: 'gridDense', label: 'BOARD' },
+  zdocs: { icon: 'rows', label: 'DOCS' },
+  zbugs: { icon: 'bugTracker', label: 'BUGS' },
+  zfeed: { icon: 'bolt', label: 'ACTIVITY' },
 };
 
 function relTime(iso: string) {
@@ -108,8 +116,12 @@ function DependencyList({ openId, nodes, edges, projects }: { openId: string; no
     <div className="depList">
       {links.map(({ project, n }) => (
         <div className="depRow" key={project.id}>
-          <span>{project.icon} {project.name.toUpperCase()}</span>
-          <span className="depCount">🔗 {n}</span>
+          <span>
+            <DataIcon value={project.icon} size={13} /> {project.name.toUpperCase()}
+          </span>
+          <span className="depCount">
+            <Icon name="link" size={12} /> {n}
+          </span>
         </div>
       ))}
     </div>
@@ -209,9 +221,10 @@ export default function Projects({ active }: { active: boolean }) {
     setDragId(null);
   }
 
-  const WIDGETS: Record<WidgetId, { title: string; render: () => ReactElement }> = {
+  const WIDGETS: Record<WidgetId, { icon: IconName; title: string; render: () => ReactElement }> = {
     health: {
-      title: '◈ HEALTH',
+      icon: 'xai',
+      title: 'HEALTH',
       render: () => (
         <div className="wStat">
           <div className="wStatN">{open?.health ?? 0}%</div>
@@ -221,13 +234,15 @@ export default function Projects({ active }: { active: boolean }) {
         </div>
       ),
     },
-    heatmap: { title: '◈ ACTIVITY HEATMAP · 12 WEEKS', render: () => <ActivityHeatmap projectNodes={projectNodes} /> },
+    heatmap: { icon: 'xai', title: 'ACTIVITY HEATMAP · 12 WEEKS', render: () => <ActivityHeatmap projectNodes={projectNodes} /> },
     deps: {
-      title: '◈ LINKED PROJECTS',
+      icon: 'xai',
+      title: 'LINKED PROJECTS',
       render: () => <DependencyList openId={openId!} nodes={nodes} edges={edges} projects={projects} />,
     },
     activity: {
-      title: '◈ RECENT NODES',
+      icon: 'xai',
+      title: 'RECENT NODES',
       render: () => {
         const recent = [...projectNodes].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()).slice(0, 4);
         if (!recent.length) return <div className="rsub" style={{ fontSize: 9 }}>No nodes yet.</div>;
@@ -246,13 +261,17 @@ export default function Projects({ active }: { active: boolean }) {
   };
 
   return (
-    <section className={`room ${active ? 'on' : ''}`} id="r-projects">
-      <h2 className="rh">📂 PROJECTS</h2>
+    <section className={`room ambient ${active ? 'on' : ''}`} id="r-projects">
+      <AmbientField mood="cyan" density={28} active={active} parallax />
+      <div className="roomInner">
+      <h2 className="rh">
+        <Icon name="projects" size={18} /> PROJECTS
+      </h2>
       <div className="rsub">xOS DOESN'T CONTAIN PRODUCTS. IT MANAGES THEM.</div>
       {!open && (
         <div id="plist">
           <button className="chip" id="newProjectBtn" onClick={() => setShowNew(true)}>
-            ＋ NEW PROJECT
+            <Icon name="plus" size={13} /> NEW PROJECT
           </button>
           {!projects.length && <div className="rsub">No projects yet — capture a thought and xAI will start one, or create one above.</div>}
           {projects.map((p) => {
@@ -265,13 +284,24 @@ export default function Projects({ active }: { active: boolean }) {
                 style={{ opacity: dim, filter: p.isStale ? 'saturate(.5)' : undefined }}
                 onClick={() => setOpenId(p.id)}
               >
-                <span className="ic">{p.icon}</span>
+                <span className="ic">
+                  <DataIcon value={p.icon} size={16} />
+                </span>
                 <div>
                   <h3>
-                    {p.name.toUpperCase()} <span className="classTag">{pc.icon} {pc.label}</span>
+                    {p.name.toUpperCase()}{' '}
+                    <span className="classTag">
+                      <DataIcon value={pc.icon} size={12} /> {pc.label}
+                    </span>
                   </h3>
                   <div className="mt">
-                    {p.isStale ? `⚠ ${p.idleDays} DAYS IDLE — CORE FLAGGED STALE` : `${tasks.filter((t) => t.project_id === p.id).length} TASKS · ${p.health}% HEALTH`}
+                    {p.isStale ? (
+                      <>
+                        <Icon name="warning" size={11} glow="amber" /> {p.idleDays} DAYS IDLE — CORE FLAGGED STALE
+                      </>
+                    ) : (
+                      `${tasks.filter((t) => t.project_id === p.id).length} TASKS · ${p.health}% HEALTH`
+                    )}
                   </div>
                 </div>
                 <span className="hp">
@@ -299,7 +329,9 @@ export default function Projects({ active }: { active: boolean }) {
             <div className="classPicker">
               {PROJECT_CLASSES.map((c) => (
                 <div key={c.id} className={`classOpt ${newClass === c.id ? 'on' : ''}`} onClick={() => setNewClass(c.id)}>
-                  <div className="classIc">{c.icon}</div>
+                  <div className="classIc">
+                    <DataIcon value={c.icon} size={20} />
+                  </div>
                   <div className="classLbl">{c.label}</div>
                   <div className="classBlurb">{c.blurb}</div>
                 </div>
@@ -309,7 +341,13 @@ export default function Projects({ active }: { active: boolean }) {
             <div style={{ display: 'flex', gap: 8, marginTop: 14 }}>
               <button className="chip" onClick={() => setShowNew(false)} disabled={creating}>CANCEL</button>
               <button className="chip on" id="createProjectSubmit" onClick={createProject} disabled={creating || !newName.trim()}>
-                {creating ? 'CREATING…' : 'CREATE ▸'}
+                {creating ? (
+                  'CREATING…'
+                ) : (
+                  <>
+                    CREATE <Icon name="chevronRight" size={13} />
+                  </>
+                )}
               </button>
             </div>
           </div>
@@ -319,12 +357,14 @@ export default function Projects({ active }: { active: boolean }) {
         <div id="pws">
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
             <button className="chip" onClick={() => setOpenId(null)}>
-              ◂ ALL
+              <Icon name="chevronLeft" size={13} /> ALL
             </button>
             <h2 className="rh" style={{ margin: 0 }}>
-              {open.icon} {open.name.toUpperCase()}
+              <DataIcon value={open.icon} size={18} /> {open.name.toUpperCase()}
             </h2>
-            <span className="classTag" style={{ marginLeft: 'auto' }}>{cls.icon} {cls.label}</span>
+            <span className="classTag" style={{ marginLeft: 'auto' }}>
+              <DataIcon value={cls.icon} size={12} /> {cls.label}
+            </span>
           </div>
           <div id="vitals">
             <div className="vital">
@@ -351,7 +391,7 @@ export default function Projects({ active }: { active: boolean }) {
           <div className="zones">
             {cls.zones.map((z) => (
               <span key={z} className={`zone ${zone === z ? 'on' : ''}`} onClick={() => setZone(z)}>
-                {ZONE_LABEL[z]}
+                <Icon name={ZONE_LABEL[z].icon} size={13} /> {ZONE_LABEL[z].label}
               </span>
             ))}
           </div>
@@ -371,7 +411,7 @@ export default function Projects({ active }: { active: boolean }) {
                     onDragStart={() => setDragId(wid)}
                     onDragEnd={() => setDragId(null)}
                   >
-                    <span className="dragHandle">⠿</span> {WIDGETS[wid].title}
+                    <span className="dragHandle">⠿</span> <Icon name={WIDGETS[wid].icon} size={13} glow="cyan" /> {WIDGETS[wid].title}
                   </div>
                   <div className="widgetBody">{WIDGETS[wid].render()}</div>
                 </div>
@@ -391,7 +431,10 @@ export default function Projects({ active }: { active: boolean }) {
                         {t.title}
                         <br />
                         {t.tags.map((tag, i) => (
-                          <span key={i} className={`t ${/◈/.test(tag) ? 'ai' : /BUG/.test(tag) ? 'bug' : ''}`}>
+                          // Amendment v0.6 step 1: tags no longer embed the ◈
+                          // glyph as a text marker (see mappers.ts) — match on
+                          // the actual tag text instead.
+                          <span key={i} className={`t ${/FROM CAPTURE/.test(tag) ? 'ai' : /BUG/.test(tag) ? 'bug' : ''}`}>
                             {tag}
                           </span>
                         ))}
@@ -406,9 +449,9 @@ export default function Projects({ active }: { active: boolean }) {
             <div className={`subpanel ${zone === 'zdocs' ? 'on' : ''}`} id="zdocs">
               {docs.map((d, i) => (
                 <div className="cap" key={i}>
-                  {d.t}
+                  <Icon name="file" size={12} /> {d.t}
                   <div className="meta">
-                    <span>{d.meta}</span>
+                    {d.fromAI && <Icon name="xai" size={11} glow="cyan" />} <span>{d.meta}</span>
                     {d.tag && <span style={{ color: 'var(--cyan)' }}>{d.tag}</span>}
                   </div>
                 </div>
@@ -424,7 +467,11 @@ export default function Projects({ active }: { active: boolean }) {
                     {b.title} <span className="st" onClick={() => cycleBug(b.id)}>{b.bugStatus.toUpperCase()}</span>
                     <div className="mt">
                       <span>{b.severity.toUpperCase()}</span>
-                      {b.similarity && <span className="link">◈ {Math.round(b.similarity * 100)}% SIMILAR TO A SOLVED BUG — FIX ATTACHED</span>}
+                      {b.similarity && (
+                        <span className="link">
+                          <Icon name="xai" size={12} glow="cyan" /> {Math.round(b.similarity * 100)}% SIMILAR TO A SOLVED BUG — FIX ATTACHED
+                        </span>
+                      )}
                     </div>
                   </div>
                 ))}
@@ -432,20 +479,18 @@ export default function Projects({ active }: { active: boolean }) {
             </div>
           )}
           <div className={`subpanel ${zone === 'zfeed' ? 'on' : ''}`} id="zfeed">
-            {feed.map((f, i) => {
-              const [body, time] = f.split(' · ');
-              return (
-                <div className="cap" key={i}>
-                  {body}
-                  <div className="meta">
-                    <span>{time}</span>
-                  </div>
+            {feed.map((f, i) => (
+              <div className="cap" key={i}>
+                {f.fromAI && <Icon name="xai" size={11} glow="cyan" />} {f.body}
+                <div className="meta">
+                  <span>{f.time}</span>
                 </div>
-              );
-            })}
+              </div>
+            ))}
           </div>
         </div>
       )}
+      </div>
     </section>
   );
 }

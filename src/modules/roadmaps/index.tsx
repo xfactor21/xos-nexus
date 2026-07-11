@@ -1,5 +1,7 @@
 import { useRef, useState } from 'react';
 import { useCoreGraph } from '../../stores/coreGraph';
+import Icon from '../../design-system/icons/Icon';
+import AmbientField from '../../design-system/background/AmbientField';
 
 /** ROADMAPS — Step 5: ported 1:1 from xos-prototype.html (.track vertical
  * timeline) and extended per the Feature Uplift notes: drag-to-reorder
@@ -41,16 +43,18 @@ export default function Roadmaps({ active }: { active: boolean }) {
   const span = Math.max(1, maxT - minT);
 
   return (
-    <section className={`room ${active ? 'on' : ''}`} id="r-roadmaps">
-      <h2 className="rh">🗺 ROADMAPS</h2>
+    <section className={`room ambient ${active ? 'on' : ''}`} id="r-roadmaps">
+      <AmbientField mood="purple" density={26} active={active} parallax />
+      <div className="roomInner">
+      <h2 className="rh"><Icon name="roadmaps" size={18} /> ROADMAPS</h2>
       <div className="rsub">PROJECTS ANSWER "WHAT ARE WE BUILDING?" — THIS ANSWERS "WHERE ARE WE GOING?"</div>
 
       <div className="optrow">
         <span className={`chip ${view === 'track' ? 'on' : ''}`} onClick={() => setView('track')}>
-          ▤ TRACK
+          <Icon name="rows" size={12} /> TRACK
         </span>
         <span className={`chip ${view === 'gantt' ? 'on' : ''}`} onClick={() => setView('gantt')}>
-          ▬ TIMELINE (GANTT-LITE)
+          <Icon name="gantt" size={12} /> TIMELINE (GANTT-LITE)
         </span>
       </div>
 
@@ -70,7 +74,9 @@ export default function Roadmaps({ active }: { active: boolean }) {
                   <span className="drag-handle">⠿</span>
                   {m.version} — {m.title}
                 </span>
-                <span className="st">{m.statusLabel}</span>
+                <span className="st">
+                  <Icon name={m.state === 'shipped' ? 'check' : m.state === 'current' ? 'bolt' : 'hourglass'} size={11} glow={m.state === 'current' ? 'cyan' : 'none'} /> {m.statusLabel}
+                </span>
               </h3>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 6 }}>
                 <span style={{ fontSize: 9, letterSpacing: 1, color: 'var(--text-dim)' }}>RELEASE:</span>
@@ -84,7 +90,7 @@ export default function Roadmaps({ active }: { active: boolean }) {
               <ul>
                 {m.items.map((it, i) => (
                   <li key={i} className={it.done ? 'done' : ''}>
-                    {it.label}
+                    {it.fromMemory && <Icon name="xai" size={10} glow="cyan" />} {it.label}
                   </li>
                 ))}
               </ul>
@@ -114,7 +120,7 @@ export default function Roadmaps({ active }: { active: boolean }) {
                   </div>
                 ) : (
                   <span className="promote-target" onClick={() => setPromoting(m.id)}>
-                    ◈ PROMOTE A MEMORY VAULT PATTERN ▸
+                    <Icon name="xai" size={11} glow="cyan" /> PROMOTE A MEMORY VAULT PATTERN <Icon name="chevronRight" size={11} />
                   </span>
                 )}
               </div>
@@ -142,6 +148,7 @@ export default function Roadmaps({ active }: { active: boolean }) {
           })}
         </div>
       )}
+      </div>
     </section>
   );
 }

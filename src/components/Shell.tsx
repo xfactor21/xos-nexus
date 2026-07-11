@@ -1,9 +1,10 @@
-import { useEffect } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useUiStore } from '../stores/uiStore';
 import { useAuthStore } from '../stores/authStore';
 import { useCoreGraph } from '../stores/coreGraph';
 import { ROOMS, ROOM_NAME, DOCK_CONTENT } from '../core/rooms';
 import RoomOutlet from './RoomOutlet';
+import Icon from '../design-system/icons/Icon';
 
 /** App chrome — ported 1:1 from xos-prototype.html's #hud/#sb/#dock markup
  * and body.sb / body.nodock toggle classes. Also where Step 3's "populated
@@ -19,6 +20,14 @@ export default function Shell() {
   const closeSidebar = useUiStore((s) => s.closeSidebar);
   const toggleDock = useUiStore((s) => s.toggleDock);
   const userId = useAuthStore((s) => s.user?.id);
+
+  // Forces one extra render post-mount so the spine's active-room glow
+  // (measured off nav item refs) is correctly positioned from first paint,
+  // not just top:0 until some other state change happens to re-render.
+  const [, forceSpineLayout] = useState(0);
+  useEffect(() => {
+    forceSpineLayout((n) => n + 1);
+  }, []);
 
   useEffect(() => {
     if (!userId) return;
@@ -47,15 +56,97 @@ export default function Shell() {
     return () => window.removeEventListener('xos-go', onGo);
   }, [go]);
 
+  // Amendment v0.6 step 4: real depth via a light-source spotlight. Rather
+  // than attaching a pointermove listener to every .gpanel/.card/.cap/.mem/
+  // .rel in the app (dozens of instances across 9 rooms), one delegated
+  // listener here walks up to the nearest light-catching ancestor and writes
+  // the cursor position into --mx/--my as a plain DOM mutation (no React
+  // state, no re-render) — design-system.css reads those vars to position a
+  // radial-gradient highlight, so the glow reads as light hitting a surface
+  // from wherever the cursor is, instead of a flat colored border.
+  useEffect(() => {
+    function onMove(e: PointerEvent) {
+      const el = (e.target as HTMLElement | null)?.closest?.('.gpanel, .card, .cap, .mem, .rel') as HTMLElement | null;
+      if (!el) return;
+      const rect = el.getBoundingClientRect();
+      if (!rect.width || !rect.height) return;
+      el.style.setProperty('--mx', `${((e.clientX - rect.left) / rect.width) * 100}%`);
+      el.style.setProperty('--my', `${((e.clientY - rect.top) / rect.height) * 100}%`);
+    }
+    window.addEventListener('pointermove', onMove, { passive: true });
+    return () => window.removeEventListener('pointermove', onMove);
+  }, []);
+
   const flow = ROOMS.filter((r) => r.section === 'FLOW');
   const systems = ROOMS.filter((r) => r.section === 'SYSTEMS');
   const dock = DOCK_CONTENT[room];
+
+  // Amendment v0.6 step 2: "neural spine" sidebar — icons sit on a glowing
+  // vertical line instead of a plain list row. A pulse travels along the
+  // line to whichever icon is hovered (real, ref-measured Y position, not a
+  // static glow), and the active room's icon breathes brighter than the
+  // rest. Each section (FLOW/SYSTEMS) gets its own spine segment since a
+  // single line can't sensibly run through the section-label text between
+  // them.
+  const navRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  const [pulseTarget, setPulseTarget] = useState<{ section: 'flow' | 'systems'; y: number } | null>(null);
+
+  function trackSpine(id: string, section: 'flow' | 'systems') {
+    const el = navRefs.current[id];
+    const parent = el?.parentElement;
+    if (el && parent) {
+      setPulseTarget({ section, y: el.offsetTop + el.offsetHeight / 2 - parent.offsetTop });
+    }
+  }
+  function clearSpine() {
+    setPulseTarget(null);
+  }
+
+  function renderSpineSection(rooms: typeof flow, sectionLabel: string, sectionKey: 'flow' | 'systems') {
+    const activeIdx = rooms.findIndex((r) => r.id === room);
+    return (
+      <div className="spineSection">
+        <div className="sec">{sectionLabel}</div>
+        <div className="spineTrack">
+          <div className="spineLine" />
+          {pulseTarget?.section === sectionKey && (
+            <div className="spinePulse" style={{ top: pulseTarget.y }} />
+          )}
+          {activeIdx >= 0 && (
+            <div
+              className="spineActiveGlow"
+              style={{ top: (navRefs.current[rooms[activeIdx].id]?.offsetTop ?? 0) + (navRefs.current[rooms[activeIdx].id]?.offsetHeight ?? 0) / 2 }}
+            />
+          )}
+          {rooms.map((r) => (
+            <div
+              key={r.id}
+              ref={(el) => {
+                navRefs.current[r.id] = el;
+              }}
+              className={`nav ${room === r.id ? 'on' : ''}`}
+              onClick={() => go(r.id)}
+              onMouseEnter={() => trackSpine(r.id, sectionKey)}
+              onMouseLeave={clearSpine}
+            >
+              <span className={`ic ${room === r.id ? 'breathe' : ''}`}>
+                <Icon name={r.icon} size={16} glow={room === r.id ? 'cyan' : 'none'} />
+              </span>
+              <span className="navLabel">{r.name}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <>
       {/* HUD */}
       <div id="hud">
-        <button id="menuBtn" onClick={toggleSidebar}>☰</button>
+        <button id="menuBtn" onClick={toggleSidebar}>
+          <Icon name="menu" size={18} />
+        </button>
         <span className="brand">
           xOS<em>//</em>
         </span>
@@ -63,30 +154,22 @@ export default function Shell() {
         <span className="pill">v0.5.0 · SPRINT 002</span>
       </div>
 
-      {/* SIDEBAR */}
+      {/* SIDEBAR — "neural spine": icons on a glowing vertical line, not a
+          plain list. Collapsed (default) shows icon-dots only; expanded
+          (toggled via #menuBtn) adds labels beside them. */}
       <div id="sbShade" onClick={closeSidebar} />
       <nav id="sb">
-        <div className="sec">FLOW</div>
-        {flow.map((r) => (
-          <div key={r.id} className={`nav ${room === r.id ? 'on' : ''}`} onClick={() => go(r.id)}>
-            <span className="ic">{r.icon}</span>
-            {r.name}
-          </div>
-        ))}
-        <div className="sec">SYSTEMS</div>
-        {systems.map((r) => (
-          <div key={r.id} className={`nav ${room === r.id ? 'on' : ''}`} onClick={() => go(r.id)}>
-            <span className="ic">{r.icon}</span>
-            {r.name}
-          </div>
-        ))}
+        {renderSpineSection(flow, 'FLOW', 'flow')}
+        {renderSpineSection(systems, 'SYSTEMS', 'systems')}
       </nav>
 
       {/* xAI DOCK */}
-      <button id="tgDock" onClick={toggleDock}>◈</button>
+      <button id="tgDock" onClick={toggleDock}>
+        <Icon name="xai" size={16} glow="cyan" />
+      </button>
       <div id="dock">
         <h3 onClick={() => useUiStore.setState({ dockOpen: false })}>
-          ◈ xAI <span>▾</span>
+          <Icon name="xai" size={13} glow="cyan" /> xAI <span><Icon name="chevronDown" size={12} /></span>
         </h3>
         <div id="dockBody">
           {dock?.map((d, i) => (

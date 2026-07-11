@@ -1,5 +1,7 @@
 import { useState } from 'react';
 import { useCoreGraph } from '../../stores/coreGraph';
+import Icon from '../../design-system/icons/Icon';
+import AmbientField from '../../design-system/background/AmbientField';
 
 type Kind = 'all' | 'decision' | 'learning' | 'pattern';
 
@@ -14,8 +16,12 @@ export default function Vault({ active }: { active: boolean }) {
   const filtered = memories.filter((m) => (kind === 'all' || m.kind === kind) && (!q || m.content.toLowerCase().includes(q.toLowerCase())));
 
   return (
-    <section className={`room ${active ? 'on' : ''}`} id="r-vault">
-      <h2 className="rh">🗄 MEMORY VAULT</h2>
+    <section className={`room ambient ${active ? 'on' : ''}`} id="r-vault">
+      <AmbientField mood="purple" density={24} active={active} parallax />
+      <div className="roomInner">
+      <h2 className="rh">
+        <Icon name="memoryVault" size={16} glow="cyan" /> MEMORY VAULT
+      </h2>
       <div className="rsub">EVERYTHING THE CORE HAS LEARNED. SEARCHABLE. QUERYABLE. ALIVE.</div>
       <input id="vsearch" placeholder='Search memories… try "auth" or "bee"' value={q} onChange={(e) => setQ(e.target.value)} />
       <div className="optrow">
@@ -33,10 +39,11 @@ export default function Vault({ active }: { active: boolean }) {
             </span>
             {m.content}
             <div className="mt">
-              ◈ RECALLED {m.recalledCount}× THIS WEEK · LINKED TO {m.linkedNodeCount} NODES
+              <Icon name="xai" size={12} glow="cyan" /> RECALLED {m.recalledCount}× THIS WEEK · LINKED TO {m.linkedNodeCount} NODES
             </div>
           </div>
         ))}
+      </div>
       </div>
     </section>
   );

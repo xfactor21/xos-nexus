@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import ToolShell from './ToolShell';
+import Icon from '../../../design-system/icons/Icon';
 
 // Module-level ref count + element handle backing the shared Google Fonts
 // <link> — see the effect below for why this needs to be ref-counted
@@ -210,13 +211,13 @@ export default function FontPairing({ boardId, onExit }: { boardId: string; onEx
       <div className="toolCol">
         <div className="toolRow">
           <button className="chip" onClick={handlePrev}>
-            ◂ PREV
+            <Icon name="chevronLeft" size={12} /> PREV
           </button>
           <button className="chip" onClick={handleNext}>
-            NEXT ▸
+            NEXT <Icon name="chevronRight" size={12} />
           </button>
           <button className="chip" onClick={handleShuffle}>
-            ⚂ SHUFFLE
+            <Icon name="shuffle" size={12} /> SHUFFLE
           </button>
           <button className="wbtn" onClick={handleCopy}>
             {copied ? 'COPIED!' : 'COPY CSS'}

@@ -1,6 +1,7 @@
 import { useState } from 'react';
-import type { FormEvent } from 'react';
+import type { FormEvent, ReactNode } from 'react';
 import { useAuthStore } from '../../stores/authStore';
+import Icon from '../../design-system/icons/Icon';
 
 type Mode = 'signin' | 'signup' | 'magic';
 
@@ -20,7 +21,7 @@ export default function AuthGate() {
   const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
+  const [notice, setNotice] = useState<ReactNode | null>(null);
 
   async function submit(e: FormEvent) {
     e.preventDefault();
@@ -36,7 +37,12 @@ export default function AuthGate() {
       if (mode === 'magic') {
         const { error } = await sendMagicLink(email.trim());
         if (error) setError(error);
-        else setNotice(`◈ LINK SENT — check ${email.trim()} to sign in.`);
+        else
+          setNotice(
+            <>
+              <Icon name="xai" size={13} glow="cyan" /> LINK SENT — check {email.trim()} to sign in.
+            </>,
+          );
       } else if (mode === 'signin') {
         const { error } = await signInWithPassword(email.trim(), password);
         if (error) setError(error);
@@ -44,7 +50,12 @@ export default function AuthGate() {
       } else {
         const { error, needsConfirmation } = await signUpWithPassword(email.trim(), password);
         if (error) setError(error);
-        else if (needsConfirmation) setNotice(`◈ ACCOUNT CREATED — check ${email.trim()} to confirm, then sign in.`);
+        else if (needsConfirmation)
+          setNotice(
+            <>
+              <Icon name="xai" size={13} glow="cyan" /> ACCOUNT CREATED — check {email.trim()} to confirm, then sign in.
+            </>,
+          );
         // else: confirmation is off for this project, session started immediately
       }
     } catch (err) {
@@ -101,11 +112,21 @@ export default function AuthGate() {
           />
         )}
 
-        {error && <div className="autherr">⚠ {error}</div>}
+        {error && (
+          <div className="autherr">
+            <Icon name="warning" size={13} glow="magenta" /> {error}
+          </div>
+        )}
         {notice && <div className="authok">{notice}</div>}
 
         <button className="bigbtn" type="submit" disabled={busy}>
-          {busy ? 'WORKING…' : mode === 'signin' ? 'ENTER HEADQUARTERS ▸' : mode === 'signup' ? 'CREATE ACCOUNT ▸' : 'SEND MAGIC LINK ▸'}
+          {busy ? (
+            'WORKING…'
+          ) : (
+            <>
+              {mode === 'signin' ? 'ENTER HEADQUARTERS' : mode === 'signup' ? 'CREATE ACCOUNT' : 'SEND MAGIC LINK'} <Icon name="chevronRight" size={14} />
+            </>
+          )}
         </button>
 
         <div className="authswitch">

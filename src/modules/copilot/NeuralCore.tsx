@@ -1,34 +1,36 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import type { KeyboardEvent as ReactKeyboardEvent } from 'react';
+import type { KeyboardEvent as ReactKeyboardEvent, ReactNode } from 'react';
 import { liveClassify, offlineClassify } from '../../lib/copilotClient';
 import { commitOrQueue } from '../../lib/offlineSync';
 import { useCoreGraph } from '../../stores/coreGraph';
 import { ROOMS } from '../../core/rooms';
 import { pendingCaptureCount } from '../../lib/localDb';
+import Icon from '../../design-system/icons/Icon';
+import type { IconName } from '../../design-system/icons/registry';
 
-const modules = [
-  { id: 'capture', ic: '💭', nm: 'CAPTURE' },
-  { id: 'projects', ic: '📂', nm: 'PROJECTS' },
-  { id: 'focus', ic: '🎯', nm: 'FOCUS' },
-  { id: 'studio', ic: '🎨', nm: 'STUDIO' },
-  { id: 'roadmaps', ic: '🗺', nm: 'ROADMAPS' },
-  { id: 'bugs', ic: '🐞', nm: 'BUGS' },
-  { id: 'releases', ic: '📦', nm: 'RELEASES' },
-  { id: 'vault', ic: '🗄', nm: 'VAULT' },
-  { id: 'comms', ic: '📡', nm: 'COMMS' },
+const modules: { id: string; ic: IconName; nm: string }[] = [
+  { id: 'capture', ic: 'neuralCapture', nm: 'CAPTURE' },
+  { id: 'projects', ic: 'projects', nm: 'PROJECTS' },
+  { id: 'focus', ic: 'focusTime', nm: 'FOCUS' },
+  { id: 'studio', ic: 'designStudio', nm: 'STUDIO' },
+  { id: 'roadmaps', ic: 'roadmaps', nm: 'ROADMAPS' },
+  { id: 'bugs', ic: 'bugTracker', nm: 'BUGS' },
+  { id: 'releases', ic: 'releases', nm: 'RELEASES' },
+  { id: 'vault', ic: 'memoryVault', nm: 'VAULT' },
+  { id: 'comms', ic: 'comms', nm: 'COMMS' },
 ];
-const projs = [
-  { id: 'p-sh', ic: '🐝', nm: 'STUDYHIVE' },
-  { id: 'p-mu', ic: '🎵', nm: 'MUSIC' },
-  { id: 'p-we', ic: '🌐', nm: 'WEBSITE' },
-  { id: 'p-no', ic: '📖', nm: 'NOVEL' },
+const projs: { id: string; ic: IconName; nm: string }[] = [
+  { id: 'p-sh', ic: 'study', nm: 'STUDYHIVE' }, // StudyHive is education-themed; closest available concept icon
+  { id: 'p-mu', ic: 'music', nm: 'MUSIC' },
+  { id: 'p-we', ic: 'globe', nm: 'WEBSITE' },
+  { id: 'p-no', ic: 'book', nm: 'NOVEL' },
 ];
 const slugToProj: Record<string, string> = { studyhive: 'p-sh', music: 'p-mu', website: 'p-we', novel: 'p-no' };
 const allMeta = [...modules, ...projs];
 
-const KIND_ICON: Record<string, string> = {
-  capture: '💭', task: '✅', note: '📝', doc: '📄', bug: '🐞', idea: '💡',
-  design: '🎨', roadmap_item: '🗺', release: '📦', conversation: '📡',
+const KIND_ICON: Record<string, IconName> = {
+  capture: 'neuralCapture', task: 'checkCircle', note: 'note', doc: 'file', bug: 'bugTracker', idea: 'idea',
+  design: 'designStudio', roadmap_item: 'roadmaps', release: 'releases', conversation: 'comms',
 };
 
 function relTime(iso: string) {
@@ -73,7 +75,7 @@ export default function NeuralCore({ active }: { active: boolean }) {
    * live graph data changes (kept in a ref so the RAF loop, set up once,
    * doesn't need to be torn down/restarted on every data update). */
   const moodRef = useRef({ health: 70, workload: 0 });
-  const [msg, setMsg] = useState('');
+  const [msg, setMsg] = useState<ReactNode>('');
   const [statsOverride, setStatsOverride] = useState<string | null>(null);
   const [thought, setThought] = useState('');
   const [tickIdx, setTickIdx] = useState(0);
@@ -218,14 +220,18 @@ export default function NeuralCore({ active }: { active: boolean }) {
     });
     nodePos.current = pos;
 
-    const mkNode = (d: { id: string; ic: string; nm: string }, cls: string, onClick: () => void) => {
+    const mkNode = (d: { id: string; ic: IconName; nm: string }, cls: string, onClick: () => void) => {
       const [x, y] = pos[d.id];
       const el = document.createElement('div');
       el.className = 'cnode ' + cls;
       el.id = 'n-' + d.id;
       el.style.left = x + 'px';
       el.style.top = y + 'px';
-      el.innerHTML = `<span class="bub">${d.ic}</span><span class="nm">${d.nm}</span>`;
+      // Raw DOM innerHTML — non-JSX context, the <Icon> React component can't be
+      // mounted here, so the bubble glyph is intentionally omitted (Amendment
+      // v0.6 step 1 non-JSX carve-out). `d.ic` is kept as an IconName on the
+      // data for a future JSX-based node renderer.
+      el.innerHTML = `<span class="bub"></span><span class="nm">${d.nm}</span>`;
       el.onclick = onClick;
       stage.appendChild(el);
     };
@@ -463,7 +469,11 @@ export default function NeuralCore({ active }: { active: boolean }) {
     const v = thought.trim();
     if (!v) return;
     setThought('');
-    setMsg('◈ xAI is thinking…');
+    setMsg(
+      <>
+        <Icon name="xai" size={12} /> xAI is thinking…
+      </>,
+    );
     let liveResult: Awaited<ReturnType<typeof liveClassify>> | null = null;
     try {
       liveResult = await liveClassify(v);
@@ -499,8 +509,21 @@ export default function NeuralCore({ active }: { active: boolean }) {
         t += 420;
       }
       setTimeout(() => {
-        const tag = liveResult!.liveAI ? '◈ xAI (LIVE)' : '◈ xAI (KEY NOT SET)';
-        setMsg(`${tag} · ${first.kind.toUpperCase()} → ${path.slice(1).map(nameOf).join(' → ')} · "${first.reasoning}"`);
+        // msg is a ReactNode (see AuthGate.tsx's `notice` for the same pattern) —
+        // the xAI presence glyph AND the path-breadcrumb arrows both render as
+        // real <Icon> components now (Amendment v0.6 step 1: zero raw glyphs,
+        // including in rendered prose).
+        setMsg(
+          <>
+            <Icon name="xai" size={12} /> xAI ({liveResult!.liveAI ? 'LIVE' : 'KEY NOT SET'}) · {first.kind.toUpperCase()} <Icon name="arrowRight" size={10} />{' '}
+            {path.slice(1).map(nameOf).map((name, i) => (
+              <span key={i}>
+                {i > 0 && <Icon name="arrowRight" size={10} />} {name}
+              </span>
+            ))}{' '}
+            · "{first.reasoning}"
+          </>,
+        );
         setTimeout(() => setMsg(''), 5200);
         setStatsOverride(liveResult!.liveAI ? 'LIVE NODE WRITTEN TO SUPABASE · CORE LEARNING' : 'NODE WRITTEN (fallback mode) · SET ANTHROPIC_API_KEY FOR LIVE AI');
         setTimeout(() => setStatsOverride(null), 4500);
@@ -531,7 +554,17 @@ export default function NeuralCore({ active }: { active: boolean }) {
       t += 420;
     }
     setTimeout(() => {
-      setMsg(`◈ ${c.label} (OFFLINE MOCK) → ${path.slice(1).map(nameOf).join(' → ')} · NODE CREATED`);
+      setMsg(
+        <>
+          <Icon name={c.label.icon} size={12} /> {c.label.text} (OFFLINE MOCK) <Icon name="arrowRight" size={10} />{' '}
+          {path.slice(1).map(nameOf).map((name, i) => (
+            <span key={i}>
+              {i > 0 && <Icon name="arrowRight" size={10} />} {name}
+            </span>
+          ))}{' '}
+          · NODE CREATED
+        </>,
+      );
       setTimeout(() => setMsg(''), 3600);
       setStatsOverride('NODE QUEUED (offline mock) · CORE LEARNING');
       setTimeout(() => setStatsOverride(null), 4500);
@@ -549,7 +582,7 @@ export default function NeuralCore({ active }: { active: boolean }) {
           <p id="coreBriefing">{briefing}</p>
           {tickerNode && (
             <p id="coreTicker" key={tickerNode.id}>
-              {KIND_ICON[tickerNode.kind] ?? '◈'} {(tickerNode.title || tickerNode.body || '').slice(0, 48)} · {relTime(tickerNode.created_at)}
+              <Icon name={KIND_ICON[tickerNode.kind] ?? 'xai'} size={12} /> {(tickerNode.title || tickerNode.body || '').slice(0, 48)} · {relTime(tickerNode.created_at)}
             </p>
           )}
         </div>
@@ -567,13 +600,15 @@ export default function NeuralCore({ active }: { active: boolean }) {
         <div id="capBar">
           <input
             id="thought"
-            placeholder="Tell the Core anything… (⌘K to jump anywhere)"
+            placeholder="Tell the Core anything… (Cmd+K to jump anywhere)"
             autoComplete="off"
             value={thought}
             onChange={(e) => setThought(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && coreCapture()}
           />
-          <button onClick={coreCapture}>◈</button>
+          <button onClick={coreCapture}>
+            <Icon name="xai" size={16} glow="cyan" />
+          </button>
         </div>
       </div>
       {paletteOpen && (
@@ -602,7 +637,10 @@ export default function NeuralCore({ active }: { active: boolean }) {
                 </div>
               ))}
             </div>
-            <div id="cmdPaletteHint">↑↓ navigate · ↵ jump · esc close</div>
+            <div id="cmdPaletteHint">
+              <Icon name="arrowUp" size={10} />
+              <Icon name="arrowDown" size={10} /> navigate · <Icon name="enter" size={10} /> jump · esc close
+            </div>
           </div>
         </div>
       )}

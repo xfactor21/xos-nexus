@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import { useCoreGraph } from '../../stores/coreGraph';
 import { supabase } from '../../lib/supabase';
 import { commitOrQueue } from '../../lib/offlineSync';
+import Icon from '../../design-system/icons/Icon';
+import type { IconName } from '../../design-system/icons/registry';
 
 const durChips: [number, string][] = [
   [15, '15 MIN'],
@@ -11,11 +13,21 @@ const durChips: [number, string][] = [
 ];
 
 type Soundscape = 'off' | 'hum' | 'rain' | 'binaural';
-const SOUNDSCAPES: [Soundscape, string][] = [
-  ['off', '🔇 SILENT'],
-  ['hum', '🌌 DEEP SPACE HUM'],
-  ['rain', '🌧 RAIN'],
-  ['binaural', '🎧 BINAURAL FOCUS'],
+// Amendment v0.6 step 1: mode-picker labels no longer embed a glyph in the
+// string — restructured to [value, icon, label] triples, rendered as
+// <Icon name={icon}/> {label} at the picker's JSX call site.
+const SOUNDSCAPES: [Soundscape, IconName, string][] = [
+  ['off', 'mute', 'SILENT'],
+  ['hum', 'nebula', 'DEEP SPACE HUM'],
+  ['rain', 'rain', 'RAIN'],
+  ['binaural', 'headphones', 'BINAURAL FOCUS'],
+];
+
+type SentimentValue = 'great' | 'okay' | 'rough';
+const SENTIMENTS: [SentimentValue, IconName, string][] = [
+  ['great', 'smile', 'GREAT'],
+  ['okay', 'meh', 'OKAY'],
+  ['rough', 'frown', 'ROUGH'],
 ];
 
 /** FOCUS TIME — Room Overhaul Batch 3: raised to the "Forest app + an
@@ -43,7 +55,8 @@ export default function Focus({ active }: { active: boolean }) {
   const [soundscape, setSoundscape] = useState<Soundscape>('off');
   const [strayText, setStrayText] = useState('');
   const [strayMsg, setStrayMsg] = useState('');
-  const [sentiment, setSentiment] = useState<'great' | 'okay' | 'rough' | null>(null);
+  const [strayOk, setStrayOk] = useState(false);
+  const [sentiment, setSentiment] = useState<SentimentValue | null>(null);
   const [note, setNote] = useState('');
   const [logging, setLogging] = useState(false);
   const timer = useRef<ReturnType<typeof setInterval> | undefined>(undefined);
@@ -237,8 +250,10 @@ export default function Focus({ active }: { active: boolean }) {
     setStrayText('');
     try {
       await commitOrQueue(v);
-      setStrayMsg('◈ filed — back to focus');
+      setStrayOk(true);
+      setStrayMsg('filed — back to focus');
     } catch {
+      setStrayOk(false);
       setStrayMsg('could not file that right now');
     }
     setTimeout(() => setStrayMsg(''), 2400);
@@ -269,7 +284,7 @@ export default function Focus({ active }: { active: boolean }) {
           source: 'manual',
           ai_classified: false,
           status: 'done',
-          metadata: { tags: ['◈ FOCUS SESSION'] },
+          metadata: { tags: ['FOCUS SESSION'] },
         });
       }
     } catch (err) {
@@ -284,7 +299,9 @@ export default function Focus({ active }: { active: boolean }) {
     <section className={`room ${active ? 'on' : ''}`} id="r-focus" style={{ position: 'relative', overflow: 'hidden' }}>
       <canvas ref={canvasRef} id="focusWarp" />
       <div id="focusContent">
-      <h2 className="rh">🎯 FOCUS TIME</h2>
+      <h2 className="rh">
+        <Icon name="focusTime" size={16} /> FOCUS TIME
+      </h2>
       <div className="rsub">SESSIONS HAVE RITUAL. STARTING ONE IS A COMMITMENT.</div>
       {stage === 'setup' && (
         <div id="focusSetup">
@@ -307,16 +324,16 @@ export default function Focus({ active }: { active: boolean }) {
           </div>
           <div style={{ fontSize: 10, letterSpacing: 2, color: 'var(--cyan-dim)' }}>AMBIENT SOUNDSCAPE</div>
           <div className="optrow" id="fSound">
-            {SOUNDSCAPES.map(([v, label]) => (
+            {SOUNDSCAPES.map(([v, icon, label]) => (
               <span key={v} className={`chip ${soundscape === v ? 'on' : ''}`} onClick={() => pickSoundscape(v)}>
-                {label}
+                <Icon name={icon} size={12} /> {label}
               </span>
             ))}
           </div>
           <div style={{ fontSize: 10, letterSpacing: 2, color: 'var(--cyan-dim)', marginBottom: 8 }}>MISSION INTENT</div>
           <input id="intent" placeholder='What will you accomplish? e.g. "Ship the dark mode toggle"' value={intent} onChange={(e) => setIntent(e.target.value)} />
           <button className="bigbtn" onClick={startFocus} disabled={!projId}>
-            ENGAGE FOCUS ▸
+            ENGAGE FOCUS <Icon name="chevronRight" size={13} />
           </button>
           <h2 className="rh" style={{ fontSize: 11, marginTop: 26 }}>
             SESSION LOG
@@ -356,46 +373,62 @@ export default function Focus({ active }: { active: boolean }) {
               onChange={(e) => setStrayText(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && logStray()}
             />
-            <button onClick={logStray}>◈</button>
+            <button onClick={logStray}>
+              <Icon name="xai" size={13} glow="cyan" />
+            </button>
           </div>
-          {strayMsg && <div id="strayMsg">{strayMsg}</div>}
+          {strayMsg && (
+            <div id="strayMsg">
+              {strayOk && <Icon name="xai" size={11} glow="cyan" />} {strayMsg}
+            </div>
+          )}
           <div id="fCtrl">
             <button onClick={abortFocus}>ABORT</button>
-            <button onClick={finishFocus}>COMPLETE ▸</button>
+            <button onClick={finishFocus}>
+              COMPLETE <Icon name="chevronRight" size={13} />
+            </button>
           </div>
         </div>
       )}
       {stage === 'reflect' && (
         <div id="reflect" className="on">
-          <h2 className="rh" style={{ fontSize: 14 }}>▸ HOW DID IT GO? ◂</h2>
+          <h2 className="rh" style={{ fontSize: 14 }}>
+            <Icon name="chevronRight" size={12} /> HOW DID IT GO? <Icon name="chevronLeft" size={12} />
+          </h2>
           <div className="rsub">xAI logs this as a real memory tied to {proj ? proj.name.toUpperCase() : 'this session'}.</div>
           <div id="sentimentRow">
-            {(
-              [
-                ['great', '😄', 'GREAT'],
-                ['okay', '😐', 'OKAY'],
-                ['rough', '😩', 'ROUGH'],
-              ] as [typeof sentiment, string, string][]
-            ).map(([v, emoji, label]) => (
+            {SENTIMENTS.map(([v, icon, label]) => (
               <span key={label} className={`sentimentChip ${sentiment === v ? 'on' : ''}`} onClick={() => setSentiment(v)}>
-                <span className="emoji">{emoji}</span> {label}
+                <span className="emoji">
+                  <Icon name={icon} size={20} />
+                </span>{' '}
+                {label}
               </span>
             ))}
           </div>
           <textarea id="reflectNote" placeholder="Anything worth remembering? (optional)" value={note} onChange={(e) => setNote(e.target.value)} />
           <button className="bigbtn" style={{ maxWidth: 320 }} onClick={submitReflection} disabled={logging}>
-            {logging ? 'LOGGING…' : 'LOG REFLECTION ▸'}
+            {logging ? (
+              'LOGGING…'
+            ) : (
+              <>
+                LOG REFLECTION <Icon name="chevronRight" size={13} />
+              </>
+            )}
           </button>
         </div>
       )}
       {stage === 'done' && (
         <div id="mission" className="on">
-          <h2>▸ MISSION COMPLETE ◂</h2>
+          <h2>
+            <Icon name="chevronRight" size={14} /> MISSION COMPLETE <Icon name="chevronLeft" size={14} />
+          </h2>
           <p id="mSum">
             SESSION LOGGED · {doneMin} MIN · {proj ? proj.name.toUpperCase() : '—'}
             <br />
             INTENT: "{(intent || 'DEEP WORK').toUpperCase()}"
-            <br />◈ CORE LOGGED THE SESSION AS A TASK · {proj ? proj.name.toUpperCase() : 'the project'}'S STAR BRIGHTENS
+            <br />
+            <Icon name="xai" size={12} glow="cyan" /> CORE LOGGED THE SESSION AS A TASK · {proj ? proj.name.toUpperCase() : 'the project'}'S STAR BRIGHTENS
           </p>
           <button className="bigbtn" style={{ maxWidth: 320 }} onClick={resetFocus}>
             RETURN TO SETUP

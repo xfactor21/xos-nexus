@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import ToolShell from './ToolShell';
+import Icon from '../../../design-system/icons/Icon';
 
 type ChartType = 'bar' | 'line' | 'pie';
 
@@ -334,7 +335,7 @@ export default function ChartBuilder({ boardId, onExit }: { boardId: string; onE
                   title="Remove row"
                   style={{ opacity: rows.length <= 1 ? 0.4 : 1 }}
                 >
-                  ✕
+                  <Icon name="trash" size={12} />
                 </button>
               </div>
             ))}
