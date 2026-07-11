@@ -1,4 +1,3 @@
-import { useState } from 'react';
 import { useUiStore } from '../../stores/uiStore';
 import { useAuthStore } from '../../stores/authStore';
 import Icon from '../../design-system/icons/Icon';
@@ -6,12 +5,21 @@ import AmbientField from '../../design-system/background/AmbientField';
 
 /** SETTINGS — ported 1:1 from xos-prototype.html: xAI autonomy, neon
  * intensity slider (wired to the same --glow var the core node glow uses),
- * shell target decision (Step 8, still undecided). Account panel added for
- * Step 1 (Auth) — no prototype equivalent, since the prototype never had a
- * real session to sign out of. */
+ * shell target (Step 8 decision — actually shipped, see
+ * .github/workflows/tauri-build.yml). Account panel added for Step 1
+ * (Auth) — no prototype equivalent, since the prototype never had a real
+ * session to sign out of.
+ *
+ * Bug fix: autonomy/shell were plain component-local useState (and glow
+ * had no backing storage at all), so every pick silently reset to its
+ * hardcoded default on the next app relaunch — it only *looked* like it
+ * held because RoomOutlet never unmounts rooms within a running session.
+ * All three now live in uiStore, persisted to localStorage. */
 export default function Settings({ active }: { active: boolean }) {
-  const [autonomy, setAutonomy] = useState('SUGGEST');
-  const [shell, setShell] = useState('UNDECIDED');
+  const autonomy = useUiStore((s) => s.autonomy);
+  const setAutonomy = useUiStore((s) => s.setAutonomy);
+  const shell = useUiStore((s) => s.shellTarget);
+  const setShell = useUiStore((s) => s.setShellTarget);
   const glow = useUiStore((s) => s.glow);
   const setGlow = useUiStore((s) => s.setGlow);
   const user = useAuthStore((s) => s.user);
@@ -31,7 +39,7 @@ export default function Settings({ active }: { active: boolean }) {
         </h3>
         <div className="d">How much may xAI act without asking? All actions stay reversible.</div>
         <div className="optrow" style={{ margin: 0 }}>
-          {['OBSERVE ONLY', 'SUGGEST', 'ROUTE AUTOMATICALLY', 'FULL COPILOT'].map((o) => (
+          {(['OBSERVE ONLY', 'SUGGEST', 'ROUTE AUTOMATICALLY', 'FULL COPILOT'] as const).map((o) => (
             <span key={o} className={`chip ${autonomy === o ? 'on' : ''}`} onClick={() => setAutonomy(o)}>
               {o}
             </span>
@@ -45,9 +53,9 @@ export default function Settings({ active }: { active: boolean }) {
       </div>
       <div className="gpanel setrow">
         <h3>SHELL TARGET</h3>
-        <div className="d">Sprint 002 decision pending.</div>
+        <div className="d">Decided and shipped in Step 8 — Tauri (see .github/workflows/tauri-build.yml).</div>
         <div className="optrow" style={{ margin: 0 }}>
-          {['ELECTRON', 'TAURI', 'UNDECIDED'].map((o) => (
+          {(['ELECTRON', 'TAURI', 'UNDECIDED'] as const).map((o) => (
             <span key={o} className={`chip ${shell === o ? 'on' : ''}`} onClick={() => setShell(o)}>
               {o}
             </span>
