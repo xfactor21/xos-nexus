@@ -27,6 +27,19 @@
   --glass: rgba(15, 21, 32, 0.8);
   --edge: rgba(0, 245, 255, 0.22);
 
+  /* Cockpit redesign — xFactor brand palette. --magenta/--purple/--cyan/
+     --void above already matched these hex-for-hex, so these are the
+     canonical short names the brief specifies, aliased onto the existing
+     tokens rather than a risky rename across every file that already
+     references the long names. --pk and --hull are genuinely new. */
+  --mg: var(--magenta);
+  --pk: #EC4899;
+  --pu: var(--purple);
+  --cy: var(--cyan);
+  --hull: #0A0E1A;
+  --eg-hot: rgba(255, 45, 120, 0.55);
+  --eg-cold: rgba(0, 245, 255, 0.35);
+
   /* Type */
   --font-disp: 'Orbitron', sans-serif;
   --font-mono: 'Share Tech Mono', monospace;

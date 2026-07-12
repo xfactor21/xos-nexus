@@ -5,6 +5,9 @@ import { useCoreGraph } from '../stores/coreGraph';
 import { ROOMS, ROOM_NAME, DOCK_CONTENT } from '../core/rooms';
 import RoomOutlet from './RoomOutlet';
 import Icon from '../design-system/icons/Icon';
+import CockpitFrame from '../design-system/cockpit/CockpitFrame';
+import GlobalParticles from '../design-system/cockpit/GlobalParticles';
+import XaiHologram from '../design-system/cockpit/XaiHologram';
 
 /** App chrome — ported 1:1 from xos-prototype.html's #hud/#sb/#dock markup
  * and body.sb / body.nodock toggle classes. Also where Step 3's "populated
@@ -142,6 +145,9 @@ export default function Shell() {
 
   return (
     <>
+      <GlobalParticles />
+      <CockpitFrame />
+
       {/* HUD */}
       <div id="hud">
         <button id="menuBtn" onClick={toggleSidebar}>
@@ -182,6 +188,17 @@ export default function Shell() {
       </div>
 
       <RoomOutlet />
+
+      {/* Bottom status bar — cockpit redesign: emits light upward per the
+          brief, mirrors #hud's role at the opposite edge of the frame. */}
+      <div id="status">
+        <span className="sy"><span className="dot" style={{ background: 'var(--mg)', boxShadow: '0 0 6px var(--mg)' }} /> CORE: NOMINAL</span>
+        <span className="sy"><span className="dot" style={{ background: 'var(--cy)', boxShadow: '0 0 6px var(--cy)' }} /> SYNC: LIVE</span>
+      </div>
+
+      {/* xAI hologram — persistent, autonomous presence, every room, outside
+          the right wing (#dock). Fixed position so it survives room swaps. */}
+      <XaiHologram />
     </>
   );
 }
