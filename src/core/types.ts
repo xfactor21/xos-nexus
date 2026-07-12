@@ -122,6 +122,10 @@ export interface MemoryRecord {
   recalledCount: number;
   linkedNodeCount: number;
   createdLabel: string;
+  /** Real ISO timestamp (Step 5's memories table has one) — needed for
+   * decay math and the "on this day" panel; createdLabel alone is just a
+   * pre-formatted display string, not usable for date arithmetic. */
+  created_at: string;
 }
 
 /** Roadmap milestone, uplifted in Step 5 with dates/progress/reorder. */

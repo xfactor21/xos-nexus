@@ -106,5 +106,6 @@ export function rowToMemory(
     recalledCount: 0,
     linkedNodeCount,
     createdLabel: relativeLabel(m.created_at),
+    created_at: m.created_at,
   };
 }

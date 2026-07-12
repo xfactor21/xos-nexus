@@ -248,6 +248,24 @@ input[type=range]{width:100%;accent-color:#00F5FF}
 .mem .k{font-size:9px;letter-spacing:2px;color:var(--purple);margin-bottom:4px;display:block}
 .mem .mt{font-size:9px;color:var(--text-dim);letter-spacing:1px;margin-top:6px}
 
+/* Memory Vault uplift: decay/strength badge, "on this day" panel, Obsidian-
+   style graph view (cluster browsing by kind). */
+.memStrength{float:right;font-size:8px;letter-spacing:1px;padding:1px 6px;border:1px solid}
+.memStrength-strong{color:var(--cy);border-color:var(--cy)}
+.memStrength-fading{color:var(--amber);border-color:var(--amber)}
+.memStrength-dormant{color:var(--text-dim);border-color:var(--text-dim)}
+
+.onThisDay{border:1px solid rgba(0,245,255,.3);background:rgba(0,245,255,.05);padding:10px 12px;margin-bottom:12px;font-size:11px}
+.onThisDay b{display:flex;align-items:center;gap:6px;color:var(--cy);font-size:9px;letter-spacing:1.5px;margin-bottom:6px}
+.onThisDayItem{color:var(--text-dim);padding:3px 0;cursor:pointer}
+.onThisDayItem:hover{color:var(--text)}
+
+.vaultGraph{position:relative;border:1px solid var(--edge);background:var(--glass);padding:12px;min-height:340px}
+.vaultGraph svg{width:100%;height:320px}
+.vaultGraphLegend{display:flex;flex-wrap:wrap;gap:12px;margin-top:8px;font-size:8px;letter-spacing:1px;color:var(--text-dim)}
+.vaultGraphLegend span{display:flex;align-items:center;gap:4px}
+.vaultGraphLegend i{width:7px;height:7px;border-radius:50%;display:inline-block}
+
 /* ============================================================
    FEATURE UPLIFT — additions beyond the prototype (Steps 4 & 5).
    New rules only; nothing above this line was altered.
