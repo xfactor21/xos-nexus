@@ -204,10 +204,16 @@ body:not(.sb) #sbShade {
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: transform 0.2s ease;
+  transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 .nav:hover .ic {
   transform: scale(1.12);
+}
+/* Active room — heavier glow than the plain breathe animation gives it,
+   per the cockpit glow-system pass: a real magenta active-border glow, not
+   just a brighter icon. */
+.nav.on {
+  box-shadow: inset 2px 0 0 0 var(--mg), 0 0 20px rgba(255, 45, 120, 0.6);
 }
 .nav .ic.breathe {
   animation: iconBreathe 2.6s ease-in-out infinite;
@@ -300,9 +306,9 @@ body.sb .navLabel {
     0 -1px 0 rgba(255, 255, 255, 0.05) inset,
     0 16px 30px -22px rgba(0, 0, 0, 0.65);
   transition:
-    box-shadow 0.25s ease,
+    box-shadow 0.3s cubic-bezier(0.34, 1.56, 0.64, 1),
     border-color 0.25s ease,
-    transform 0.15s ease;
+    transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 .gpanel::after,
 .card::after,
@@ -338,8 +344,10 @@ body.sb .navLabel {
   box-shadow:
     0 -1px 0 rgba(255, 255, 255, 0.08) inset,
     0 -10px 26px -18px var(--cyan),
+    0 0 24px rgba(255, 45, 120, 0.4),
+    inset 0 0 20px rgba(255, 45, 120, 0.04),
     0 18px 34px -20px rgba(0, 0, 0, 0.75);
-  transform: translateY(-1px);
+  transform: translateY(-2px);
 }
 @media (prefers-reduced-motion: reduce) {
   .gpanel,
@@ -382,10 +390,11 @@ body.sb .navLabel {
  * so it applies consistently rather than being re-authored per room. */
 button {
   cursor: pointer;
-  transition: filter 0.15s ease, transform 0.1s ease, opacity 0.15s ease;
+  transition: filter 0.15s ease, transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.15s ease;
 }
 button:hover:not(:disabled) {
   filter: brightness(1.35);
+  transform: scale(1.04);
 }
 button:active:not(:disabled) {
   transform: scale(0.96);
@@ -397,7 +406,7 @@ button:disabled {
 }
 
 .chip {
-  transition: border-color 0.15s ease, color 0.15s ease, background 0.15s ease, transform 0.08s ease;
+  transition: border-color 0.15s ease, color 0.15s ease, background 0.15s ease, transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 .chip:hover {
   border-color: var(--cyan-dim);
@@ -413,7 +422,7 @@ button:disabled {
 
 .savedview,
 .assignee-pill {
-  transition: border-color 0.15s ease, background 0.15s ease, color 0.15s ease, transform 0.08s ease;
+  transition: border-color 0.15s ease, background 0.15s ease, color 0.15s ease, transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 .savedview:hover {
   border-color: var(--purple);

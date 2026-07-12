@@ -293,9 +293,14 @@ export default function NeuralCore({ active }: { active: boolean }) {
       const domHue = `${Math.round(255 - healthT * 210)},${Math.round(70 + healthT * 175)},${Math.round(90 + healthT * 90)}`;
       const workloadT = Math.max(0, Math.min(1.4, mood.workload / 8));
 
+      // Cockpit glow-system pass: heavier plasma glow layers — mg/pu/pk/cy
+      // alphas bumped to .52/.44/.32/.68 per the brief. The amber
+      // (workload) and domHue (health) layers are a separate, working
+      // mood-grading system — not part of the brief's fixed palette — so
+      // they keep their own formulas and just ride along underneath.
       const layers = [
-        { hue: '138,92,246', ph: 0, sc: 1.22, al: 0.3 },
-        { hue: '255,45,120', ph: 2.1, sc: 1.1, al: 0.26 },
+        { hue: '138,92,246', ph: 0, sc: 1.22, al: 0.44 }, // pu
+        { hue: '255,45,120', ph: 2.1, sc: 1.1, al: 0.52 }, // mg
         { hue: '255,184,0', ph: 4.2, sc: 1.0, al: 0.16 + workloadT * 0.08 },
         { hue: domHue, ph: 1.05, sc: 0.92, al: 0.4 + healthT * 0.25 },
       ];
@@ -325,9 +330,11 @@ export default function NeuralCore({ active }: { active: boolean }) {
       cc.beginPath();
       cc.arc(cx, cy, R * 0.55, 0, 6.29);
       cc.fill();
-      cc.strokeStyle = 'rgba(0,245,255,.5)';
-      cc.lineWidth = 1.1;
-      cc.globalAlpha = 0.5 + 0.3 * Math.sin(t * 1.3);
+      // Plasma rim — brief spec: lineWidth 2, magenta .95, globalAlpha
+      // 0.65 + 0.3*sin(t*1.3).
+      cc.strokeStyle = 'rgba(255,45,120,.95)';
+      cc.lineWidth = 2;
+      cc.globalAlpha = 0.65 + 0.3 * Math.sin(t * 1.3);
       cc.beginPath();
       for (let i = 0; i <= 72; i++) {
         const a = (i / 72) * 6.29,

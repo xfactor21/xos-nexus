@@ -192,8 +192,8 @@ export default function Shell() {
       {/* Bottom status bar — cockpit redesign: emits light upward per the
           brief, mirrors #hud's role at the opposite edge of the frame. */}
       <div id="status">
-        <span className="sy"><span className="dot" style={{ background: 'var(--mg)', boxShadow: '0 0 6px var(--mg)' }} /> CORE: NOMINAL</span>
-        <span className="sy"><span className="dot" style={{ background: 'var(--cy)', boxShadow: '0 0 6px var(--cy)' }} /> SYNC: LIVE</span>
+        <span className="sy"><span className="dot" style={{ background: 'var(--mg)', boxShadow: '0 0 18px var(--mg), 0 0 40px rgba(255,45,120,.5)' }} /> CORE: NOMINAL</span>
+        <span className="sy"><span className="dot" style={{ background: 'var(--cy)', boxShadow: '0 0 18px var(--cy), 0 0 40px rgba(0,245,255,.5)' }} /> SYNC: LIVE</span>
       </div>
 
       {/* xAI hologram — persistent, autonomous presence, every room, outside
