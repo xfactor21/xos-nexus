@@ -236,6 +236,26 @@ background-image:radial-gradient(rgba(0,245,255,.10) 1px,transparent 1px);backgr
 #chatBar input{flex:1;padding:12px}
 #chatBar button{padding:0 16px;color:var(--cyan);cursor:pointer;border-left:1px solid var(--edge)}
 
+/* Comms uplift: multi-thread layout, xAI-initiated thread highlighting,
+   rich inline reference cards. */
+.commsLayout{display:flex;gap:14px;align-items:flex-start}
+.commsThreads{width:170px;flex-shrink:0;border:1px solid var(--edge);background:var(--glass)}
+.commsMain{flex:1;min-width:0}
+.commsNewThread{padding:10px 12px;font-size:9px;letter-spacing:1px;color:var(--cyan);cursor:pointer;border-bottom:1px solid var(--edge);display:flex;align-items:center;gap:6px}
+.commsNewThread:hover{background:rgba(0,245,255,.06)}
+.commsThreadRow{padding:9px 12px;font-size:10px;letter-spacing:.5px;color:var(--text-dim);cursor:pointer;display:flex;align-items:center;gap:6px;border-left:2px solid transparent;position:relative}
+.commsThreadRow:hover{color:var(--text)}
+.commsThreadRow.on{color:var(--text);border-left-color:var(--mg);background:rgba(255,45,120,.06)}
+.commsThreadRow.unread{color:var(--cy)}
+.commsUnreadDot{width:5px;height:5px;border-radius:50%;background:var(--mg);box-shadow:0 0 8px var(--mg);margin-left:auto}
+.commsCard{margin-top:8px;display:flex;gap:8px;align-items:flex-start;padding:8px 10px;border:1px solid;background:rgba(255,255,255,.03)}
+.commsCard-cyan{border-color:rgba(0,245,255,.4)}
+.commsCard-magenta{border-color:rgba(255,45,120,.4)}
+.commsCard-purple{border-color:rgba(139,92,246,.4)}
+.commsCard-amber{border-color:rgba(255,184,0,.4)}
+.commsCardTitle{font-size:10.5px;color:var(--text);letter-spacing:.3px}
+.commsCardMeta{font-size:8.5px;color:var(--text-dim);letter-spacing:1px;margin-top:2px}
+
 /* ===== SETTINGS ===== */
 .setrow{padding:14px;margin-bottom:10px}
 .setrow h3{font-size:11px;letter-spacing:2px;margin-bottom:4px}
