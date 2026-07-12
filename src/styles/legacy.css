@@ -285,6 +285,22 @@ input[type=range]{width:100%;accent-color:#00F5FF}
 .savedview.on{background:rgba(139,92,246,.12)}
 .dup-banner{border:1px solid rgba(255,184,0,.5);background:rgba(255,184,0,.08);color:var(--amber);padding:6px 10px;font-size:9.5px;letter-spacing:.5px;margin-top:6px;cursor:pointer;display:flex;justify-content:space-between;align-items:center}
 
+/* Aging indicator — how long a bug has sat open, computed client-side off
+   created_at. Bands escalate visually the same way severity does. */
+.aging{font-size:8px;letter-spacing:1px;padding:2px 6px;border:1px solid;margin-left:6px;border-radius:2px}
+.aging-fresh{color:var(--cyan-dim);border-color:var(--cyan-dim)}
+.aging-watch{color:var(--amber);border-color:var(--amber)}
+.aging-stale{color:var(--magenta);border-color:var(--magenta)}
+.aging-ancient{color:#fff;background:var(--magenta);border-color:var(--magenta);box-shadow:0 0 10px rgba(255,45,120,.5)}
+
+/* Life-of-a-bug timeline — built from real data only (creation date,
+   current status, graph edges), never a fabricated change-log. */
+.bugTimeline{margin-top:8px;padding:10px 12px;border-left:2px solid var(--pu);background:rgba(139,92,246,.05)}
+.bugTimelineNode{position:relative;padding-left:14px;font-size:10px;color:var(--text-dim);letter-spacing:.3px;margin-bottom:7px}
+.bugTimelineNode:last-child{margin-bottom:0}
+.bugTimelineNode b{color:var(--text);font-weight:600;margin-right:4px}
+.bugTimelineDot{position:absolute;left:-19px;top:3px;width:6px;height:6px;border-radius:50%;background:var(--cy);box-shadow:0 0 6px currentColor}
+
 /* Roadmaps uplift: gantt-lite view, progress bars, drag handles */
 .milestone-progress{height:4px;background:rgba(255,255,255,.08);margin-top:8px;overflow:hidden}
 .milestone-progress i{display:block;height:100%;background:linear-gradient(90deg,var(--cyan),var(--purple))}

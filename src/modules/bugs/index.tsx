@@ -10,6 +10,29 @@ type SavedView = 'none' | 'critical' | 'unassigned' | 'mine';
 
 const SEVERITY_ORDER: BugSeverity[] = ['critical', 'high', 'medium', 'low', 'trivial'];
 
+/** Aging — real client-side calc off created_at (no separate "age" column
+ * exists), same pattern coreGraph already uses for ProjectRecord.idleDays.
+ * Bands loosely mirror the severity palette so an old-and-untouched bug
+ * reads as visually "hot" the same way a critical one does. */
+function ageDays(createdAt: string): number {
+  return Math.max(0, Math.floor((Date.now() - new Date(createdAt).getTime()) / 86400000));
+}
+function agingBand(days: number): 'fresh' | 'watch' | 'stale' | 'ancient' {
+  if (days < 2) return 'fresh';
+  if (days < 7) return 'watch';
+  if (days < 21) return 'stale';
+  return 'ancient';
+}
+const RELATION_VERB: Record<string, string> = {
+  relates_to: 'relates to',
+  duplicates: 'duplicates',
+  blocks: 'blocks',
+  solves: 'solves',
+  references: 'references',
+  derived_from: 'derived from',
+  affects: 'affects',
+};
+
 /** BUG TRACKER — Step 5: ported 1:1 from xos-prototype.html (status-cycle
  * chips, ALL/OPEN/FIXED filter) and extended per the Feature Uplift notes:
  * severity levels beyond HIGH/MED/LOW with color coding, an assignee field,
@@ -21,6 +44,7 @@ export default function Bugs({ active }: { active: boolean }) {
   // a `(s) => s.bugs()`-style store selector (unstable snapshot → risk of
   // "Maximum update depth exceeded").
   const nodes = useCoreGraph((s) => s.nodes);
+  const edges = useCoreGraph((s) => s.edges);
   const bugs = useMemo(() => nodes.filter((n) => n.kind === 'bug').map(nodeToBug), [nodes]);
   const cycleBug = useCoreGraph((s) => s.cycleBug);
   const updateBug = useCoreGraph((s) => s.updateBug);
@@ -28,6 +52,20 @@ export default function Bugs({ active }: { active: boolean }) {
   const [savedView, setSavedView] = useState<SavedView>('none');
   const [query, setQuery] = useState('');
   const [editingAssignee, setEditingAssignee] = useState<string | null>(null);
+  const [openTimeline, setOpenTimeline] = useState<string | null>(null);
+
+  const nodeTitle = useMemo(() => {
+    const m = new Map<string, string>();
+    nodes.forEach((n) => m.set(n.id, n.title));
+    return m;
+  }, [nodes]);
+
+  // "Life of a bug" — built from real data only (creation date, current
+  // status, and graph edges touching this node), never fabricated
+  // intermediate history, since the schema has no persisted change-log.
+  function bugEdges(bugId: string) {
+    return edges.filter((e) => e.from_node === bugId || e.to_node === bugId);
+  }
 
   const filtered = useMemo(() => {
     return bugs
@@ -38,7 +76,16 @@ export default function Bugs({ active }: { active: boolean }) {
         if (savedView === 'mine') return b.assignee === 'Captain';
         return true;
       })
-      .filter((b) => !query.trim() || b.title.toLowerCase().includes(query.toLowerCase()) || b.body.toLowerCase().includes(query.toLowerCase()))
+      .filter((b) => {
+        const q = query.trim().toLowerCase();
+        if (!q) return true;
+        return (
+          b.title.toLowerCase().includes(q) ||
+          b.body.toLowerCase().includes(q) ||
+          (b.assignee ?? '').toLowerCase().includes(q) ||
+          (b.linkedCommit ?? '').toLowerCase().includes(q)
+        );
+      })
       .sort((a, b) => SEVERITY_ORDER.indexOf(a.severity) - SEVERITY_ORDER.indexOf(b.severity));
   }, [bugs, statusFilter, savedView, query]);
 
@@ -88,12 +135,21 @@ export default function Bugs({ active }: { active: boolean }) {
       </div>
 
       <div id="bugList">
-        {filtered.map((b) => (
+        {filtered.map((b) => {
+          const days = ageDays(b.created_at);
+          const band = agingBand(days);
+          const related = bugEdges(b.id);
+          return (
           <div key={b.id} className={`bug ${b.bugStatus === 'doing' ? 'doing' : ''} ${b.bugStatus === 'fixed' ? 'is-fixed' : ''}`}>
             <span className={`sev sev-${b.severity}`} style={{ marginRight: 8 }} onClick={() => cycleSeverity(b.id, b.severity)}>
               {b.severity}
             </span>
             {b.title} <span className="st" onClick={() => cycleBug(b.id)}>{nextStatusLabel(b.bugStatus)}</span>
+            {b.bugStatus !== 'fixed' && (
+              <span className={`aging aging-${band}`} title={`Open ${days}d`}>
+                {days}D
+              </span>
+            )}
             <div className="mt">
               <span>{b.severity.toUpperCase()} · SPRINT 002</span>
               {b.linkedCommit && (
@@ -108,7 +164,32 @@ export default function Bugs({ active }: { active: boolean }) {
               >
                 <Icon name="user" size={12} /> {b.assignee ?? 'UNASSIGNED'}
               </span>
+              <span className="link" style={{ cursor: 'pointer' }} onClick={() => setOpenTimeline(openTimeline === b.id ? null : b.id)}>
+                <Icon name="chevronDown" size={12} /> LIFE OF THIS BUG
+              </span>
             </div>
+            {openTimeline === b.id && (
+              <div className="bugTimeline">
+                <div className="bugTimelineNode">
+                  <span className="bugTimelineDot" />
+                  <b>REPORTED</b> {new Date(b.created_at).toLocaleDateString()} · {days}D AGO
+                </div>
+                <div className="bugTimelineNode">
+                  <span className="bugTimelineDot" style={{ background: b.bugStatus === 'fixed' ? 'var(--cy)' : 'var(--mg)' }} />
+                  <b>CURRENT STATE</b> {nextStatusLabel(b.bugStatus)}
+                </div>
+                {related.map((e) => {
+                  const other = e.from_node === b.id ? e.to_node : e.from_node;
+                  return (
+                    <div className="bugTimelineNode" key={e.id}>
+                      <span className="bugTimelineDot" style={{ background: 'var(--pu)' }} />
+                      {RELATION_VERB[e.relation] ?? e.relation} <b>{nodeTitle.get(other) ?? other.slice(0, 8)}</b>
+                    </div>
+                  );
+                })}
+                {!related.length && <div className="bugTimelineNode rsub">No known relationships yet.</div>}
+              </div>
+            )}
             {editingAssignee === b.id && (
               <div style={{ marginTop: 6, display: 'flex', gap: 6 }}>
                 {['Captain', 'xAI', null].map((a) => (
@@ -136,7 +217,8 @@ export default function Bugs({ active }: { active: boolean }) {
               </div>
             )}
           </div>
-        ))}
+          );
+        })}
         {!filtered.length && <div className="rsub">No bugs match this view.</div>}
       </div>
       </div>
