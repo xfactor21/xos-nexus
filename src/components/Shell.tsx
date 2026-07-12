@@ -8,6 +8,9 @@ import Icon from '../design-system/icons/Icon';
 import CockpitFrame from '../design-system/cockpit/CockpitFrame';
 import GlobalParticles from '../design-system/cockpit/GlobalParticles';
 import XaiHologram from '../design-system/cockpit/XaiHologram';
+import ToastHost from '../design-system/cockpit/ToastHost';
+import CommandPalette from '../design-system/cockpit/CommandPalette';
+import ShortcutsOverlay from '../design-system/cockpit/ShortcutsOverlay';
 
 /** App chrome — ported 1:1 from xos-prototype.html's #hud/#sb/#dock markup
  * and body.sb / body.nodock toggle classes. Also where Step 3's "populated
@@ -199,6 +202,13 @@ export default function Shell() {
       {/* xAI hologram — persistent, autonomous presence, every room, outside
           the right wing (#dock). Fixed position so it survives room swaps. */}
       <XaiHologram />
+
+      {/* OS-grade universal directives: reusable toasts, Cmd/Ctrl+K command
+          palette, `?` keyboard shortcuts overlay — all global, all mounted
+          once here so they work identically from every room. */}
+      <ToastHost />
+      <CommandPalette />
+      <ShortcutsOverlay />
     </>
   );
 }

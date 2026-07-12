@@ -45,6 +45,15 @@ background:var(--glass);border:1px solid rgba(139,92,246,.4);color:var(--purple)
 .cap{border:1px solid rgba(0,245,255,.1);background:rgba(15,21,32,.55);padding:10px 12px;margin-bottom:8px;font-size:12px;line-height:1.5}
 .cap .meta{font-size:9px;letter-spacing:1px;color:var(--text-dim);margin-top:5px;display:flex;gap:10px;flex-wrap:wrap}
 .cap .meta b{color:var(--cyan-dim);font-weight:400}
+
+/* Releases uplift: cinematic ship's-log reframe + xAI-drafted unlogged-work
+   summary from real completed nodes. */
+.shipLogStardate{font-size:8px;letter-spacing:2px;color:var(--text-dim);margin-bottom:6px;opacity:.7}
+.shipLogEntry{position:relative;padding-left:18px}
+.shipLogEntry::before{content:'';position:absolute;left:6px;top:14px;width:5px;height:5px;border-radius:50%;background:currentColor;box-shadow:0 0 8px currentColor}
+.shipLogDraft{border:1px solid rgba(0,245,255,.3);background:rgba(0,245,255,.05);padding:12px 14px;margin-bottom:14px}
+.shipLogDraft b{display:flex;align-items:center;gap:6px;color:var(--cy);font-size:9px;letter-spacing:1.5px}
+.shipLogDraft ul{margin:0;padding-left:16px;font-size:11px;color:var(--text-dim);line-height:1.8}
 .bigbtn{width:100%;padding:14px;border:1px solid var(--cyan);color:var(--cyan);letter-spacing:3px;font-size:12px;cursor:pointer}
 .bigbtn:active{background:rgba(0,245,255,.12)}
 .fullroom{padding:44px 0 0!important;max-width:none!important;position:relative;height:100vh;overflow:hidden}

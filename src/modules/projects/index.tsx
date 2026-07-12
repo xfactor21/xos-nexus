@@ -163,6 +163,11 @@ export default function Projects({ active }: { active: boolean }) {
   const bugs = useMemo(() => nodes.filter((n) => n.kind === 'bug').map(nodeToBug), [nodes]);
   const advanceTask = useCoreGraph((s) => s.advanceTask);
   const cycleBug = useCoreGraph((s) => s.cycleBug);
+  const assignNodeToProject = useCoreGraph((s) => s.assignNodeToProject);
+  // Cross-room drag-and-drop: real unassigned capture nodes, draggable onto
+  // a project card below to assign them (a real project_id write, not a
+  // local-only UI flag).
+  const unassignedCaptures = useMemo(() => nodes.filter((n) => n.kind === 'capture' && !n.project_id), [nodes]);
 
   const open = projects.find((p) => p.id === openId) ?? null;
   const cls = open ? getProjectClass(open.id) : PROJECT_CLASSES[0];
@@ -273,6 +278,23 @@ export default function Projects({ active }: { active: boolean }) {
           <button className="chip" id="newProjectBtn" onClick={() => setShowNew(true)}>
             <Icon name="plus" size={13} /> NEW PROJECT
           </button>
+          {unassignedCaptures.length > 0 && (
+            <div className="unassignedCaptures">
+              <div className="rsub" style={{ margin: '4px 0 8px' }}>
+                UNASSIGNED CAPTURES — DRAG ONTO A PROJECT TO ASSIGN
+              </div>
+              {unassignedCaptures.map((n) => (
+                <div
+                  key={n.id}
+                  className="unassignedCapChip"
+                  draggable
+                  onDragStart={(e) => e.dataTransfer.setData('application/x-xos-capture', n.id)}
+                >
+                  <Icon name="neuralCapture" size={11} /> {n.title}
+                </div>
+              ))}
+            </div>
+          )}
           {!projects.length && <div className="rsub">No projects yet — capture a thought and xAI will start one, or create one above.</div>}
           {projects.map((p) => {
             const pc = getProjectClass(p.id);
@@ -283,6 +305,11 @@ export default function Projects({ active }: { active: boolean }) {
                 className={`pcard gpanel ${p.isStale ? 'warn' : ''}`}
                 style={{ opacity: dim, filter: p.isStale ? 'saturate(.5)' : undefined }}
                 onClick={() => setOpenId(p.id)}
+                onDragOver={(e) => e.preventDefault()}
+                onDrop={(e) => {
+                  const nodeId = e.dataTransfer.getData('application/x-xos-capture');
+                  if (nodeId) assignNodeToProject(nodeId, p.id);
+                }}
               >
                 <span className="ic">
                   <DataIcon value={p.icon} size={16} />

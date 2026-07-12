@@ -106,7 +106,7 @@ export default function Bugs({ active }: { active: boolean }) {
       <h2 className="rh">
         <Icon name="bugTracker" size={18} /> BUG TRACKER
       </h2>
-      <div className="rsub">NOT A LIST — A WEB. EVERY BUG KNOWS ITS RELATIVES. TAP STATUS TO CYCLE, TAP SEVERITY TO RECLASSIFY.</div>
+      <div className="rsub">NOT A LIST — A WEB. EVERY BUG KNOWS ITS RELATIVES. TAP STATUS TO CYCLE, TAP SEVERITY TO RECLASSIFY. DRAG A BUG ONTO A ROADMAPS MILESTONE TO PROMOTE IT.</div>
 
       <input id="bugSearch" placeholder="Search bugs… try “redirect” or “#17”" value={query} onChange={(e) => setQuery(e.target.value)} />
 
@@ -140,7 +140,12 @@ export default function Bugs({ active }: { active: boolean }) {
           const band = agingBand(days);
           const related = bugEdges(b.id);
           return (
-          <div key={b.id} className={`bug ${b.bugStatus === 'doing' ? 'doing' : ''} ${b.bugStatus === 'fixed' ? 'is-fixed' : ''}`}>
+          <div
+            key={b.id}
+            className={`bug ${b.bugStatus === 'doing' ? 'doing' : ''} ${b.bugStatus === 'fixed' ? 'is-fixed' : ''}`}
+            draggable
+            onDragStart={(e) => e.dataTransfer.setData('application/x-xos-bug', b.id)}
+          >
             <span className={`sev sev-${b.severity}`} style={{ marginRight: 8 }} onClick={() => cycleSeverity(b.id, b.severity)}>
               {b.severity}
             </span>

@@ -747,3 +747,142 @@ input[type='range']:active::-moz-range-thumb {
   0% { opacity: 0; transform: translateX(8px); }
   100% { opacity: 1; transform: translateX(0); }
 }
+
+/* ============================================================
+   OS-GRADE UNIVERSAL DIRECTIVES — toasts, command palette, shortcuts.
+   ============================================================ */
+.toastHost {
+  position: fixed;
+  left: 18px;
+  bottom: 40px;
+  z-index: 130;
+  display: flex;
+  flex-direction: column-reverse;
+  gap: 8px;
+  pointer-events: none;
+}
+.toast {
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 14px;
+  border-radius: 6px;
+  background: var(--glass);
+  backdrop-filter: blur(14px);
+  border: 1px solid var(--eg-cold);
+  box-shadow: 0 0 20px rgba(0, 245, 255, 0.15), 0 8px 20px rgba(0, 0, 0, 0.4);
+  font-size: 11px;
+  color: var(--text);
+  cursor: pointer;
+  animation: toastIn 0.3s cubic-bezier(0.25, 0, 0.2, 1);
+  max-width: 320px;
+}
+.toast-success { border-color: rgba(0, 245, 255, 0.4); }
+.toast-warn { border-color: rgba(255, 184, 0, 0.5); box-shadow: 0 0 20px rgba(255, 184, 0, 0.15); }
+@keyframes toastIn {
+  0% { opacity: 0; transform: translateY(8px) scale(0.96); }
+  100% { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.cmdkOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  background: rgba(5, 8, 13, 0.7);
+  backdrop-filter: blur(6px);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 12vh;
+}
+.cmdkPanel {
+  width: min(560px, 90vw);
+  background: var(--glass);
+  backdrop-filter: blur(20px);
+  border: 1px solid var(--eg-hot);
+  box-shadow: 0 0 40px rgba(255, 45, 120, 0.25), 0 20px 60px rgba(0, 0, 0, 0.6);
+  border-radius: 10px;
+  overflow: hidden;
+  animation: holoCapIn 0.18s cubic-bezier(0.25, 0, 0.2, 1);
+}
+.cmdkInputRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--edge);
+}
+.cmdkInputRow input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  outline: none;
+  font-size: 14px;
+  color: var(--text);
+}
+.cmdkEsc { font-size: 9px; letter-spacing: 1px; color: var(--text-dim); border: 1px solid var(--edge); padding: 2px 6px; }
+.cmdkList { max-height: 340px; overflow-y: auto; padding: 6px; }
+.cmdkRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 9px 10px;
+  font-size: 12px;
+  color: var(--text);
+  cursor: pointer;
+  border-radius: 5px;
+  transition: background 0.15s ease;
+}
+.cmdkRow:hover { background: rgba(255, 45, 120, 0.1); }
+.cmdkHint { font-size: 9px; letter-spacing: 1px; color: var(--text-dim); }
+.cmdkEmpty { color: var(--text-dim); cursor: default; }
+.cmdkEmpty:hover { background: none; }
+
+.shortcutsOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  background: rgba(5, 8, 13, 0.75);
+  backdrop-filter: blur(8px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.shortcutsPanel {
+  width: min(480px, 90vw);
+  max-height: 80vh;
+  overflow-y: auto;
+  background: var(--glass);
+  backdrop-filter: blur(22px);
+  border: 1px solid var(--eg-cold);
+  box-shadow: 0 0 40px rgba(0, 245, 255, 0.2), 0 20px 60px rgba(0, 0, 0, 0.6);
+  border-radius: 10px;
+  padding: 20px 22px;
+  animation: holoCapIn 0.2s cubic-bezier(0.25, 0, 0.2, 1);
+}
+.shortcutsPanel h3 { font-size: 12px; letter-spacing: 2px; color: var(--cy); margin-bottom: 14px; }
+.shortcutsList { display: flex; flex-direction: column; gap: 10px; }
+.shortcutsRow { display: flex; justify-content: space-between; gap: 16px; font-size: 11.5px; }
+.shortcutsKey { color: var(--text); font-family: monospace; flex-shrink: 0; background: rgba(255, 255, 255, 0.06); padding: 2px 8px; border-radius: 4px; }
+.shortcutsDesc { color: var(--text-dim); text-align: right; }
+.shortcutsClose { margin-top: 16px; text-align: center; font-size: 9px; letter-spacing: 1.5px; color: var(--text-dim); cursor: pointer; padding-top: 12px; border-top: 1px solid var(--edge); }
+.shortcutsClose:hover { color: var(--text); }
+
+/* Projects uplift: unassigned-capture drag chips */
+.unassignedCaptures { border: 1px dashed rgba(0, 245, 255, 0.3); padding: 10px 12px; margin-bottom: 12px; }
+.unassignedCapChip { display: flex; align-items: center; gap: 6px; font-size: 10.5px; color: var(--text-dim); padding: 5px 0; cursor: grab; }
+.unassignedCapChip:hover { color: var(--text); }
+
+/* Settings uplift: accessibility overrides — Reduce Motion (manual override
+   independent of OS prefers-reduced-motion) and UI Scale. */
+#root {
+  zoom: var(--ui-scale, 1);
+}
+.force-reduce-motion *,
+.force-reduce-motion *::before,
+.force-reduce-motion *::after {
+  animation-duration: 0.001ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.001ms !important;
+}

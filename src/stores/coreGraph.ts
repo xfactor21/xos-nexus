@@ -11,6 +11,7 @@ import type {
   ProjectRecord,
 } from '../core/types';
 import { bugStatusToDbStatus, nodeToBug, nodeToTask, rowToMemory, rowToProject, taskStatusToDbStatus } from '../core/mappers';
+import { pushToast } from './toastStore';
 
 /**
  * coreGraph — the single source-of-truth store every room reads from.
@@ -95,6 +96,14 @@ interface CoreGraphState {
   reorderMilestones: (orderedIds: string[]) => void;
   updateMilestoneDate: (id: string, date: string) => void;
   promoteMemoryToMilestone: (memoryId: string, milestoneId: string) => void;
+  /** Cross-room drag-and-drop (OS-grade directive): dragging a bug row onto
+   * a Roadmaps milestone promotes it — mirrors promoteMemoryToMilestone's
+   * local-only milestones model. */
+  promoteBugToMilestone: (bugId: string, milestoneId: string) => void;
+  /** Cross-room drag-and-drop: dragging an unassigned capture node onto a
+   * project card assigns it — a real write, not local-only, since
+   * project_id lives on the `nodes` table itself. */
+  assignNodeToProject: (nodeId: string, projectId: string) => Promise<void>;
 }
 
 function upsert<T extends { id: string }>(arr: T[], row: T): T[] {
@@ -157,6 +166,14 @@ export const useCoreGraph = create<CoreGraphState>((set, get) => ({
         set((s) => ({
           nodes: payload.eventType === 'DELETE' ? remove(s.nodes, (payload.old as NodeRecord).id) : upsert(s.nodes, payload.new as NodeRecord),
         }));
+        // Toast system: every live capture landing is a real background
+        // event worth surfacing app-wide, not just in whatever room happens
+        // to be open — this is the "real capture event" the toast system
+        // is wired+tested against.
+        if (payload.eventType === 'INSERT') {
+          const n = payload.new as NodeRecord;
+          pushToast(`Captured: ${n.title || n.kind}`, 'success');
+        }
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'edges', filter: `owner_id=eq.${ownerId}` }, (payload) => {
         set((s) => ({
@@ -274,4 +291,30 @@ export const useCoreGraph = create<CoreGraphState>((set, get) => ({
         ),
       };
     }),
+
+  promoteBugToMilestone: (bugId, milestoneId) =>
+    set((s) => {
+      const bug = s.nodes.find((n) => n.id === bugId);
+      if (!bug) return s;
+      pushToast(`Promoted "${bug.title}" to a milestone`, 'success');
+      return {
+        milestones: s.milestones.map((m) =>
+          m.id === milestoneId ? { ...m, items: [...m.items, { label: bug.title, done: false, fromBug: true }] } : m,
+        ),
+      };
+    }),
+
+  assignNodeToProject: async (nodeId, projectId) => {
+    const n = get().nodes.find((x) => x.id === nodeId);
+    if (!n) return;
+    set((s) => ({ nodes: upsert(s.nodes, { ...n, project_id: projectId }) })); // optimistic
+    const { error } = await supabase.from('nodes').update({ project_id: projectId }).eq('id', nodeId);
+    if (error) {
+      console.error('assignNodeToProject failed', error);
+      pushToast('Could not assign capture — try again', 'warn');
+      return;
+    }
+    const proj = get().projects.find((p) => p.id === projectId);
+    pushToast(`Assigned "${n.title}" to ${proj?.name ?? 'project'}`, 'success');
+  },
 }));

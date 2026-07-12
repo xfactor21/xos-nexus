@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useRef, useState, type DragEvent } from 'react';
 import { useCoreGraph } from '../../stores/coreGraph';
 import Icon from '../../design-system/icons/Icon';
 import AmbientField from '../../design-system/background/AmbientField';
@@ -14,6 +14,7 @@ export default function Roadmaps({ active }: { active: boolean }) {
   const reorderMilestones = useCoreGraph((s) => s.reorderMilestones);
   const updateMilestoneDate = useCoreGraph((s) => s.updateMilestoneDate);
   const promoteMemoryToMilestone = useCoreGraph((s) => s.promoteMemoryToMilestone);
+  const promoteBugToMilestone = useCoreGraph((s) => s.promoteBugToMilestone);
   const [view, setView] = useState<'track' | 'gantt'>('track');
   const [promoting, setPromoting] = useState<string | null>(null);
   const dragId = useRef<string | null>(null);
@@ -26,7 +27,16 @@ export default function Roadmaps({ active }: { active: boolean }) {
     return Math.round((items.filter((i) => i.done).length / items.length) * 100);
   }
 
-  function onDrop(targetId: string) {
+  function onDrop(targetId: string, e?: DragEvent) {
+    // Cross-room drag-and-drop: a bug dragged in from Bug Tracker carries a
+    // distinct dataTransfer type, so it's checked first and handled
+    // separately from the milestone-reorder drag (which uses the local
+    // dragId ref, not dataTransfer, since it never leaves this component).
+    const bugId = e?.dataTransfer.getData('application/x-xos-bug');
+    if (bugId) {
+      promoteBugToMilestone(bugId, targetId);
+      return;
+    }
     if (!dragId.current || dragId.current === targetId) return;
     const ids = ordered.map((m) => m.id);
     const from = ids.indexOf(dragId.current);
@@ -67,7 +77,7 @@ export default function Roadmaps({ active }: { active: boolean }) {
               draggable
               onDragStart={() => (dragId.current = m.id)}
               onDragOver={(e) => e.preventDefault()}
-              onDrop={() => onDrop(m.id)}
+              onDrop={(e) => onDrop(m.id, e)}
             >
               <h3>
                 <span>
@@ -90,7 +100,8 @@ export default function Roadmaps({ active }: { active: boolean }) {
               <ul>
                 {m.items.map((it, i) => (
                   <li key={i} className={it.done ? 'done' : ''}>
-                    {it.fromMemory && <Icon name="xai" size={10} glow="cyan" />} {it.label}
+                    {it.fromMemory && <Icon name="xai" size={10} glow="cyan" />}
+                    {it.fromBug && <Icon name="bugTracker" size={10} glow="magenta" />} {it.label}
                   </li>
                 ))}
               </ul>
