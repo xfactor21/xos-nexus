@@ -4,6 +4,7 @@ import { useAuthStore } from '../../stores/authStore';
 import { useCoreGraph } from '../../stores/coreGraph';
 import { pushToast } from '../../stores/toastStore';
 import { supabase } from '../../lib/supabase';
+import { playSound } from '../../lib/sound';
 import Icon from '../../design-system/icons/Icon';
 import AmbientField from '../../design-system/background/AmbientField';
 
@@ -41,6 +42,10 @@ export default function Settings({ active }: { active: boolean }) {
   const uiScale = useUiStore((s) => s.uiScale);
   const setUiScale = useUiStore((s) => s.setUiScale);
   const setShortcutsOpen = useUiStore((s) => s.setShortcutsOpen);
+  const soundEnabled = useUiStore((s) => s.soundEnabled);
+  const setSoundEnabled = useUiStore((s) => s.setSoundEnabled);
+  const soundVolume = useUiStore((s) => s.soundVolume);
+  const setSoundVolume = useUiStore((s) => s.setSoundVolume);
   const nodes = useCoreGraph((s) => s.nodes);
   const edges = useCoreGraph((s) => s.edges);
   const memories = useCoreGraph((s) => s.memories);
@@ -146,6 +151,32 @@ export default function Settings({ active }: { active: boolean }) {
         </div>
         <div className="d" style={{ marginTop: 10 }}>UI SCALE — {Math.round(uiScale * 100)}%</div>
         <input type="range" min={0.85} max={1.25} step={0.05} value={uiScale} onChange={(e) => setUiScale(parseFloat(e.target.value))} />
+      </div>
+      <div className="gpanel setrow">
+        <h3>SOUND</h3>
+        <div className="d">Synthesized UI tones — capture confirms, toasts, xAI's autonomous chime, room-nav ticks. No audio files, just oscillators.</div>
+        <div className="optrow" style={{ margin: 0 }}>
+          <span
+            className={`chip ${soundEnabled ? 'on' : ''}`}
+            onClick={() => {
+              const next = !soundEnabled;
+              setSoundEnabled(next);
+              if (next) playSound('nav');
+            }}
+          >
+            <Icon name={soundEnabled ? 'checkCircle' : 'circle'} size={12} /> SOUND ENABLED
+          </span>
+        </div>
+        <div className="d" style={{ marginTop: 10 }}>VOLUME — {Math.round(soundVolume * 100)}%</div>
+        <input
+          type="range"
+          min={0}
+          max={1}
+          step={0.05}
+          value={soundVolume}
+          onChange={(e) => setSoundVolume(parseFloat(e.target.value))}
+          onMouseUp={() => playSound('nav')}
+        />
       </div>
       <div className="gpanel setrow">
         <h3>

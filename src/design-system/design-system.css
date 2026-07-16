@@ -886,3 +886,110 @@ input[type='range']:active::-moz-range-thumb {
   animation-iteration-count: 1 !important;
   transition-duration: 0.001ms !important;
 }
+
+/* ============================================================
+   Poppable Quick Capture widget — standalone Tauri window content
+   (widget.html / CaptureWidget.tsx). Small, self-contained page, not a
+   room — no cockpit frame/particles/hologram here, just the capture
+   surface itself, since the window chrome is already tiny.
+   ============================================================ */
+body.widget-body {
+  margin: 0;
+  background: var(--void);
+  display: flex;
+  min-height: 100vh;
+}
+.widgetRoot {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  padding: 12px 14px;
+  gap: 8px;
+}
+.widgetHeader {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 10px;
+  letter-spacing: 1.5px;
+  color: var(--cy);
+}
+.widgetSignedOut {
+  font-size: 11px;
+  color: var(--text-dim);
+  margin-top: 10px;
+  line-height: 1.5;
+}
+.widgetTextarea {
+  flex: 1;
+  resize: none;
+  background: var(--glass);
+  border: 1px solid var(--edge);
+  border-radius: 4px;
+  padding: 8px 10px;
+  font-size: 12.5px;
+  color: var(--text);
+  font-family: inherit;
+  outline: none;
+}
+.widgetTextarea:focus {
+  border-color: var(--eg-cold);
+  box-shadow: 0 0 12px rgba(0, 245, 255, 0.15);
+}
+.widgetFooter {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.widgetHint {
+  font-size: 8.5px;
+  letter-spacing: 0.5px;
+  color: var(--text-dim);
+}
+.widgetSubmit {
+  background: linear-gradient(90deg, var(--mg), var(--pu));
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  padding: 7px 16px;
+  font-size: 10px;
+  letter-spacing: 1.5px;
+  cursor: pointer;
+  box-shadow: 0 0 16px rgba(255, 45, 120, 0.35);
+  transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.15s ease;
+}
+.widgetSubmit:hover:not(:disabled) {
+  transform: scale(1.04);
+}
+.widgetSubmit:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.widgetResult {
+  font-size: 10.5px;
+  padding: 6px 8px;
+  border-radius: 4px;
+  text-align: center;
+}
+.widgetResult-saved { color: var(--cy); background: rgba(0, 245, 255, 0.08); }
+.widgetResult-queued { color: var(--pu); background: rgba(139, 92, 246, 0.08); }
+.widgetResult-error { color: var(--mg); background: rgba(255, 45, 120, 0.08); }
+
+/* Capture room: pop-out-to-widget affordance (Tauri only). */
+.popOutBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 12px;
+  font-size: 9px;
+  letter-spacing: 1px;
+  color: var(--cy);
+  cursor: pointer;
+  vertical-align: middle;
+  border: 1px solid rgba(0, 245, 255, 0.3);
+  padding: 3px 8px;
+  border-radius: 3px;
+}
+.popOutBtn:hover {
+  background: rgba(0, 245, 255, 0.08);
+}

@@ -10,6 +10,7 @@ import GlobalParticles from '../design-system/cockpit/GlobalParticles';
 import XaiHologram from '../design-system/cockpit/XaiHologram';
 import ToastHost from '../design-system/cockpit/ToastHost';
 import CommandPalette from '../design-system/cockpit/CommandPalette';
+import { playSound } from '../lib/sound';
 import ShortcutsOverlay from '../design-system/cockpit/ShortcutsOverlay';
 
 /** App chrome — ported 1:1 from xos-prototype.html's #hud/#sb/#dock markup
@@ -57,7 +58,10 @@ export default function Shell() {
   // prototype's mkNode()) so they navigate by dispatching this event rather
   // than a prop callback.
   useEffect(() => {
-    const onGo = (e: Event) => go((e as CustomEvent).detail);
+    const onGo = (e: Event) => {
+      playSound('nav');
+      go((e as CustomEvent).detail);
+    };
     window.addEventListener('xos-go', onGo);
     return () => window.removeEventListener('xos-go', onGo);
   }, [go]);
@@ -131,7 +135,10 @@ export default function Shell() {
                 navRefs.current[r.id] = el;
               }}
               className={`nav ${room === r.id ? 'on' : ''}`}
-              onClick={() => go(r.id)}
+              onClick={() => {
+                playSound('nav');
+                go(r.id);
+              }}
               onMouseEnter={() => trackSpine(r.id, sectionKey)}
               onMouseLeave={clearSpine}
             >

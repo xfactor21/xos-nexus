@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useCoreGraph } from '../../stores/coreGraph';
+import { playSound } from '../../lib/sound';
 
 /**
  * Cockpit redesign — xAI hologram: persistent, autonomous presence in every
@@ -52,6 +53,7 @@ export default function XaiHologram() {
   function fireCaption(text: string, ms = 5000) {
     talk.current = 1;
     setCaption(text);
+    playSound('xai');
     setTimeout(() => setCaption(null), ms);
   }
 

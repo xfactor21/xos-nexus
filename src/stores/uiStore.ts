@@ -1,6 +1,19 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 
+/** System tray: the tooltip reflects real autonomy state instead of a
+ * static label. Dynamically imported so the web/Netlify build (no Tauri
+ * runtime) never loads @tauri-apps/api's core module for this — same
+ * "isTauri() gate + dynamic import" pattern used for the capture widget
+ * pop-out. Fire-and-forget: a tray tooltip failing to update is never
+ * worth surfacing an error for. */
+function syncTrayTooltip(autonomy: string) {
+  if (typeof window === 'undefined' || !('__TAURI_INTERNALS__' in window)) return;
+  void import('@tauri-apps/api/core').then(({ invoke }) =>
+    invoke('set_tray_tooltip', { text: `xOS: neXus — ${autonomy}` }).catch(() => {}),
+  );
+}
+
 export type RoomId =
   | 'obs' | 'core' | 'capture' | 'projects' | 'focus' | 'studio'
   | 'roadmaps' | 'bugs' | 'releases' | 'vault' | 'comms' | 'settings';
@@ -26,6 +39,8 @@ interface UiState {
   uiScale: number;
   shortcutsOpen: boolean;
   commandPaletteOpen: boolean;
+  soundEnabled: boolean;
+  soundVolume: number;
   go: (r: RoomId) => void;
   toggleSidebar: () => void;
   closeSidebar: () => void;
@@ -38,6 +53,8 @@ interface UiState {
   setUiScale: (v: number) => void;
   setShortcutsOpen: (v: boolean) => void;
   setCommandPaletteOpen: (v: boolean) => void;
+  setSoundEnabled: (v: boolean) => void;
+  setSoundVolume: (v: number) => void;
 }
 
 function applyAccent(a: Accent) {
@@ -84,6 +101,8 @@ export const useUiStore = create<UiState>()(
       uiScale: 1,
       shortcutsOpen: false,
       commandPaletteOpen: false,
+      soundEnabled: true,
+      soundVolume: 0.6,
       // Amendment v0.6 step 2: the sidebar is now a persistent "neural spine"
       // (always at least visible as a collapsed dot-rail, never fully hidden —
       // see Shell.tsx), so selecting a room no longer force-collapses it the
@@ -96,7 +115,10 @@ export const useUiStore = create<UiState>()(
         document.documentElement.style.setProperty('--glow', String(v));
         set({ glow: v });
       },
-      setAutonomy: (a) => set({ autonomy: a }),
+      setAutonomy: (a) => {
+        syncTrayTooltip(a);
+        set({ autonomy: a });
+      },
       setShellTarget: (s) => set({ shellTarget: s }),
       setAccent: (a) => {
         applyAccent(a);
@@ -112,10 +134,21 @@ export const useUiStore = create<UiState>()(
       },
       setShortcutsOpen: (v) => set({ shortcutsOpen: v }),
       setCommandPaletteOpen: (v) => set({ commandPaletteOpen: v }),
+      setSoundEnabled: (v) => set({ soundEnabled: v }),
+      setSoundVolume: (v) => set({ soundVolume: v }),
     }),
     {
       name: 'xos-ui-settings',
-      partialize: (s) => ({ glow: s.glow, autonomy: s.autonomy, shellTarget: s.shellTarget, accent: s.accent, reduceMotion: s.reduceMotion, uiScale: s.uiScale }),
+      partialize: (s) => ({
+        glow: s.glow,
+        autonomy: s.autonomy,
+        shellTarget: s.shellTarget,
+        accent: s.accent,
+        reduceMotion: s.reduceMotion,
+        uiScale: s.uiScale,
+        soundEnabled: s.soundEnabled,
+        soundVolume: s.soundVolume,
+      }),
       // The --glow/--accent/--ui-scale CSS custom properties and the
       // force-reduce-motion class all live outside React (read by canvas
       // effects or plain CSS), so on rehydration they need the same manual
@@ -128,6 +161,7 @@ export const useUiStore = create<UiState>()(
         applyAccent(state.accent);
         applyReduceMotion(state.reduceMotion);
         applyUiScale(state.uiScale);
+        syncTrayTooltip(state.autonomy);
       },
     }
   )

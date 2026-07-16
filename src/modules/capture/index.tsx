@@ -2,9 +2,21 @@ import { useRef, useState } from 'react';
 import type { DissectedPiece } from '../../core/types';
 import { liveClassify } from '../../lib/copilotClient';
 import { commitOrQueue } from '../../lib/offlineSync';
+import { playSound } from '../../lib/sound';
+import { isTauri } from '../../lib/localDb';
 import Icon from '../../design-system/icons/Icon';
 import type { IconName } from '../../design-system/icons/registry';
 import AmbientField from '../../design-system/background/AmbientField';
+
+/** Poppable Quick Capture widget — real Tauri command (see
+ * src-tauri/src/lib.rs's `open_capture_widget`), invoked lazily via a
+ * dynamic import so the web/Netlify build (which has no @tauri-apps/api
+ * runtime behind it) never even parses this call path — only reachable at
+ * all when isTauri() is true. */
+async function openCaptureWidget() {
+  const { invoke } = await import('@tauri-apps/api/core');
+  await invoke('open_capture_widget');
+}
 
 // Amendment v0.6 step 1: "kind" strings used as both lookup keys and
 // displayed labels no longer embed a glyph in the string itself — the
@@ -132,6 +144,7 @@ export default function Capture({ active }: { active: boolean }) {
     setRaw('');
     try {
       const result = await liveClassify(v);
+      playSound('capture');
       setCaps((c) =>
         c.map((entry, i) =>
           i === 0 && entry.time === 'SENDING…'
@@ -148,6 +161,7 @@ export default function Capture({ active }: { active: boolean }) {
         // the capture is queued to local SQLite instead of failing, and
         // syncEngine drains it back to Supabase once the network returns.
         const { queued } = await commitOrQueue(v);
+        playSound(queued ? 'notice' : 'capture');
         setCaps((c) =>
           c.map((entry, i) =>
             i === 0 && entry.time === 'SENDING…'
@@ -157,6 +171,7 @@ export default function Capture({ active }: { active: boolean }) {
         );
       } catch (fallbackErr) {
         console.error('commitCap: offline fallback also failed', fallbackErr);
+        playSound('error');
         setCaps((c) => c.map((entry, i) => (i === 0 && entry.time === 'SENDING…' ? { ...entry, time: 'NOT SAVED — retry later', timeIcon: 'warning' as IconName } : entry)));
       }
     }
@@ -168,6 +183,11 @@ export default function Capture({ active }: { active: boolean }) {
       <div className="roomInner">
       <h2 className="rh">
         <Icon name="neuralCapture" size={16} /> NEURAL CAPTURE
+        {isTauri() && (
+          <span className="popOutBtn" onClick={openCaptureWidget} title="Open as a floating window">
+            <Icon name="externalLink" size={12} /> POP OUT
+          </span>
+        )}
       </h2>
       <div className="rsub">DON'T ORGANIZE. JUST THINK. THE CORE DISSECTS EVERYTHING.</div>
       <div className="gpanel" id="mouth">

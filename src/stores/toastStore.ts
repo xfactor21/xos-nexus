@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { playSound } from '../lib/sound';
 
 export type ToastKind = 'info' | 'success' | 'warn';
 export interface Toast {
@@ -25,6 +26,7 @@ export const useToastStore = create<ToastState>((set) => ({
   push: (text, kind = 'info') => {
     const id = `toast-${++seq}-${Date.now()}`;
     set((s) => ({ toasts: [...s.toasts, { id, text, kind }] }));
+    playSound(kind === 'warn' ? 'toast-warn' : 'toast');
     setTimeout(() => set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) })), 5000);
   },
   dismiss: (id) => set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) })),

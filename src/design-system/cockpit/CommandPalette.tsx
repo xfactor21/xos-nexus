@@ -3,6 +3,7 @@ import { useUiStore } from '../../stores/uiStore';
 import type { RoomId } from '../../stores/uiStore';
 import { useCoreGraph } from '../../stores/coreGraph';
 import { ROOMS } from '../../core/rooms';
+import { playSound } from '../../lib/sound';
 import Icon from '../icons/Icon';
 
 interface Action {
@@ -90,6 +91,7 @@ export default function CommandPalette() {
             placeholder="Navigate, capture, or search your universe…"
             onKeyDown={(e) => {
               if (e.key === 'Enter' && actions[0]) {
+                playSound('nav');
                 actions[0].run();
                 setOpen(false);
               }
@@ -103,6 +105,7 @@ export default function CommandPalette() {
               key={a.id}
               className="cmdkRow"
               onClick={() => {
+                playSound('nav');
                 a.run();
                 setOpen(false);
               }}
