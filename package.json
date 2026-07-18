@@ -11,6 +11,8 @@
     "tauri": "tauri"
   },
   "dependencies": {
+    "@php-wasm/universal": "^3.1.45",
+    "@ruby/3.3-wasm-wasi": "^2.9.3-2.9.4",
     "@supabase/supabase-js": "^2.110.2",
     "@tailwindcss/postcss": "^4.3.2",
     "@tauri-apps/api": "^2.11.1",
