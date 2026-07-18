@@ -1,6 +1,6 @@
 [package]
 name = "app"
-version = "0.1.0"
+version = "0.2.0"
 description = "xOS: neXus — the operating system for makers who think faster than they organize."
 authors = ["xOS: neXus"]
 license = ""
