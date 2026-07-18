@@ -16,7 +16,11 @@ function syncTrayTooltip(autonomy: string) {
 
 export type RoomId =
   | 'obs' | 'core' | 'capture' | 'projects' | 'focus' | 'studio'
-  | 'roadmaps' | 'bugs' | 'releases' | 'vault' | 'comms' | 'settings';
+  | 'roadmaps' | 'bugs' | 'releases' | 'vault' | 'comms' | 'settings'
+  // Step 7 (added after the cockpit redesign landed) — three new rooms,
+  // desktop-first, built with an eventual public/multi-user release in
+  // mind rather than one Captain's machine.
+  | 'browser' | 'knowledge' | 'terminal';
 
 export type Autonomy = 'OBSERVE ONLY' | 'SUGGEST' | 'ROUTE AUTOMATICALLY' | 'FULL COPILOT';
 export type ShellTarget = 'ELECTRON' | 'TAURI' | 'UNDECIDED';

@@ -21,6 +21,17 @@ tauri-build = { version = "2.6.3", features = [] }
 serde_json = "1.0"
 serde = { version = "1.0", features = ["derive"] }
 log = "0.4"
-tauri = { version = "2.11.3", features = ["tray-icon"] }
+# "unstable" gates Window::add_child — Room A (Web Browser) embeds a real
+# native child webview inside the room's viewport instead of an <iframe>,
+# which is the only way to load arbitrary external sites without hitting
+# X-Frame-Options/frame-ancestors blocks (see lib.rs browser-view commands).
+tauri = { version = "2.11.3", features = ["tray-icon", "unstable"] }
 tauri-plugin-log = "2"
 tauri-plugin-sql = { version = "2.4.0", features = ["sqlite"] }
+# Knowledge Matrix "ADD TO MATRIX": a server-side (Rust-process) HTTP fetch
+# of the current page for offline snapshotting — deliberately NOT scraped
+# out of the live embedded browser-view webview, since that would require
+# exposing Tauri's IPC bridge to arbitrary untrusted remote page JS.
+# rustls-tls avoids a system OpenSSL dependency.
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
+scraper = "0.20"

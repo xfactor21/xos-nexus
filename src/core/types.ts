@@ -26,7 +26,13 @@ export type NodeKind =
   | 'design'
   | 'roadmap_item'
   | 'release'
-  | 'conversation';
+  | 'conversation'
+  // Step 7 Room B (Knowledge Matrix) — added to the live `nodes_kind_check`
+  // CHECK constraint via Supabase migration
+  // `add_knowledge_snapshot_kind_and_source`. Reuses the same nodes/edges
+  // tables as every other capture, per the brief's explicit instruction —
+  // no bespoke table.
+  | 'knowledge_snapshot';
 
 export type TaskStatus = 0 | 1 | 2; // queued / in progress / complete
 
@@ -82,6 +88,23 @@ export interface BugNode extends NodeRecord {
   linkedCommit: string | null;
   duplicateOf: string | null; // node id of a similar/duplicate bug, surfaced in UI
   similarity: number | null; // 0-1, drives the "92% similar" affordance
+}
+
+/** Knowledge Matrix snapshot metadata — stored in NodeRecord.metadata
+ * (jsonb), same pattern Design Studio already uses for canvas data. Text-
+ * only for v1 (no screenshot capture — flagged as a known gap, not
+ * silently dropped): url/title/description come straight from the page's
+ * own <title>/meta description (Rust-side fetch, no AI), textContent is a
+ * whitespace-collapsed excerpt for offline reading. */
+export interface KnowledgeSnapshotMeta {
+  url: string;
+  description: string;
+  textContent: string;
+  savedAt: string;
+}
+
+export interface KnowledgeSnapshotNode extends NodeRecord {
+  kind: 'knowledge_snapshot';
 }
 
 /**

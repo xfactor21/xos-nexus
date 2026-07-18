@@ -25,6 +25,12 @@ export const ROOMS: RoomMeta[] = [
   { id: 'releases', icon: 'releases', name: 'RELEASES', section: 'FLOW' },
   { id: 'vault', icon: 'memoryVault', name: 'MEMORY VAULT', section: 'SYSTEMS' },
   { id: 'comms', icon: 'comms', name: 'COMMS', section: 'SYSTEMS' },
+  // Step 7: three new rooms, desktop-first, added after the cockpit
+  // redesign — grouped under SYSTEMS alongside Vault/Comms/Settings since
+  // they're ship-utility surfaces rather than FLOW's thought-capture loop.
+  { id: 'browser', icon: 'browser', name: 'BROWSER', section: 'SYSTEMS' },
+  { id: 'knowledge', icon: 'knowledgeMatrix', name: 'KNOWLEDGE MATRIX', section: 'SYSTEMS' },
+  { id: 'terminal', icon: 'terminal', name: 'TERMINAL', section: 'SYSTEMS' },
   { id: 'settings', icon: 'settings', name: 'SETTINGS', section: 'SYSTEMS' },
 ];
 
@@ -46,5 +52,8 @@ export const DOCK_CONTENT: Record<RoomId, { tip?: string; body: string }[]> = {
   releases: [{ body: 'History: Two tagged releases. v0.5.0 tags when you approve this build.' }],
   vault: [{ body: 'Memory: 147 nodes retained. Most-recalled: the bee mascot decision.' }],
   comms: [{ body: 'Channel: Ask me about bugs, projects, memories, or the roadmap.' }],
+  browser: [{ body: 'Bring back what you find — ADD TO MATRIX saves a page for offline recall, fully wired into the graph.' }],
+  knowledge: [{ body: 'Every saved page becomes a node — I link it to whatever it relates to, same as any capture.' }],
+  terminal: [{ body: 'A real Node + Python runtime, right here. I’ll never run a command without you confirming it first.' }],
   settings: [{ body: 'Autonomy: I currently SUGGEST. Promote me when you trust the routing.' }],
 };

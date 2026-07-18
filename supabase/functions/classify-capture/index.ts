@@ -26,7 +26,7 @@ const CONFIDENCE_THRESHOLD = 0.75;
    ============================================================ */
 type NodeKind =
   | 'task' | 'note' | 'doc' | 'bug' | 'idea'
-  | 'design' | 'roadmap_item' | 'conversation';
+  | 'design' | 'roadmap_item' | 'conversation' | 'knowledge_snapshot';
 
 interface ClassifiedNode {
   kind: NodeKind;

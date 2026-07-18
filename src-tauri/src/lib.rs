@@ -1,7 +1,8 @@
 use tauri::{
   menu::{Menu, MenuItem, PredefinedMenuItem},
   tray::TrayIconBuilder,
-  Manager, WebviewUrl, WebviewWindowBuilder, WindowEvent,
+  LogicalPosition, LogicalSize, Manager, Url, Webview, WebviewBuilder, WebviewUrl, WebviewWindowBuilder,
+  WindowEvent, Wry,
 };
 
 /// Poppable Quick Capture widget — a real, independent Tauri window (its
@@ -48,13 +49,168 @@ fn open_capture_widget(app: tauri::AppHandle) -> Result<(), String> {
   Ok(())
 }
 
+/// Room A (Web Browser): the room's viewport is a real native child webview
+/// (`Window::add_child`, requires the "unstable" tauri feature — see
+/// Cargo.toml), not an `<iframe>`. Most real sites send
+/// X-Frame-Options/CSP frame-ancestors headers that block same-page iframe
+/// embedding (banks, social media, most news) — that's a hard browser
+/// security rule with no frontend workaround. A genuine embedded webview
+/// navigating directly to the URL is a top-level load from that page's own
+/// perspective, so it isn't subject to that restriction at all.
+///
+/// Deliberately absent from capabilities/default.json: this label loads
+/// arbitrary untrusted remote sites, so it gets zero Tauri IPC permissions
+/// by default — even if a malicious page's own script went looking for
+/// window.__TAURI__, the capability ACL has no entry for "browser-view" and
+/// denies every command outright.
+const BROWSER_VIEW_LABEL: &str = "browser-view";
+
+fn parse_target_url(raw: &str) -> Result<Url, String> {
+  Url::parse(raw).map_err(|e| format!("invalid URL: {e}"))
+}
+
+/// Opens the browser-view child webview if it doesn't exist yet (positioned
+/// over the Browser room's viewport, bounds supplied by the frontend via a
+/// ResizeObserver), or navigates + repositions the existing one — the room
+/// stays mounted across navigation (see RoomOutlet.tsx), so this is
+/// idempotent rather than always constructing a fresh webview.
+#[tauri::command]
+fn open_browser_view(app: tauri::AppHandle, url: String, x: f64, y: f64, width: f64, height: f64) -> Result<(), String> {
+  let parsed = parse_target_url(&url)?;
+  if let Some(webview) = app.get_webview(BROWSER_VIEW_LABEL) {
+    webview.navigate(parsed).map_err(|e| e.to_string())?;
+    webview.set_position(LogicalPosition::new(x, y)).map_err(|e| e.to_string())?;
+    webview.set_size(LogicalSize::new(width, height)).map_err(|e| e.to_string())?;
+    webview.show().map_err(|e| e.to_string())?;
+    return Ok(());
+  }
+  let main = app.get_webview_window("main").ok_or("main window not found")?;
+  let main_as_webview: &Webview<Wry> = main.as_ref();
+  let window = main_as_webview.window();
+  window
+    .add_child(
+      WebviewBuilder::new(BROWSER_VIEW_LABEL, WebviewUrl::External(parsed)),
+      LogicalPosition::new(x, y),
+      LogicalSize::new(width, height),
+    )
+    .map_err(|e| e.to_string())?;
+  Ok(())
+}
+
+#[tauri::command]
+fn navigate_browser_view(app: tauri::AppHandle, url: String) -> Result<(), String> {
+  let parsed = parse_target_url(&url)?;
+  let webview = app.get_webview(BROWSER_VIEW_LABEL).ok_or("browser view not open")?;
+  webview.navigate(parsed).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn set_browser_view_bounds(app: tauri::AppHandle, x: f64, y: f64, width: f64, height: f64) -> Result<(), String> {
+  let webview = app.get_webview(BROWSER_VIEW_LABEL).ok_or("browser view not open")?;
+  webview.set_position(LogicalPosition::new(x, y)).map_err(|e| e.to_string())?;
+  webview.set_size(LogicalSize::new(width, height)).map_err(|e| e.to_string())
+}
+
+/// Leaving the Browser room: shrink the child webview to zero instead of
+/// destroying it, so coming back doesn't lose the loaded page or its
+/// in-page history — mirrors how every other room in xOS stays mounted
+/// across navigation rather than unmounting (RoomOutlet.tsx).
+#[tauri::command]
+fn hide_browser_view(app: tauri::AppHandle) -> Result<(), String> {
+  if let Some(webview) = app.get_webview(BROWSER_VIEW_LABEL) {
+    webview.set_size(LogicalSize::new(0.0, 0.0)).map_err(|e| e.to_string())?;
+  }
+  Ok(())
+}
+
+#[tauri::command]
+fn close_browser_view(app: tauri::AppHandle) -> Result<(), String> {
+  if let Some(webview) = app.get_webview(BROWSER_VIEW_LABEL) {
+    webview.close().map_err(|e| e.to_string())?;
+  }
+  Ok(())
+}
+
+/// Knowledge Matrix "ADD TO MATRIX": a plain server-side HTTP GET of the
+/// current URL (not screen-scraped out of the live browser-view webview —
+/// see the module doc comment above on why that IPC bridge stays sealed off
+/// from remote content) to pull `<title>`/meta description/visible text for
+/// an offline-readable snapshot. Dumb and fast by design per the brief:
+/// no AI summarization, just what the page's own HTML already says about
+/// itself.
+#[derive(serde::Serialize)]
+struct PageSnapshot {
+  url: String,
+  title: String,
+  description: String,
+  text_content: String,
+}
+
+#[tauri::command]
+async fn fetch_page_snapshot(url: String) -> Result<PageSnapshot, String> {
+  let parsed = parse_target_url(&url)?;
+  let client = reqwest::Client::builder()
+    .user_agent("xOS-neXus/0.1 (+Knowledge Matrix snapshot fetcher)")
+    .timeout(std::time::Duration::from_secs(15))
+    .build()
+    .map_err(|e| e.to_string())?;
+  let resp = client.get(parsed).send().await.map_err(|e| e.to_string())?;
+  if !resp.status().is_success() {
+    return Err(format!("fetch failed: HTTP {}", resp.status()));
+  }
+  let html = resp.text().await.map_err(|e| e.to_string())?;
+  let document = scraper::Html::parse_document(&html);
+
+  let title_sel = scraper::Selector::parse("title").unwrap();
+  let title = document
+    .select(&title_sel)
+    .next()
+    .map(|el| el.text().collect::<String>().trim().to_string())
+    .filter(|s| !s.is_empty())
+    .unwrap_or_else(|| url.clone());
+
+  let desc_sel = scraper::Selector::parse(r#"meta[name="description"]"#).unwrap();
+  let og_desc_sel = scraper::Selector::parse(r#"meta[property="og:description"]"#).unwrap();
+  let description = document
+    .select(&desc_sel)
+    .next()
+    .or_else(|| document.select(&og_desc_sel).next())
+    .and_then(|el| el.value().attr("content"))
+    .unwrap_or("")
+    .trim()
+    .to_string();
+
+  let body_sel = scraper::Selector::parse("body").unwrap();
+  let raw_text: String = document
+    .select(&body_sel)
+    .next()
+    .map(|el| el.text().collect::<Vec<_>>().join(" "))
+    .unwrap_or_default();
+  // Collapse whitespace and cap length — an offline reference excerpt, not
+  // a full-page mirror (that's what the source URL is still for, when the
+  // Captain is online).
+  let collapsed = raw_text.split_whitespace().collect::<Vec<_>>().join(" ");
+  let text_content: String = collapsed.chars().take(8000).collect();
+
+  Ok(PageSnapshot { url, title, description, text_content })
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
   tauri::Builder::default()
     // Step 8: local SQLite mirror for offline-first capture (see
     // src/lib/localDb.ts + src/lib/offlineSync.ts on the frontend side).
     .plugin(tauri_plugin_sql::Builder::default().build())
-    .invoke_handler(tauri::generate_handler![set_tray_tooltip, open_capture_widget])
+    .invoke_handler(tauri::generate_handler![
+      set_tray_tooltip,
+      open_capture_widget,
+      open_browser_view,
+      navigate_browser_view,
+      set_browser_view_bounds,
+      hide_browser_view,
+      close_browser_view,
+      fetch_page_snapshot
+    ])
     .setup(|app| {
       if cfg!(debug_assertions) {
         app.handle().plugin(

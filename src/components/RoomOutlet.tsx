@@ -10,6 +10,9 @@ import Bugs from '../modules/bugs';
 import Releases from '../modules/releases';
 import Vault from '../modules/vault';
 import Comms from '../modules/comms';
+import Browser from '../modules/browser';
+import Knowledge from '../modules/knowledge';
+import Terminal from '../modules/terminal';
 import Settings from '../modules/settings';
 
 /** Every room mounts simultaneously and toggles the `.room.on` class, exactly
@@ -31,6 +34,9 @@ export default function RoomOutlet() {
       <Releases active={room === 'releases'} />
       <Vault active={room === 'vault'} />
       <Comms active={room === 'comms'} />
+      <Browser active={room === 'browser'} />
+      <Knowledge active={room === 'knowledge'} />
+      <Terminal active={room === 'terminal'} />
       <Settings active={room === 'settings'} />
     </>
   );

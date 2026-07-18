@@ -39,6 +39,37 @@ export interface ClassifyResult {
   liveAI?: boolean;
 }
 
+/** Step 7 Room B (Knowledge Matrix): a saved web page's kind/title/
+ * description are already known for certain — they come straight off the
+ * page's own <title>/meta description (fetched Rust-side in the Browser
+ * room, no AI) — so this does NOT run through liveClassify()'s general
+ * multi-node extraction. It hits the same `classify-capture` Edge
+ * Function's dedicated `snapshot` branch instead, which reuses only the
+ * relationship/auto-linking half of the pipeline (connects the new node to
+ * whatever existing nodes it actually relates to) and writes exactly one
+ * `kind: 'knowledge_snapshot'` node. */
+export interface PageSnapshot {
+  url: string;
+  title: string;
+  description: string;
+  textContent: string;
+}
+
+export interface SnapshotResult {
+  node: { id: string; title: string } | null;
+  relationshipsFound: number;
+}
+
+export async function saveKnowledgeSnapshot(snapshot: PageSnapshot): Promise<SnapshotResult> {
+  const ownerId = await currentOwnerId();
+  if (!ownerId) throw new Error('saveKnowledgeSnapshot: no signed-in Captain — sign in before saving.');
+  const { data, error } = await supabase.functions.invoke('classify-capture', {
+    body: { owner_id: ownerId, snapshot },
+  });
+  if (error) throw error;
+  return data as SnapshotResult;
+}
+
 export async function liveClassify(text: string, ownerIdOverride: string | null = null): Promise<ClassifyResult> {
   const ownerId = ownerIdOverride ?? (await currentOwnerId());
   if (!ownerId) throw new Error('liveClassify: no signed-in Captain — sign in before capturing.');

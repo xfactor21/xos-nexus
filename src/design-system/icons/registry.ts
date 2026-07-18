@@ -144,6 +144,11 @@ import {
   Flag,
   GanttChartSquare,
   StopCircle,
+  Network,
+  SquareTerminal,
+  ArrowLeft,
+  BookmarkPlus,
+  Tag,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import XaiGlyph from './XaiGlyph';
@@ -162,6 +167,9 @@ export const ICONS = {
   memoryVault: Archive,
   comms: Satellite,
   settings: Settings,
+  browser: Globe,
+  knowledgeMatrix: Network,
+  terminal: SquareTerminal,
 
   // ---- generic content / entity icons ----
   file: FileText,
@@ -274,6 +282,9 @@ export const ICONS = {
   gantt: GanttChartSquare,
   stop: StopCircle,
   radial: Target,
+  back: ArrowLeft,
+  addToMatrix: BookmarkPlus,
+  tag: Tag,
 
   // ---- bespoke xOS brand glyph (not from lucide) ----
   xai: XaiGlyph,
