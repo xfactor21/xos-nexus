@@ -8,3 +8,12 @@
 # than committing it. Ignored here too so a local `tauri android init` (e.g.
 # from the offline project zip) doesn't accidentally get checked in.
 /gen/android
+
+# `cargo vendor` output + its offline-source override, generated on-demand
+# for the "everything included" offline project zip (see chat/delivery, not
+# part of normal dev). NEVER commit these to the repo — a checked-in
+# .cargo/config.toml pointing at a vendor/ directory that doesn't exist in
+# git would break every build, including CI. Regenerate locally with:
+#   cd src-tauri && cargo vendor vendor
+/vendor
+/.cargo
