@@ -28,6 +28,14 @@ log = "0.4"
 tauri = { version = "2.11.3", features = ["tray-icon", "unstable"] }
 tauri-plugin-log = "2"
 tauri-plugin-sql = { version = "2.4.0", features = ["sqlite"] }
+# Terminal (.py) / Browser (.html) file editing: native open/save dialogs
+# plus reading/writing whatever path the user picks through them. Paths are
+# always user-chosen via the OS dialog, never accepted as free-form input
+# from JS, so an open filesystem scope here doesn't widen what untrusted
+# content could reach — same posture as the browser-view webview getting no
+# IPC permissions at all.
+tauri-plugin-dialog = "2"
+tauri-plugin-fs = "2"
 # Knowledge Matrix "ADD TO MATRIX": a server-side (Rust-process) HTTP fetch
 # of the current page for offline snapshotting — deliberately NOT scraped
 # out of the live embedded browser-view webview, since that would require

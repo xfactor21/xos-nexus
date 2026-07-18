@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 import { isTauri } from '../../lib/localDb';
 import { saveKnowledgeSnapshot } from '../../lib/copilotClient';
+import { openTextFile, writeTextFileAt, saveTextFileAs, type OpenedFile } from '../../lib/fileIO';
 import { pushToast } from '../../stores/toastStore';
 import { playSound } from '../../lib/sound';
 import Icon from '../../design-system/icons/Icon';
 import AmbientField from '../../design-system/background/AmbientField';
+import CodeEditor from '../../design-system/CodeEditor';
 
 /** Small dynamic-import wrapper — same "isTauri() gate + dynamic import"
  * pattern used everywhere else in xOS (uiStore's tray sync, the Capture
@@ -58,6 +60,25 @@ export default function Browser({ active }: { active: boolean }) {
   const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const viewportRef = useRef<HTMLDivElement>(null);
 
+  // Local .html file editing — a second mode this room can be in, entirely
+  // separate from URL browsing. While in 'edit' mode the native webview is
+  // treated the same as "room inactive" (hidden/not positioned) so it
+  // can't float on top of the editor.
+  const [mode, setMode] = useState<'browse' | 'edit'>('browse');
+  const [openFile, setOpenFile] = useState<OpenedFile | null>(null);
+  const [fileContent, setFileContent] = useState('');
+  const [previewDoc, setPreviewDoc] = useState('');
+  const [fileDirty, setFileDirty] = useState(false);
+  const [fileResetKey, setFileResetKey] = useState(0);
+  const [fileBusy, setFileBusy] = useState<'idle' | 'saving'>('idle');
+
+  // Debounced live preview — an iframe re-rendering its full srcDoc on
+  // every keystroke would flicker/lag on larger files.
+  useEffect(() => {
+    const t = setTimeout(() => setPreviewDoc(fileContent), 250);
+    return () => clearTimeout(t);
+  }, [fileContent]);
+
   const currentUrl = historyIndex >= 0 ? history[historyIndex] : null;
   const canGoBack = historyIndex > 0;
   const canGoForward = historyIndex < history.length - 1;
@@ -93,7 +114,7 @@ export default function Browser({ active }: { active: boolean }) {
   // Tauri: create/navigate the native child webview whenever the target URL
   // changes (or the room becomes active again with one already loaded).
   useEffect(() => {
-    if (!isTauri() || !active || !currentUrl) return;
+    if (!isTauri() || !active || mode !== 'browse' || !currentUrl) return;
     const el = viewportRef.current;
     if (!el) return;
     const rect = el.getBoundingClientRect();
@@ -105,7 +126,7 @@ export default function Browser({ active }: { active: boolean }) {
       })
       .finally(() => setLoading(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentUrl, active]);
+  }, [currentUrl, active, mode]);
 
   // Keep the native webview's bounds glued to the viewport div (window
   // resize, sidebar collapse, etc.), and shrink it to nothing while the
@@ -114,7 +135,7 @@ export default function Browser({ active }: { active: boolean }) {
   // whichever room the Captain navigates to next.
   useEffect(() => {
     if (!isTauri()) return;
-    if (!active) {
+    if (!active || mode !== 'browse') {
       void invokeTauri('hide_browser_view').catch(() => {});
       return;
     }
@@ -131,7 +152,61 @@ export default function Browser({ active }: { active: boolean }) {
       ro.disconnect();
       window.removeEventListener('resize', sync);
     };
-  }, [active, currentUrl]);
+  }, [active, currentUrl, mode]);
+
+  async function handleOpenHtmlFile() {
+    try {
+      const f = await openTextFile(['html', 'htm'], 'HTML');
+      if (!f) return;
+      setOpenFile(f);
+      setFileContent(f.content);
+      setPreviewDoc(f.content);
+      setFileDirty(false);
+      setFileResetKey((k) => k + 1);
+      setMode('edit');
+      pushToast(`Opened ${f.name}`, 'success');
+    } catch (e) {
+      console.error('Open .html file failed', e);
+      pushToast(e instanceof Error ? e.message : 'Could not open that file', 'warn');
+    }
+  }
+
+  async function handleSaveHtmlFile() {
+    if (!openFile) return;
+    setFileBusy('saving');
+    try {
+      await writeTextFileAt(openFile.path, fileContent);
+      setFileDirty(false);
+      pushToast(`Saved ${openFile.name}`, 'success');
+    } catch (e) {
+      console.error('Save .html file failed', e);
+      pushToast(e instanceof Error ? e.message : 'Save failed', 'warn');
+    } finally {
+      setFileBusy('idle');
+    }
+  }
+
+  async function handleSaveHtmlFileAs() {
+    try {
+      const path = await saveTextFileAs(fileContent, ['html', 'htm'], 'HTML', openFile?.name ?? 'index.html');
+      if (!path) return;
+      const name = path.split(/[/\\]/).pop() ?? path;
+      setOpenFile({ path, name, content: fileContent });
+      setFileDirty(false);
+      pushToast(`Saved as ${name}`, 'success');
+    } catch (e) {
+      console.error('Save .html file as failed', e);
+      pushToast(e instanceof Error ? e.message : 'Save failed', 'warn');
+    }
+  }
+
+  function handleCloseHtmlFile() {
+    setOpenFile(null);
+    setFileContent('');
+    setPreviewDoc('');
+    setFileDirty(false);
+    setMode('browse');
+  }
 
   async function handleAddToMatrix() {
     if (!currentUrl || !isTauri()) return;
@@ -166,71 +241,124 @@ export default function Browser({ active }: { active: boolean }) {
         </h2>
         <div className="rsub">{isTauri() ? 'EMBEDDED — NATIVE WEBVIEW' : 'WEB PREVIEW — LIMITED'}</div>
 
-        {!isTauri() && (
+        {!isTauri() && mode === 'browse' && (
           <div className="browserBanner">
             <Icon name="warning" size={13} /> Full browsing requires the packaged desktop app. This web preview uses a
             plain iframe — most real sites block that outright (X-Frame-Options), so this is a demo surface only.
           </div>
         )}
 
-        <div className="browserBar">
-          <span className={`browserNavBtn ${canGoBack ? '' : 'disabled'}`} onClick={back}>
-            <Icon name="chevronLeft" size={14} />
-          </span>
-          <span className={`browserNavBtn ${canGoForward ? '' : 'disabled'}`} onClick={forward}>
-            <Icon name="chevronRight" size={14} />
-          </span>
-          <span className={`browserNavBtn ${currentUrl ? '' : 'disabled'}`} onClick={reload}>
-            <Icon name="refresh" size={14} />
-          </span>
-          <input
-            className="browserAddress"
-            value={addressInput}
-            placeholder="Search or enter an address…"
-            onChange={(e) => setAddressInput(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') go(addressInput);
-            }}
-          />
-          <span className="browserNavBtn" onClick={() => go(addressInput)}>
-            GO
-          </span>
-          <span
-            className={`browserNavBtn addToMatrixBtn ${!currentUrl || !isTauri() ? 'disabled' : ''} ${saveState}`}
-            onClick={handleAddToMatrix}
-            title={isTauri() ? 'Save this page to the Knowledge Matrix' : 'Desktop app only'}
-          >
-            <Icon name="addToMatrix" size={14} />
-            {saveState === 'saving' ? 'SAVING…' : saveState === 'saved' ? 'SAVED' : saveState === 'error' ? 'FAILED' : 'ADD TO MATRIX'}
-          </span>
-        </div>
+        {mode === 'browse' && (
+          <div className="optrow" style={{ margin: '0 0 12px' }}>
+            <span
+              className={`chip ${!isTauri() ? 'disabled' : ''}`}
+              onClick={handleOpenHtmlFile}
+              title={isTauri() ? 'Open a local .html file to edit, with a live preview' : 'Desktop app only'}
+            >
+              <Icon name="folderOpen" size={12} /> OPEN .html FILE
+            </span>
+          </div>
+        )}
 
-        <div className="browserViewport" ref={viewportRef}>
-          {!currentUrl && (
-            <div className="browserStart">
-              <div className="browserStartTitle">Where to, Captain?</div>
-              <div className="browserQuickLaunch">
-                {QUICK_LAUNCH.map((q) => (
-                  <span key={q.url} className="chip" onClick={() => go(q.url)}>
-                    {q.label}
-                  </span>
-                ))}
-              </div>
+        {mode === 'browse' && (
+          <>
+            <div className="browserBar">
+              <span className={`browserNavBtn ${canGoBack ? '' : 'disabled'}`} onClick={back}>
+                <Icon name="chevronLeft" size={14} />
+              </span>
+              <span className={`browserNavBtn ${canGoForward ? '' : 'disabled'}`} onClick={forward}>
+                <Icon name="chevronRight" size={14} />
+              </span>
+              <span className={`browserNavBtn ${currentUrl ? '' : 'disabled'}`} onClick={reload}>
+                <Icon name="refresh" size={14} />
+              </span>
+              <input
+                className="browserAddress"
+                value={addressInput}
+                placeholder="Search or enter an address…"
+                onChange={(e) => setAddressInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') go(addressInput);
+                }}
+              />
+              <span className="browserNavBtn" onClick={() => go(addressInput)}>
+                GO
+              </span>
+              <span
+                className={`browserNavBtn addToMatrixBtn ${!currentUrl || !isTauri() ? 'disabled' : ''} ${saveState}`}
+                onClick={handleAddToMatrix}
+                title={isTauri() ? 'Save this page to the Knowledge Matrix' : 'Desktop app only'}
+              >
+                <Icon name="addToMatrix" size={14} />
+                {saveState === 'saving' ? 'SAVING…' : saveState === 'saved' ? 'SAVED' : saveState === 'error' ? 'FAILED' : 'ADD TO MATRIX'}
+              </span>
             </div>
-          )}
-          {currentUrl && !isTauri() && (
-            <iframe key={currentUrl} src={currentUrl} className="browserIframe" title="xOS Browser" />
-          )}
-          {currentUrl && isTauri() && loading && (
-            <div className="browserLoading">
-              <Icon name="spinner" size={20} className="spin" /> Loading…
+
+            <div className="browserViewport" ref={viewportRef}>
+              {!currentUrl && (
+                <div className="browserStart">
+                  <div className="browserStartTitle">Where to, Captain?</div>
+                  <div className="browserQuickLaunch">
+                    {QUICK_LAUNCH.map((q) => (
+                      <span key={q.url} className="chip" onClick={() => go(q.url)}>
+                        {q.label}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {currentUrl && !isTauri() && (
+                <iframe key={currentUrl} src={currentUrl} className="browserIframe" title="xOS Browser" />
+              )}
+              {currentUrl && isTauri() && loading && (
+                <div className="browserLoading">
+                  <Icon name="spinner" size={20} className="spin" /> Loading…
+                </div>
+              )}
+              {/* Tauri: the actual page renders in the native child webview
+                  positioned over this element by the effects above — nothing
+                  to render here in that case, this div is purely a bounds
+                  reference. */}
             </div>
-          )}
-          {/* Tauri: the actual page renders in the native child webview
-              positioned over this element by the effects above — nothing
-              to render here in that case, this div is purely a bounds
-              reference. */}
-        </div>
+          </>
+        )}
+
+        {mode === 'edit' && openFile && (
+          <>
+            <div className="fileEditorToolbar">
+              <span className="fileEditorName">
+                <Icon name="file" size={12} /> {openFile.name}
+                {fileDirty && <span className="fileDirtyDot" title="Unsaved changes" />}
+              </span>
+              <span className={`fileEditorBtn ${fileBusy !== 'idle' ? 'disabled' : ''}`} onClick={handleSaveHtmlFile} title="Save">
+                <Icon name="save" size={12} /> {fileBusy === 'saving' ? 'SAVING…' : 'SAVE'}
+              </span>
+              <span className="fileEditorBtn" onClick={handleSaveHtmlFileAs} title="Save as a new file">
+                SAVE AS
+              </span>
+              <span className="fileEditorBtn" onClick={handleCloseHtmlFile} title="Back to browsing">
+                <Icon name="close" size={12} /> CLOSE
+              </span>
+            </div>
+            <div className="htmlEditorSplit">
+              <CodeEditor
+                className="codeEditorBox htmlEditorPane"
+                value={fileContent}
+                resetKey={fileResetKey}
+                language="html"
+                onChange={(v) => {
+                  setFileContent(v);
+                  setFileDirty(true);
+                }}
+              />
+              {/* sandboxed, no same-origin — arbitrary local HTML can contain
+                  arbitrary <script>; this keeps it from reaching xOS's own
+                  window/localStorage/Tauri IPC (same isolation posture as
+                  the Terminal room's Node/Python/etc. sandboxes). */}
+              <iframe className="htmlPreviewFrame" srcDoc={previewDoc} sandbox="allow-scripts" title="Live HTML preview" />
+            </div>
+          </>
+        )}
       </div>
     </section>
   );

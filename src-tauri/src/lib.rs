@@ -201,6 +201,12 @@ pub fn run() {
     // Step 8: local SQLite mirror for offline-first capture (see
     // src/lib/localDb.ts + src/lib/offlineSync.ts on the frontend side).
     .plugin(tauri_plugin_sql::Builder::default().build())
+    // Terminal (.py) / Browser (.html) file editing: native open/save
+    // dialogs (plugin-dialog) and reading/writing the chosen path
+    // (plugin-fs) — see src/design-system's CodeEditor and the Terminal/
+    // Browser room modules on the frontend side.
+    .plugin(tauri_plugin_dialog::init())
+    .plugin(tauri_plugin_fs::init())
     .invoke_handler(tauri::generate_handler![
       set_tray_tooltip,
       open_capture_widget,

@@ -4,8 +4,11 @@ import { FitAddon } from '@xterm/addon-fit';
 import '@xterm/xterm/css/xterm.css';
 import { pushToast } from '../../stores/toastStore';
 import { playSound } from '../../lib/sound';
+import { isTauri } from '../../lib/localDb';
+import { openTextFile, writeTextFileAt, saveTextFileAs, type OpenedFile } from '../../lib/fileIO';
 import Icon from '../../design-system/icons/Icon';
 import AmbientField from '../../design-system/background/AmbientField';
+import CodeEditor from '../../design-system/CodeEditor';
 
 type Runtime = 'node' | 'python' | 'ruby' | 'php' | 'go';
 
@@ -253,6 +256,16 @@ export default function TerminalRoom({ active }: { active: boolean }) {
   const [runtime, setRuntime] = useState<Runtime | null>(null);
   const [status, setStatus] = useState<'idle' | 'booting' | 'ready' | 'unsupported' | 'error'>('idle');
 
+  // Local .py file editing — open a real file, edit it in a real editor,
+  // run the whole thing through the same Pyodide instance the REPL uses
+  // (so a script's top-level defs/vars are available in the REPL
+  // afterward too), save back to disk. Desktop-only (see fileIO.ts).
+  const [openFile, setOpenFile] = useState<OpenedFile | null>(null);
+  const [fileContent, setFileContent] = useState('');
+  const [fileDirty, setFileDirty] = useState(false);
+  const [fileResetKey, setFileResetKey] = useState(0);
+  const [fileBusy, setFileBusy] = useState<'idle' | 'running' | 'saving'>('idle');
+
   useEffect(() => {
     if (!containerRef.current || termRef.current) return;
     const term = new XTerm({
@@ -497,6 +510,89 @@ export default function TerminalRoom({ active }: { active: boolean }) {
     }
   }
 
+  async function handleOpenPyFile() {
+    try {
+      const f = await openTextFile(['py'], 'Python');
+      if (!f) return;
+      setOpenFile(f);
+      setFileContent(f.content);
+      setFileDirty(false);
+      setFileResetKey((k) => k + 1);
+      if (runtime !== 'python' || status !== 'ready') pick('python');
+      pushToast(`Opened ${f.name}`, 'success');
+    } catch (e) {
+      console.error('Open .py file failed', e);
+      pushToast(e instanceof Error ? e.message : 'Could not open that file', 'warn');
+    }
+  }
+
+  async function handleRunFile() {
+    const term = termRef.current;
+    if (!term || !openFile) return;
+    if (runtime !== 'python') {
+      pushToast('Switch to the Python runtime to run this file', 'warn');
+      return;
+    }
+    setFileBusy('running');
+    term.writeln(`\r\n\x1b[36m▶ Running ${openFile.name}…\x1b[0m`);
+    try {
+      // Same memoized Pyodide instance the REPL uses — if it's already
+      // booted this resolves instantly; if not, this boots it (status
+      // will still say "idle"/"booting", which is fine, this call awaits
+      // the real thing either way).
+      const py = await bootPyodide(
+        (s) => term.writeln(s),
+        (s) => term.writeln(`\x1b[31m${s}\x1b[0m`),
+      );
+      if (status !== 'ready') setStatus('ready');
+      const result = await py.runPythonAsync(fileContent);
+      if (result !== undefined && result !== null) term.writeln(String(result));
+      term.writeln(`\x1b[36m▶ Done.\x1b[0m`);
+      playSound('notice');
+    } catch (e) {
+      console.error('Run file failed', e);
+      term.writeln(`\x1b[31m${e instanceof Error ? e.message : String(e)}\x1b[0m`);
+      pushToast('Script raised an error — see the terminal output', 'warn');
+    } finally {
+      setFileBusy('idle');
+    }
+  }
+
+  async function handleSaveFile() {
+    if (!openFile) return;
+    setFileBusy('saving');
+    try {
+      await writeTextFileAt(openFile.path, fileContent);
+      setFileDirty(false);
+      pushToast(`Saved ${openFile.name}`, 'success');
+    } catch (e) {
+      console.error('Save .py file failed', e);
+      pushToast(e instanceof Error ? e.message : 'Save failed', 'warn');
+    } finally {
+      setFileBusy('idle');
+    }
+  }
+
+  async function handleSaveFileAs() {
+    try {
+      const path = await saveTextFileAs(fileContent, ['py'], 'Python', openFile?.name ?? 'script.py');
+      if (!path) return;
+      const name = path.split(/[/\\]/).pop() ?? path;
+      setOpenFile({ path, name, content: fileContent });
+      setFileDirty(false);
+      pushToast(`Saved as ${name}`, 'success');
+    } catch (e) {
+      console.error('Save .py file as failed', e);
+      pushToast(e instanceof Error ? e.message : 'Save failed', 'warn');
+    }
+  }
+
+  function handleCloseFile() {
+    setOpenFile(null);
+    setFileContent('');
+    setFileDirty(false);
+  }
+
   function pick(r: Runtime) {
     if (r === runtime && status === 'ready') return;
     setRuntime(r);
@@ -546,6 +642,53 @@ export default function TerminalRoom({ active }: { active: boolean }) {
           )}
           {status === 'ready' && <span className="terminalStatus ready">● READY</span>}
         </div>
+
+        <div className="optrow" style={{ margin: '0 0 12px' }}>
+          <span
+            className={`chip ${!isTauri() ? 'disabled' : ''}`}
+            onClick={handleOpenPyFile}
+            title={isTauri() ? 'Open a .py file from disk to edit and run' : 'Desktop app only'}
+          >
+            <Icon name="folderOpen" size={12} /> OPEN .py FILE
+          </span>
+        </div>
+
+        {openFile && (
+          <div className="fileEditorPanel">
+            <div className="fileEditorToolbar">
+              <span className="fileEditorName">
+                <Icon name="file" size={12} /> {openFile.name}
+                {fileDirty && <span className="fileDirtyDot" title="Unsaved changes" />}
+              </span>
+              <span
+                className={`fileEditorBtn ${fileBusy !== 'idle' || runtime !== 'python' ? 'disabled' : ''}`}
+                onClick={handleRunFile}
+                title={runtime !== 'python' ? 'Switch to the Python runtime first' : 'Run this file'}
+              >
+                <Icon name="play" size={12} /> {fileBusy === 'running' ? 'RUNNING…' : 'RUN'}
+              </span>
+              <span className={`fileEditorBtn ${fileBusy !== 'idle' ? 'disabled' : ''}`} onClick={handleSaveFile} title="Save">
+                <Icon name="save" size={12} /> {fileBusy === 'saving' ? 'SAVING…' : 'SAVE'}
+              </span>
+              <span className="fileEditorBtn" onClick={handleSaveFileAs} title="Save as a new file">
+                SAVE AS
+              </span>
+              <span className="fileEditorBtn" onClick={handleCloseFile} title="Close editor">
+                <Icon name="close" size={12} /> CLOSE
+              </span>
+            </div>
+            <CodeEditor
+              className="codeEditorBox"
+              value={fileContent}
+              resetKey={fileResetKey}
+              language="python"
+              onChange={(v) => {
+                setFileContent(v);
+                setFileDirty(true);
+              }}
+            />
+          </div>
+        )}
 
         <div className="terminalShell" ref={containerRef} />
       </div>
