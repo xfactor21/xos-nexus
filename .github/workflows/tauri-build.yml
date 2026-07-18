@@ -83,3 +83,73 @@ jobs:
             src-tauri/target/release/bundle/deb/*.deb
             src-tauri/target/release/bundle/appimage/*.AppImage
           if-no-files-found: ignore
+
+  # Android has never been set up in this repo before (no src-tauri/gen/android
+  # project checked in) — Tauri's mobile CLI needs Android SDK + a specific NDK
+  # + the android Rust targets, none of which exist in a bare Linux dev sandbox,
+  # so this runs entirely on the GitHub-hosted runner instead. `tauri android
+  # init` regenerates the gen/android Gradle project fresh every run rather than
+  # committing it (keeps the repo from carrying a huge generated project; revisit
+  # if we ever need to hand-edit native Android files like the manifest/icons).
+  #
+  # This is a DEBUG-signed APK (Gradle's built-in debug keystore) so it installs
+  # directly on a device/emulator with "unknown sources" allowed — no signing
+  # secrets needed yet. Swap to a real release keystore (via repo secrets) once
+  # this is heading to the Play Store or needs to be distributed more broadly.
+  build-android:
+    runs-on: ubuntu-24.04
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Setup Android NDK
+        id: setup-ndk
+        uses: nttld/setup-ndk@v1
+        with:
+          ndk-version: r26d
+          link-to-sdk: true
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android,armv7-linux-androideabi,i686-linux-android,x86_64-linux-android
+
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Init Tauri Android project
+        run: npx tauri android init
+        env:
+          NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
+
+      - name: Build Android APK
+        run: npx tauri android build --apk --debug
+        env:
+          NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: xos-nexus-android
+          path: src-tauri/gen/android/app/build/outputs/apk/**/*.apk
+          if-no-files-found: warn
