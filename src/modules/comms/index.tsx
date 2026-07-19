@@ -55,7 +55,7 @@ export default function Comms({ active }: { active: boolean }) {
   const spawnedStale = useRef(false);
 
   // xAI-initiated thread — fires once, off the real stale-project signal
-  // (the same one XaiHologram.tsx uses), not a canned demo timer.
+  // (coreGraph's computed `isStale`), not a canned demo timer.
   useEffect(() => {
     if (spawnedStale.current) return;
     const stale = projects.find((p) => p.isStale);

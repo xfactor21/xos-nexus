@@ -60,24 +60,62 @@ export interface SnapshotResult {
   relationshipsFound: number;
 }
 
+/**
+ * xAI status wiring (Amendment v0.9/v1.0): both `classify-capture` callers
+ * below dispatch these as plain window events rather than importing the xAI
+ * React context directly — this is a plain .ts module with no component
+ * tree to hook into (same reasoning as the 'xos-go' navigation event
+ * elsewhere), and it keeps every classify-capture call site (Neural Core,
+ * Neural Capture, Knowledge Matrix snapshots) wired through one place
+ * instead of threading setAiStatus calls through each caller individually.
+ * XaiCharacter.tsx's trigger bridge listens for these inside <XAIProvider>.
+ * Only this lifecycle is wired for now — the rest of Amendment v0.9's
+ * trigger table (suggestion pending, project stale, daily briefing,
+ * relationship discovery, etc.) is intentionally left unwired until those
+ * systems exist as real product surfaces.
+ */
+function xaiThinking() {
+  window.dispatchEvent(new Event('xos-xai-thinking'));
+}
+function xaiSuccess() {
+  window.dispatchEvent(new Event('xos-xai-success'));
+}
+function xaiError() {
+  window.dispatchEvent(new Event('xos-xai-error'));
+}
+
 export async function saveKnowledgeSnapshot(snapshot: PageSnapshot): Promise<SnapshotResult> {
-  const ownerId = await currentOwnerId();
-  if (!ownerId) throw new Error('saveKnowledgeSnapshot: no signed-in Captain — sign in before saving.');
-  const { data, error } = await supabase.functions.invoke('classify-capture', {
-    body: { owner_id: ownerId, snapshot },
-  });
-  if (error) throw error;
-  return data as SnapshotResult;
+  xaiThinking();
+  try {
+    const ownerId = await currentOwnerId();
+    if (!ownerId) throw new Error('saveKnowledgeSnapshot: no signed-in Captain — sign in before saving.');
+    const { data, error } = await supabase.functions.invoke('classify-capture', {
+      body: { owner_id: ownerId, snapshot },
+    });
+    if (error) throw error;
+    xaiSuccess();
+    return data as SnapshotResult;
+  } catch (err) {
+    xaiError();
+    throw err;
+  }
 }
 
 export async function liveClassify(text: string, ownerIdOverride: string | null = null): Promise<ClassifyResult> {
-  const ownerId = ownerIdOverride ?? (await currentOwnerId());
-  if (!ownerId) throw new Error('liveClassify: no signed-in Captain — sign in before capturing.');
-  const { data, error } = await supabase.functions.invoke('classify-capture', {
-    body: { text, owner_id: ownerId },
-  });
-  if (error) throw error;
-  return data as ClassifyResult;
+  xaiThinking();
+  try {
+    const ownerId = ownerIdOverride ?? (await currentOwnerId());
+    if (!ownerId) throw new Error('liveClassify: no signed-in Captain — sign in before capturing.');
+    const { data, error } = await supabase.functions.invoke('classify-capture', {
+      body: { text, owner_id: ownerId },
+    });
+    if (error) throw error;
+    xaiSuccess();
+    return data as ClassifyResult;
+  } catch (err) {
+    xaiError();
+    throw err;
+  }
 }
 
 /**

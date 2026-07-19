@@ -7,6 +7,12 @@
     "types": ["vite/client"],
     "allowArbitraryExtensions": true,
     "skipLibCheck": true,
+    // The verified xAI character package (design-system/cockpit/xai/*.jsx)
+    // is dropped in unmodified per the integration brief — allowJs lets
+    // .tsx files import it without re-deriving it into strict TS. checkJs
+    // stays off (default) so the untouched .jsx source isn't linted against
+    // this project's strict rules.
+    "allowJs": true,
 
     /* Bundler mode */
     "moduleResolution": "bundler",

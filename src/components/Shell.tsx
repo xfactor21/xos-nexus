@@ -7,7 +7,8 @@ import RoomOutlet from './RoomOutlet';
 import Icon from '../design-system/icons/Icon';
 import CockpitFrame from '../design-system/cockpit/CockpitFrame';
 import GlobalParticles from '../design-system/cockpit/GlobalParticles';
-import XaiHologram from '../design-system/cockpit/XaiHologram';
+import XaiCharacter from '../design-system/cockpit/XaiCharacter';
+import { XAIProvider } from '../design-system/cockpit/xai/xAIController-FINAL';
 import ToastHost from '../design-system/cockpit/ToastHost';
 import CommandPalette from '../design-system/cockpit/CommandPalette';
 import { playSound } from '../lib/sound';
@@ -154,7 +155,10 @@ export default function Shell() {
   }
 
   return (
-    <>
+    // Amendment v1.0: wraps the persistent layout shell (renders in every
+    // room) in XAIProvider so any descendant can call useXAI()/setAiStatus()
+    // — XaiCharacter's trigger bridge is the first consumer, below.
+    <XAIProvider>
       <GlobalParticles />
       <CockpitFrame />
 
@@ -206,9 +210,12 @@ export default function Shell() {
         <span className="sy"><span className="dot" style={{ background: 'var(--cy)', boxShadow: '0 0 18px var(--cy), 0 0 40px rgba(0,245,255,.5)' }} /> SYNC: LIVE</span>
       </div>
 
-      {/* xAI hologram — persistent, autonomous presence, every room, outside
-          the right wing (#dock). Fixed position so it survives room swaps. */}
-      <XaiHologram />
+      {/* xAI character — persistent, autonomous, face-expressive presence,
+          every room, outside the right wing (#dock). Fixed position so it
+          survives room swaps. Amendment v1.0: real character (Canvas +
+          XAIAuto) replacing the old gyroscope-orb hologram and its floating
+          caption popup, both fully removed. */}
+      <XaiCharacter />
 
       {/* OS-grade universal directives: reusable toasts, Cmd/Ctrl+K command
           palette, `?` keyboard shortcuts overlay — all global, all mounted
@@ -216,6 +223,6 @@ export default function Shell() {
       <ToastHost />
       <CommandPalette />
       <ShortcutsOverlay />
-    </>
+    </XAIProvider>
   );
 }
