@@ -434,14 +434,14 @@ input[type=range]{width:100%;accent-color:#00F5FF}
 #fsStarHint{position:absolute;font-size:9px;letter-spacing:1px;color:var(--cyan);background:rgba(10,14,20,.7);border:1px solid rgba(0,245,255,.3);padding:5px 9px;opacity:0;transition:opacity .3s;pointer-events:none;z-index:40}
 #fsLabel{position:fixed;top:14px;left:16px;z-index:90;font-family:var(--font-disp);font-size:10px;letter-spacing:3px;color:var(--text-dim)}
 #fsLabel em{color:var(--cyan);font-style:normal}
-#fsHoloWrap{position:fixed;right:18px;bottom:70px;z-index:55;display:flex;flex-direction:column;align-items:center;gap:6px;opacity:0;transform:scale(.7) translateY(10px);transition:opacity 1.4s,transform 1.4s;pointer-events:none}
+/* Amendment v1.0 bug fix: #fsHoloCv (2D canvas ring-orb) and #fsHoloCap
+   (floating caption bubble) are gone — the real xAI character
+   (XaiCharacterCanvas, a react-three-fiber Canvas) renders inside
+   #fsHoloWrap now instead, sized explicitly since Canvas fills its parent.
+   No caption replacement; that popup is deleted, not relocated. */
+#fsHoloWrap{position:fixed;right:14px;bottom:60px;z-index:55;width:150px;height:150px;opacity:0;transform:scale(.7) translateY(10px);transition:opacity 1.4s,transform 1.4s;pointer-events:none}
 #fsHoloWrap.on{opacity:1;transform:none}
-#fsHoloCv{width:96px;height:112px;filter:drop-shadow(0 0 10px rgba(0,245,255,.45))}
-#fsHoloBase{width:52px;height:5px;border-radius:50%;background:radial-gradient(ellipse,rgba(0,245,255,.55),transparent 70%);margin-top:-14px}
-#fsHoloCap{position:fixed;right:118px;bottom:78px;z-index:56;max-width:min(58vw,260px);text-align:right;background:rgba(8,14,20,.72);border:1px solid rgba(139,92,246,.4);padding:9px 13px;font-size:11.5px;line-height:1.5;color:#d8cfff;opacity:0;transition:opacity .5s;pointer-events:none}
-#fsHoloCap:after{content:'';position:absolute;right:-7px;bottom:14px;width:0;height:0;border-top:6px solid transparent;border-bottom:6px solid transparent;border-left:7px solid rgba(139,92,246,.4)}
-#fsHoloCap.on{opacity:1}
-#fsHoloCap b{color:var(--purple);font-weight:400;font-size:9px;letter-spacing:2px;display:block;margin-bottom:4px}
+#fsHoloWrap canvas{filter:drop-shadow(0 0 10px rgba(0,245,255,.45))}
 .bigbtn:disabled{opacity:.4;cursor:default}
 
 /* ============================================================

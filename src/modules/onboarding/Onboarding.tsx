@@ -1,5 +1,7 @@
 import { useEffect, useRef } from 'react';
 import Icon from '../../design-system/icons/Icon';
+import { XAIProvider } from '../../design-system/cockpit/xai/xAIController-FINAL';
+import { XaiCharacterCanvas } from '../../design-system/cockpit/XaiCharacter';
 
 type Mode = 'full' | 'returning';
 
@@ -19,8 +21,6 @@ function svgIconHtml(paths: string, size = 13, glowVar: string | null = '--cyan'
   const glow = glowVar ? `filter:drop-shadow(0 0 2px ${color}) drop-shadow(0 0 6px ${color});` : '';
   return `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block;vertical-align:-0.15em;color:${color};${glow}">${paths}</svg>`;
 }
-// xAI presence glyph — same path data as design-system/icons/XaiGlyph.tsx.
-const XAI_SVG = svgIconHtml('<path d="M12 2 L20 12 L12 22 L4 12 Z"/><path d="M12 2 L12 22 M4 12 L20 12" stroke-opacity="0.55"/><circle cx="12" cy="12" r="2.1" fill="currentColor" stroke="none"/>', 13);
 // chevron-right — same path data as lucide-react's ChevronRight (registry's "chevronRight").
 const CHEVRON_RIGHT_SVG = svgIconHtml('<path d="m9 18 6-6-6-6"/>', 13);
 // square (mission checkbox) — same path data as lucide-react's Square (registry's "square"), no glow (a checklist glyph, not a brand/status marker).
@@ -63,11 +63,9 @@ const TOTAL_SCENES = 12;
 export default function Onboarding({ mode, onComplete }: { mode: Mode; onComplete: () => void }) {
   const rootRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const holoCvRef = useRef<HTMLCanvasElement>(null);
   const sceneRef = useRef<HTMLDivElement>(null);
   const dotsRef = useRef<HTMLDivElement>(null);
   const holoWrapRef = useRef<HTMLDivElement>(null);
-  const holoCapRef = useRef<HTMLDivElement>(null);
   const cockpitRef = useRef<HTMLDivElement>(null);
   const bridgeGlowRef = useRef<HTMLDivElement>(null);
   const blackoutRef = useRef<HTMLDivElement>(null);
@@ -78,25 +76,21 @@ export default function Onboarding({ mode, onComplete }: { mode: Mode; onComplet
 
   useEffect(() => {
     const cv = canvasRef.current;
-    const hCv = holoCvRef.current;
     const scene = sceneRef.current;
     const dotsEl = dotsRef.current;
     const holoWrap = holoWrapRef.current;
-    const holoCap = holoCapRef.current;
     const cockpit = cockpitRef.current;
     const bridgeGlow = bridgeGlowRef.current;
     const blackout = blackoutRef.current;
     const starHint = starHintRef.current;
-    if (!cv || !hCv || !scene || !dotsEl || !holoWrap || !holoCap || !cockpit || !bridgeGlow || !blackout || !starHint) {
+    if (!cv || !scene || !dotsEl || !holoWrap || !cockpit || !bridgeGlow || !blackout || !starHint) {
       return;
     }
     const ctx = cv.getContext('2d');
-    const hx = hCv.getContext('2d');
-    if (!ctx || !hx) return;
+    if (!ctx) return;
 
     let cancelled = false;
     let rafId = 0;
-    let holoRafId = 0;
     const allTimeouts = new Set<number>();
     let sceneTimeouts: number[] = [];
 
@@ -288,57 +282,25 @@ export default function Onboarding({ mode, onComplete }: { mode: Mode; onComplet
     }
 
     // ===== HOLOGRAM =====
-    hCv.width = 96;
-    hCv.height = 112;
-    let hRot = 0;
-    let holoTalk = 0;
-    function drawHolo() {
-      hx!.clearRect(0, 0, 96, 112);
-      const cx = 48;
-      const cy = 54;
-      const R = 28;
-      hRot += 0.012 + holoTalk * 0.02;
-      if (holoTalk > 0) holoTalk -= 0.01;
-      const flick = 0.85 + Math.random() * 0.15;
-      ([[1, 0.35, 'rgba(0,245,255,'], [0.8, 0.9, 'rgba(139,92,246,'], [0.55, 0.55, 'rgba(0,245,255,']] as [number, number, string][]).forEach((cfg, i) => {
-        const [sx, sy, col] = cfg;
-        hx!.save();
-        hx!.translate(cx, cy);
-        hx!.rotate(hRot * (i % 2 ? -1 : 1) + i * 1.1);
-        hx!.scale(sx, sy);
-        hx!.beginPath();
-        hx!.arc(0, 0, R, 0, 6.29);
-        hx!.strokeStyle = col + 0.55 * flick + ')';
-        hx!.lineWidth = 1.4;
-        hx!.stroke();
-        hx!.restore();
-      });
-      const g = hx!.createRadialGradient(cx, cy, 0, cx, cy, 10 + holoTalk * 8);
-      g.addColorStop(0, 'rgba(220,250,255,' + flick + ')');
-      g.addColorStop(0.5, 'rgba(0,245,255,.55)');
-      g.addColorStop(1, 'transparent');
-      hx!.fillStyle = g;
-      hx!.beginPath();
-      hx!.arc(cx, cy, 12 + holoTalk * 8, 0, 6.29);
-      hx!.fill();
-      holoRafId = requestAnimationFrame(drawHolo);
-    }
-    holoRafId = requestAnimationFrame(drawHolo);
-
+    // Bug fix: this used to be its own independent hand-rolled 2D-canvas
+    // ring orb (drawHolo, a near-duplicate of the since-deleted
+    // XaiHologram.tsx) PLUS its own floating caption bubble (holoSay,
+    // writing into #fsHoloCap) — a completely separate old implementation
+    // from the main app's hologram, missed entirely when that one was
+    // replaced, because this file's cinematic engine was never searched by
+    // component name. Both are gone now: the ring-orb canvas is replaced by
+    // the real verified xAI character (<XaiCharacterCanvas> below, rendered
+    // as static JSX inside #fsHoloWrap — see the return statement), which
+    // animates itself, so there's no per-frame drawHolo loop to run here
+    // anymore. The caption popup isn't replaced by anything — it's deleted,
+    // per instruction; holoShow/holoHide are kept because they still serve
+    // a real purpose (fading the character in/out at the right narrative
+    // beats), just without any caption text attached.
     function holoShow() {
       holoWrap!.classList.add('on');
     }
     function holoHide() {
       holoWrap!.classList.remove('on');
-    }
-    let holoSayTimeout: number | undefined;
-    function holoSay(text: string, dur = 3200) {
-      holoCap!.innerHTML = `<b>${XAI_SVG} xAI</b>` + text;
-      holoCap!.classList.add('on');
-      holoTalk = 1;
-      if (holoSayTimeout) clearTimeout(holoSayTimeout);
-      holoSayTimeout = window.setTimeout(() => holoCap!.classList.remove('on'), dur);
-      allTimeouts.add(holoSayTimeout);
     }
 
     // ===== AUDIO =====
@@ -471,8 +433,6 @@ export default function Onboarding({ mode, onComplete }: { mode: Mode; onComplet
       cockpit!.classList.add('on');
       holoShow();
       setScene('');
-      after(500, () => holoSay('Welcome back, Captain.', 1600));
-      after(2200, () => holoSay('Neural Core online. Your universe is waiting.', 2400));
       after(4700, () => {
         setScene(`<button id="fsCta" class="fs-cta">ENTER xOS ${CHEVRON_RIGHT_SVG}</button>`, true, () => {
           document.getElementById('fsCta')?.addEventListener('click', finish);
@@ -522,9 +482,6 @@ export default function Onboarding({ mode, onComplete }: { mode: Mode; onComplet
       setScene('<button id="fsBeginBtn" style="animation-delay:4.3s">BEGIN</button>', true, () => {
         document.getElementById('fsBeginBtn')?.addEventListener('click', scene4);
       });
-      after(200, () => holoSay('Welcome back, Captain.', 1500));
-      after(1900, () => holoSay('Neural Core online.', 1500));
-      after(3400, () => holoSay('Ready when you are.', 2200));
       blip();
       after(1900, blip);
       after(3400, blip);
@@ -534,7 +491,6 @@ export default function Onboarding({ mode, onComplete }: { mode: Mode; onComplet
       clearSceneTimeouts();
       curScene = 4;
       dots();
-      holoCap!.classList.remove('on');
       setEnv({ zoom: 1.12, panX: 0, panY: 4, bright: 0.22, neb: [6, 12, 26], warp: 0 }, 0.02);
       setScene(
         '<div class="fs-line big" style="animation-delay:.1s;font-size:clamp(16px,4vw,26px)">WHAT ARE YOU CREATING?</div>' +
@@ -567,7 +523,6 @@ export default function Onboarding({ mode, onComplete }: { mode: Mode; onComplet
         worldStars[idx].targetR = 7;
         worldStars[idx].alpha = 1;
         ember(W / 2, H * 0.44, '#00F5FF', 46, 3.2);
-        holoSay('Every universe begins with a single idea.', 3200);
       });
       after(4600, scene6);
     }
@@ -590,7 +545,6 @@ export default function Onboarding({ mode, onComplete }: { mode: Mode; onComplet
         ember(W * 0.62, H * 0.56, '#FF2D78', 18, 2);
         edges.push({ a: hub, b: i2, prog: 0, hue: '#FF2D78' });
       });
-      after(1900, () => holoSay("I'm discovering relationships.", 3000));
       after(5600, scene7);
     }
 
@@ -689,8 +643,6 @@ export default function Onboarding({ mode, onComplete }: { mode: Mode; onComplet
       holoShow();
       setEnv({ zoom: 1.15, panX: -30, panY: -14, bright: 0.9, neb: [10, 26, 48], warp: 0 }, 0.02);
       setScene('');
-      after(200, () => holoSay('Interesting…', 1400));
-      after(1700, () => holoSay('This idea connects to something you created earlier.', 3200));
       after(1000, () => {
         if (worldStars.length >= 3) {
           edges.push({ a: 1, b: 2, prog: 0, hue: '#00F5FF' });
@@ -704,7 +656,6 @@ export default function Onboarding({ mode, onComplete }: { mode: Mode; onComplet
       clearSceneTimeouts();
       curScene = 11;
       dots();
-      holoCap!.classList.remove('on');
       setEnv({ zoom: 0.94, panX: 0, panY: 0, bright: 0.6, neb: [8, 18, 36], warp: 0 }, 0.02);
       setScene(
         '<div class="fs-line" style="animation-delay:.1s;letter-spacing:4px">MISSION</div>' +
@@ -725,8 +676,6 @@ export default function Onboarding({ mode, onComplete }: { mode: Mode; onComplet
       cockpit!.classList.remove('open');
       cockpit!.classList.add('on');
       setScene('');
-      after(900, () => holoSay('Good work today, Captain.', 1800));
-      after(2900, () => holoSay('Your universe is growing.', 2600));
       after(5200, () => {
         setScene(`<button id="fsCta" class="fs-cta">ENTER xOS ${CHEVRON_RIGHT_SVG}</button>`, true, () => {
           document.getElementById('fsCta')?.addEventListener('click', finish);
@@ -746,9 +695,7 @@ export default function Onboarding({ mode, onComplete }: { mode: Mode; onComplet
       cancelled = true;
       window.removeEventListener('resize', resize);
       cancelAnimationFrame(rafId);
-      cancelAnimationFrame(holoRafId);
       allTimeouts.forEach((id) => clearTimeout(id));
-      if (holoSayTimeout) clearTimeout(holoSayTimeout);
       clearInterval(beatTimer);
       cv!.onclick = null;
       try {
@@ -771,29 +718,37 @@ export default function Onboarding({ mode, onComplete }: { mode: Mode; onComplet
   }, [mode]);
 
   return (
-    <div id="fsRoot" ref={rootRef}>
-      <canvas id="fsFx" ref={canvasRef} />
-      <div id="fsVignette" />
-      <div id="fsBridgeGlow" ref={bridgeGlowRef} />
-      <div id="fsCockpit" ref={cockpitRef}>
-        <div className="fs-panel l" />
-        <div className="fs-panel r" />
+    // Own XAIProvider here (not the main app's — Onboarding mounts before
+    // Shell/sign-in in App.tsx, so there's no ancestor provider to share)
+    // so the real character can render inside #fsHoloWrap below.
+    <XAIProvider>
+      <div id="fsRoot" ref={rootRef}>
+        <canvas id="fsFx" ref={canvasRef} />
+        <div id="fsVignette" />
+        <div id="fsBridgeGlow" ref={bridgeGlowRef} />
+        <div id="fsCockpit" ref={cockpitRef}>
+          <div className="fs-panel l" />
+          <div className="fs-panel r" />
+        </div>
+        <div id="fsBlackout" ref={blackoutRef} />
+        <div id="fsLabel">
+          xOS <em>//</em> FLIGHT SIMULATOR
+        </div>
+        {/* Real xAI character (Amendment v1.0) — replaces the old
+            hand-rolled canvas ring-orb. No caption bubble anymore (deleted,
+            not replaced); holoShow/holoHide (still driven by the scene
+            sequence above) just fade this wrapper in/out via #fsHoloWrap's
+            existing CSS transition. */}
+        <div id="fsHoloWrap" ref={holoWrapRef}>
+          <XaiCharacterCanvas scale={0.85} />
+        </div>
+        <div id="fsScene" ref={sceneRef} />
+        <div id="fsSkip" onClick={() => onCompleteRef.current()}>
+          SKIP <Icon name="chevronRight" size={12} />
+        </div>
+        <div id="fsDots" ref={dotsRef} />
+        <div id="fsStarHint" ref={starHintRef} />
       </div>
-      <div id="fsBlackout" ref={blackoutRef} />
-      <div id="fsLabel">
-        xOS <em>//</em> FLIGHT SIMULATOR
-      </div>
-      <div id="fsHoloWrap" ref={holoWrapRef}>
-        <canvas id="fsHoloCv" ref={holoCvRef} />
-        <div id="fsHoloBase" />
-      </div>
-      <div id="fsHoloCap" ref={holoCapRef} />
-      <div id="fsScene" ref={sceneRef} />
-      <div id="fsSkip" onClick={() => onCompleteRef.current()}>
-        SKIP <Icon name="chevronRight" size={12} />
-      </div>
-      <div id="fsDots" ref={dotsRef} />
-      <div id="fsStarHint" ref={starHintRef} />
-    </div>
+    </XAIProvider>
   );
 }

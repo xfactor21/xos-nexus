@@ -18,3 +18,14 @@ test-studio.tsx
 # dev-only precedent as test-studio.* above, deliberately never shipped.
 test-shell.html
 test-shell.tsx
+
+# Scratch Playwright/screenshot harness (mounts <Onboarding mode="full" />
+# directly, bypassing App.tsx's auth gate) — same dev-only precedent as
+# test-shell.* above, used to verify the Amendment v1.0 bug-fix pass
+# (old hologram/caption removal in the Flight Simulator sequence).
+test-onboarding.html
+test-onboarding.tsx
+
+# One-off Playwright verification scripts used during bug-fix passes —
+# not part of the app, regenerate as needed rather than maintaining.
+verify_*.mjs

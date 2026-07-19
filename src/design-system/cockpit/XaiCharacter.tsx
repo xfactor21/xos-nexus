@@ -13,7 +13,30 @@ import { XAIAuto, useXAI } from './xai/xAIController-FINAL';
  * Mounted once inside <XAIProvider> in Shell.tsx, same persistent
  * bottom-right position the old hologram occupied (.xaiChar in
  * design-system.css) — fixed, survives room swaps, visible in every room.
+ *
+ * Bug-fix pass: the first cut clipped the character (scale was bumped 2-3x
+ * without enlarging the container/camera framing to match) — rings extended
+ * past the canvas edge and read as "rotation isn't working" because most of
+ * the rotating geometry was invisible. Fixed by pulling the camera back
+ * AND growing the container together, verified empirically via screenshots
+ * (not just widened until it "should" fit) — see the room-verification pass
+ * that shipped alongside this fix.
  */
+
+/** The bare Canvas + lights + character, no fixed positioning or trigger
+ * wiring — reused by both Shell's persistent corner presence (below) and
+ * Onboarding's Flight Simulator hologram slot (Onboarding.tsx), which needs
+ * the same verified character in a completely different container/position. */
+export function XaiCharacterCanvas({ scale = 0.85 }: { scale?: number }) {
+  return (
+    <Canvas camera={{ position: [0, 1.0, 6.2], fov: 50 }} dpr={[1, 2]} gl={{ alpha: true }}>
+      <ambientLight intensity={0.6} />
+      <pointLight position={[5, 5, 5]} intensity={2} color="#00D4FF" />
+      <pointLight position={[-5, -3, -4]} intensity={1.2} color="#7A5CFF" />
+      <XAIAuto scale={scale} />
+    </Canvas>
+  );
+}
 
 /** Bridges real app events into setAiStatus(). Only the classify-capture
  * lifecycle is wired right now (see copilotClient.ts's xaiThinking/
@@ -26,7 +49,7 @@ import { XAIAuto, useXAI } from './xai/xAIController-FINAL';
  * ahead of time. success/error are transient (auto-revert to idle) since
  * they represent a single completed call, not a standing state.
  */
-function useXaiTriggerBridge() {
+export function useXaiTriggerBridge() {
   // useXAI() resolves through the .jsx package's untyped createContext
   // default (allowJs infers `setAiStatus: () => void` from that default
   // value, not from the real implementation) — cast locally rather than
@@ -74,21 +97,7 @@ export default function XaiCharacter() {
 
   return (
     <div className="xaiChar" aria-hidden="true">
-      {/* Camera position/fov intentionally match the package's own verified
-          reference setup (App-FINAL.jsx / xAIWidget.jsx: position [0,1.2,4.5],
-          fov 50) — that's the framing the Captain's 14-state test pass ran
-          against. Making the character bigger on screen comes from the
-          container's CSS size (.xaiChar, ~2.9x the old orb's 58x68 footprint)
-          plus a modest scale bump, not from blowing up scale alone — a much
-          higher scale clips the model against the near plane at this camera
-          distance instead of just "looking bigger". Verified via before/after
-          screenshot (see verify_xai.mjs), not assumed. */}
-      <Canvas camera={{ position: [0, 1.2, 4.5], fov: 50 }} dpr={[1, 2]} gl={{ alpha: true }}>
-        <ambientLight intensity={0.6} />
-        <pointLight position={[5, 5, 5]} intensity={2} color="#00D4FF" />
-        <pointLight position={[-5, -3, -4]} intensity={1.2} color="#7A5CFF" />
-        <XAIAuto scale={1.3} />
-      </Canvas>
+      <XaiCharacterCanvas scale={1.6} />
     </div>
   );
 }

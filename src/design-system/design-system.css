@@ -72,7 +72,15 @@
   padding-top: 8px;
   transform: none;
   transition: width 0.28s cubic-bezier(0.22, 1, 0.36, 1);
-  overflow: visible;
+  /* Bug fix: this `overflow: visible` was silently overriding legacy.css's
+     `#sb { overflow-y: auto }` (same specificity, later in cascade order) —
+     with 14 rooms across FLOW/SYSTEMS plus section headers, the sidebar's
+     fixed top:44px/bottom:0 box can exceed a short viewport's height, and
+     with no scroll, SETTINGS (last item) and anything below the fold was
+     genuinely unreachable. Vertical scroll restored; horizontal stays
+     visible so nothing about the spine-dot glow effects gets clipped. */
+  overflow-y: auto;
+  overflow-x: visible;
 }
 body.sb #sb {
   width: 218px;
@@ -660,11 +668,11 @@ input[type='range']:active::-moz-range-thumb {
    ============================================================ */
 .xaiChar {
   position: fixed;
-  right: 12px;
-  bottom: 20px;
+  right: 4px;
+  bottom: 12px;
   z-index: 110;
-  width: 180px;
-  height: 180px;
+  width: 250px;
+  height: 250px;
   pointer-events: none;
 }
 .xaiChar canvas {
