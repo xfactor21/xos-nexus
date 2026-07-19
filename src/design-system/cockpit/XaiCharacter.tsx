@@ -28,8 +28,22 @@ import { XAIAuto, useXAI } from './xai/xAIController-FINAL';
  * Onboarding's Flight Simulator hologram slot (Onboarding.tsx), which needs
  * the same verified character in a completely different container/position. */
 export function XaiCharacterCanvas({ scale = 0.85 }: { scale?: number }) {
+  // Camera distance is DERIVED from `scale`, not a fixed magic number, so
+  // whatever `scale` a caller passes always gets a properly-fitted frame.
+  // (Bug-fix history: an earlier pass hardcoded camera z=6.2 and verified
+  // clipping against that value, but Shell.tsx actually renders scale={1.6}
+  // -- a mismatch between what was tested and what shipped, which is why
+  // the "fixed" clipping bug was still visible in production. Deriving the
+  // distance from the real prop closes that gap for every call site.)
+  //
+  // Character's max radius at scale=1 is the outer ring's torus radius +
+  // tube (~1.92 + 0.19 ≈ 2.11) with a small buffer for the sparkle field
+  // (~2.3). At vertical fov=50°, half the visible height at distance d is
+  // d * tan(25°) ≈ d * 0.4663. Solving for a ~55% safety margin over the
+  // character's radius: d ≈ 3.0 * radius * scale.
+  const cameraZ = 6.9 * scale;
   return (
-    <Canvas camera={{ position: [0, 1.0, 6.2], fov: 50 }} dpr={[1, 2]} gl={{ alpha: true }}>
+    <Canvas camera={{ position: [0, 0.35 * scale, cameraZ], fov: 50 }} dpr={[1, 2]} gl={{ alpha: true }}>
       <ambientLight intensity={0.6} />
       <pointLight position={[5, 5, 5]} intensity={2} color="#00D4FF" />
       <pointLight position={[-5, -3, -4]} intensity={1.2} color="#7A5CFF" />

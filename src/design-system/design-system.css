@@ -665,14 +665,20 @@ input[type='range']:active::-moz-range-thumb {
    xAI character (react-three-fiber Canvas) — see XaiCharacter.tsx.
    Container is ~2.9x the old orb's 58x68 footprint (Captain's explicit
    "2-3x bigger" direction, verified against before/after screenshots).
+   Bug-fix pass #2: 250x250 was sized against a camera distance that didn't
+   actually match the scale={1.6} XaiCharacter renders at in production
+   (verification had drifted from what shipped) -- grown to 320x320 and
+   paired with a scale-derived camera distance (XaiCharacter.tsx) so the
+   full character, including ring sweep during rotation, has real margin
+   instead of being sized to a hair's-width fit.
    ============================================================ */
 .xaiChar {
   position: fixed;
   right: 4px;
-  bottom: 12px;
+  bottom: 4px;
   z-index: 110;
-  width: 250px;
-  height: 250px;
+  width: 320px;
+  height: 320px;
   pointer-events: none;
 }
 .xaiChar canvas {

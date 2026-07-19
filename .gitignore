@@ -29,3 +29,4 @@ test-onboarding.tsx
 # One-off Playwright verification scripts used during bug-fix passes —
 # not part of the app, regenerate as needed rather than maintaining.
 verify_*.mjs
+diag_*.mjs

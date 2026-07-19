@@ -87,9 +87,20 @@ export default function XAI({ emotion='happy', action='idle', scale=1, position=
       if(action==='welcoming') group.current.rotation.z = Math.sin(t*2)*0.18
     }
     const m = action==='analyzing'||action==='optimizing' ? 2.5 : action==='celebrating' ? 3 : 1
-    if(r1.current) r1.current.rotation.z += delta*0.85*m
-    if(r2.current) r2.current.rotation.z -= delta*0.62*m
-    if(r3.current) r3.current.rotation.z += delta*1.05*m
+    // NOTE: each ring group's geometry is a torus whose axis of revolution is
+    // its own local Z axis (perfectly circularly symmetric around Z). Three's
+    // default Euler order ('XYZ') applies the .z component FIRST/innermost,
+    // directly in that local frame -- so animating .rotation.z was spinning
+    // every ring around its own axis of symmetry, which is a geometric no-op:
+    // a torus looks identical at any angle around that axis. Confirmed via
+    // gl.readPixels + page.screenshot() diffing (both 0 across 8s) even
+    // though useFrame itself was firing correctly every frame (verified via
+    // a frame-count instrumentation pass). Animating .rotation.x instead
+    // (the outermost/extrinsic component) precesses the ring's tilt
+    // continuously, which IS visible since X is not the torus's symmetry axis.
+    if(r1.current) r1.current.rotation.x += delta*0.85*m
+    if(r2.current) r2.current.rotation.x -= delta*0.62*m
+    if(r3.current) r3.current.rotation.x += delta*1.05*m
     if(core.current && action==='optimizing') core.current.scale.setScalar(1+Math.sin(t*6)*0.06)
   })
   
