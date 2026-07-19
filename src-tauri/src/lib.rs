@@ -1,9 +1,30 @@
+use tauri::{Manager, Url};
+
+#[cfg(desktop)]
 use tauri::{
   menu::{Menu, MenuItem, PredefinedMenuItem},
   tray::TrayIconBuilder,
-  LogicalPosition, LogicalSize, Manager, Url, Webview, WebviewBuilder, WebviewUrl, WebviewWindowBuilder,
-  WindowEvent, Wry,
+  LogicalPosition, LogicalSize, Webview, WebviewBuilder, WebviewUrl, WebviewWindowBuilder, WindowEvent, Wry,
 };
+
+// --- Desktop-only surfaces (system tray, poppable Quick Capture widget,
+// native child-webview Browser room) -----------------------------------
+//
+// None of these concepts exist on mobile: there's no tray, no floating
+// multi-window desktop, and Tauri's `Window::add_child` child-webview
+// overlay (what the Browser room uses instead of an <iframe>, see
+// open_browser_view below) is a desktop-only API — none of these types
+// even expose these methods when compiled for `target_os = "android"`.
+// Android build failures here aren't a CI/toolchain problem, they're this:
+// the desktop-shell functionality doesn't have a mobile equivalent yet.
+//
+// Every #[tauri::command] below stays registered on every platform (so the
+// frontend's invoke_handler list — and any un-gated `invoke()` call it
+// makes — doesn't need to know at compile time which platform it's on),
+// but on mobile each one's body is the #[cfg(mobile)] arm: a clean
+// Err("... not available on mobile") instead of either a hard compile
+// failure or a confusing native panic on a call to something that isn't a
+// device concept over there.
 
 /// Poppable Quick Capture widget — a real, independent Tauri window (its
 /// own webview, own event loop entry via widget.html/widget-main.tsx), not
@@ -11,6 +32,7 @@ use tauri::{
 /// with the main window, so the Supabase session it reads on load is the
 /// same signed-in session — no separate auth flow needed. Idempotent:
 /// focuses the existing widget window instead of spawning a second one.
+#[cfg(desktop)]
 fn open_or_focus_capture_widget(app: &tauri::AppHandle) {
   if let Some(w) = app.get_webview_window("capture-widget") {
     let _ = w.show();
@@ -33,20 +55,35 @@ fn open_or_focus_capture_widget(app: &tauri::AppHandle) {
 /// static label — small thing, but it's the difference between a tray icon
 /// that's just a launcher and one that's actually a status surface.
 #[tauri::command]
-fn set_tray_tooltip(app: tauri::AppHandle, text: String) -> Result<(), String> {
-  if let Some(tray) = app.tray_by_id("main-tray") {
-    tray.set_tooltip(Some(text.as_str())).map_err(|e| e.to_string())?;
+fn set_tray_tooltip(#[allow(unused_variables)] app: tauri::AppHandle, #[allow(unused_variables)] text: String) -> Result<(), String> {
+  #[cfg(desktop)]
+  {
+    if let Some(tray) = app.tray_by_id("main-tray") {
+      tray.set_tooltip(Some(text.as_str())).map_err(|e| e.to_string())?;
+    }
+    Ok(())
   }
-  Ok(())
+  #[cfg(mobile)]
+  {
+    Ok(()) // no system tray on mobile — silently a no-op rather than an error,
+           // since this fires on routine state changes, not a deliberate action.
+  }
 }
 
 /// Frontend-triggered pop-out (a "POP OUT" button in the Capture room, in
 /// addition to the tray menu item) — same underlying window logic either
 /// way.
 #[tauri::command]
-fn open_capture_widget(app: tauri::AppHandle) -> Result<(), String> {
-  open_or_focus_capture_widget(&app);
-  Ok(())
+fn open_capture_widget(#[allow(unused_variables)] app: tauri::AppHandle) -> Result<(), String> {
+  #[cfg(desktop)]
+  {
+    open_or_focus_capture_widget(&app);
+    Ok(())
+  }
+  #[cfg(mobile)]
+  {
+    Err("Quick Capture pop-out isn't available on mobile yet — use the Capture room directly.".into())
+  }
 }
 
 /// Room A (Web Browser): the room's viewport is a real native child webview
@@ -63,11 +100,23 @@ fn open_capture_widget(app: tauri::AppHandle) -> Result<(), String> {
 /// by default — even if a malicious page's own script went looking for
 /// window.__TAURI__, the capability ACL has no entry for "browser-view" and
 /// denies every command outright.
+///
+/// Desktop-only, like the rest of this section: `Window::add_child` (the
+/// native-child-webview trick this all relies on) isn't available on
+/// mobile targets.
+#[cfg(desktop)]
 const BROWSER_VIEW_LABEL: &str = "browser-view";
 
+/// Shared by the desktop browser-view commands below AND by
+/// fetch_page_snapshot (a plain server-side HTTP GET, no webview
+/// involved) — so this one stays available on every platform rather than
+/// being folded into the desktop-only block.
 fn parse_target_url(raw: &str) -> Result<Url, String> {
   Url::parse(raw).map_err(|e| format!("invalid URL: {e}"))
 }
+
+const BROWSER_VIEW_MOBILE_ERR: &str =
+  "The Browser room's native embedded view isn't available on mobile yet — Tauri's child-webview overlay is desktop-only.";
 
 /// Opens the browser-view child webview if it doesn't exist yet (positioned
 /// over the Browser room's viewport, bounds supplied by the frontend via a
@@ -75,40 +124,74 @@ fn parse_target_url(raw: &str) -> Result<Url, String> {
 /// stays mounted across navigation (see RoomOutlet.tsx), so this is
 /// idempotent rather than always constructing a fresh webview.
 #[tauri::command]
-fn open_browser_view(app: tauri::AppHandle, url: String, x: f64, y: f64, width: f64, height: f64) -> Result<(), String> {
-  let parsed = parse_target_url(&url)?;
-  if let Some(webview) = app.get_webview(BROWSER_VIEW_LABEL) {
-    webview.navigate(parsed).map_err(|e| e.to_string())?;
-    webview.set_position(LogicalPosition::new(x, y)).map_err(|e| e.to_string())?;
-    webview.set_size(LogicalSize::new(width, height)).map_err(|e| e.to_string())?;
-    webview.show().map_err(|e| e.to_string())?;
-    return Ok(());
+fn open_browser_view(
+  #[allow(unused_variables)] app: tauri::AppHandle,
+  #[allow(unused_variables)] url: String,
+  #[allow(unused_variables)] x: f64,
+  #[allow(unused_variables)] y: f64,
+  #[allow(unused_variables)] width: f64,
+  #[allow(unused_variables)] height: f64,
+) -> Result<(), String> {
+  #[cfg(desktop)]
+  {
+    let parsed = parse_target_url(&url)?;
+    if let Some(webview) = app.get_webview(BROWSER_VIEW_LABEL) {
+      webview.navigate(parsed).map_err(|e| e.to_string())?;
+      webview.set_position(LogicalPosition::new(x, y)).map_err(|e| e.to_string())?;
+      webview.set_size(LogicalSize::new(width, height)).map_err(|e| e.to_string())?;
+      webview.show().map_err(|e| e.to_string())?;
+      return Ok(());
+    }
+    let main = app.get_webview_window("main").ok_or("main window not found")?;
+    let main_as_webview: &Webview<Wry> = main.as_ref();
+    let window = main_as_webview.window();
+    window
+      .add_child(
+        WebviewBuilder::new(BROWSER_VIEW_LABEL, WebviewUrl::External(parsed)),
+        LogicalPosition::new(x, y),
+        LogicalSize::new(width, height),
+      )
+      .map_err(|e| e.to_string())?;
+    Ok(())
   }
-  let main = app.get_webview_window("main").ok_or("main window not found")?;
-  let main_as_webview: &Webview<Wry> = main.as_ref();
-  let window = main_as_webview.window();
-  window
-    .add_child(
-      WebviewBuilder::new(BROWSER_VIEW_LABEL, WebviewUrl::External(parsed)),
-      LogicalPosition::new(x, y),
-      LogicalSize::new(width, height),
-    )
-    .map_err(|e| e.to_string())?;
-  Ok(())
+  #[cfg(mobile)]
+  {
+    Err(BROWSER_VIEW_MOBILE_ERR.into())
+  }
 }
 
 #[tauri::command]
-fn navigate_browser_view(app: tauri::AppHandle, url: String) -> Result<(), String> {
-  let parsed = parse_target_url(&url)?;
-  let webview = app.get_webview(BROWSER_VIEW_LABEL).ok_or("browser view not open")?;
-  webview.navigate(parsed).map_err(|e| e.to_string())
+fn navigate_browser_view(#[allow(unused_variables)] app: tauri::AppHandle, #[allow(unused_variables)] url: String) -> Result<(), String> {
+  #[cfg(desktop)]
+  {
+    let parsed = parse_target_url(&url)?;
+    let webview = app.get_webview(BROWSER_VIEW_LABEL).ok_or("browser view not open")?;
+    webview.navigate(parsed).map_err(|e| e.to_string())
+  }
+  #[cfg(mobile)]
+  {
+    Err(BROWSER_VIEW_MOBILE_ERR.into())
+  }
 }
 
 #[tauri::command]
-fn set_browser_view_bounds(app: tauri::AppHandle, x: f64, y: f64, width: f64, height: f64) -> Result<(), String> {
-  let webview = app.get_webview(BROWSER_VIEW_LABEL).ok_or("browser view not open")?;
-  webview.set_position(LogicalPosition::new(x, y)).map_err(|e| e.to_string())?;
-  webview.set_size(LogicalSize::new(width, height)).map_err(|e| e.to_string())
+fn set_browser_view_bounds(
+  #[allow(unused_variables)] app: tauri::AppHandle,
+  #[allow(unused_variables)] x: f64,
+  #[allow(unused_variables)] y: f64,
+  #[allow(unused_variables)] width: f64,
+  #[allow(unused_variables)] height: f64,
+) -> Result<(), String> {
+  #[cfg(desktop)]
+  {
+    let webview = app.get_webview(BROWSER_VIEW_LABEL).ok_or("browser view not open")?;
+    webview.set_position(LogicalPosition::new(x, y)).map_err(|e| e.to_string())?;
+    webview.set_size(LogicalSize::new(width, height)).map_err(|e| e.to_string())
+  }
+  #[cfg(mobile)]
+  {
+    Err(BROWSER_VIEW_MOBILE_ERR.into())
+  }
 }
 
 /// Leaving the Browser room: shrink the child webview to zero instead of
@@ -116,19 +199,34 @@ fn set_browser_view_bounds(app: tauri::AppHandle, x: f64, y: f64, width: f64, he
 /// in-page history — mirrors how every other room in xOS stays mounted
 /// across navigation rather than unmounting (RoomOutlet.tsx).
 #[tauri::command]
-fn hide_browser_view(app: tauri::AppHandle) -> Result<(), String> {
-  if let Some(webview) = app.get_webview(BROWSER_VIEW_LABEL) {
-    webview.set_size(LogicalSize::new(0.0, 0.0)).map_err(|e| e.to_string())?;
+fn hide_browser_view(#[allow(unused_variables)] app: tauri::AppHandle) -> Result<(), String> {
+  #[cfg(desktop)]
+  {
+    if let Some(webview) = app.get_webview(BROWSER_VIEW_LABEL) {
+      webview.set_size(LogicalSize::new(0.0, 0.0)).map_err(|e| e.to_string())?;
+    }
+    Ok(())
   }
-  Ok(())
+  #[cfg(mobile)]
+  {
+    Ok(()) // no view to hide on mobile — a no-op, not an error, since this
+            // fires on routine room-navigation, not a deliberate action.
+  }
 }
 
 #[tauri::command]
-fn close_browser_view(app: tauri::AppHandle) -> Result<(), String> {
-  if let Some(webview) = app.get_webview(BROWSER_VIEW_LABEL) {
-    webview.close().map_err(|e| e.to_string())?;
+fn close_browser_view(#[allow(unused_variables)] app: tauri::AppHandle) -> Result<(), String> {
+  #[cfg(desktop)]
+  {
+    if let Some(webview) = app.get_webview(BROWSER_VIEW_LABEL) {
+      webview.close().map_err(|e| e.to_string())?;
+    }
+    Ok(())
   }
-  Ok(())
+  #[cfg(mobile)]
+  {
+    Ok(()) // same reasoning as hide_browser_view above.
+  }
 }
 
 /// Knowledge Matrix "ADD TO MATRIX": a plain server-side HTTP GET of the
@@ -226,49 +324,55 @@ pub fn run() {
         )?;
       }
 
-      // System tray — real menu (Show, Quick Capture, Quit), left-click
-      // shows/focuses the main window (the common tray-icon convention),
-      // right-click (or left-click on platforms without a separate
-      // right-click gesture) opens the menu.
-      let show_i = MenuItem::with_id(app, "show", "Show xOS", true, None::<&str>)?;
-      let capture_i = MenuItem::with_id(app, "capture", "Quick Capture", true, None::<&str>)?;
-      let quit_i = MenuItem::with_id(app, "quit", "Quit xOS", true, None::<&str>)?;
-      let menu = Menu::with_items(
-        app,
-        &[&show_i, &capture_i, &PredefinedMenuItem::separator(app)?, &quit_i],
-      )?;
+      // System tray + "closing hides to tray instead of quitting" are both
+      // desktop-only concepts — no tray, no background-process convention
+      // to hide into on mobile (the OS owns app lifecycle there instead).
+      #[cfg(desktop)]
+      {
+        // System tray — real menu (Show, Quick Capture, Quit), left-click
+        // shows/focuses the main window (the common tray-icon convention),
+        // right-click (or left-click on platforms without a separate
+        // right-click gesture) opens the menu.
+        let show_i = MenuItem::with_id(app, "show", "Show xOS", true, None::<&str>)?;
+        let capture_i = MenuItem::with_id(app, "capture", "Quick Capture", true, None::<&str>)?;
+        let quit_i = MenuItem::with_id(app, "quit", "Quit xOS", true, None::<&str>)?;
+        let menu = Menu::with_items(
+          app,
+          &[&show_i, &capture_i, &PredefinedMenuItem::separator(app)?, &quit_i],
+        )?;
 
-      let _tray = TrayIconBuilder::with_id("main-tray")
-        .icon(app.default_window_icon().unwrap().clone())
-        .menu(&menu)
-        .show_menu_on_left_click(true)
-        .tooltip("xOS: neXus")
-        .on_menu_event(|app, event| match event.id.as_ref() {
-          "show" => {
-            if let Some(w) = app.get_webview_window("main") {
-              let _ = w.show();
-              let _ = w.set_focus();
+        let _tray = TrayIconBuilder::with_id("main-tray")
+          .icon(app.default_window_icon().unwrap().clone())
+          .menu(&menu)
+          .show_menu_on_left_click(true)
+          .tooltip("xOS: neXus")
+          .on_menu_event(|app, event| match event.id.as_ref() {
+            "show" => {
+              if let Some(w) = app.get_webview_window("main") {
+                let _ = w.show();
+                let _ = w.set_focus();
+              }
             }
-          }
-          "capture" => open_or_focus_capture_widget(app),
-          "quit" => app.exit(0),
-          _ => {}
-        })
-        .build(app)?;
+            "capture" => open_or_focus_capture_widget(app),
+            "quit" => app.exit(0),
+            _ => {}
+          })
+          .build(app)?;
 
-      // Closing the main window hides it to the tray instead of quitting —
-      // the standard system-tray convention, and the whole reason a tray
-      // icon is useful rather than decorative. The widget window keeps its
-      // own default close behavior (destroys itself), since it's meant to
-      // be a disposable pop-out, not a persistent background surface.
-      if let Some(main) = app.get_webview_window("main") {
-        let main_handle = main.clone();
-        main.on_window_event(move |event| {
-          if let WindowEvent::CloseRequested { api, .. } = event {
-            api.prevent_close();
-            let _ = main_handle.hide();
-          }
-        });
+        // Closing the main window hides it to the tray instead of quitting —
+        // the standard system-tray convention, and the whole reason a tray
+        // icon is useful rather than decorative. The widget window keeps its
+        // own default close behavior (destroys itself), since it's meant to
+        // be a disposable pop-out, not a persistent background surface.
+        if let Some(main) = app.get_webview_window("main") {
+          let main_handle = main.clone();
+          main.on_window_event(move |event| {
+            if let WindowEvent::CloseRequested { api, .. } = event {
+              api.prevent_close();
+              let _ = main_handle.hide();
+            }
+          });
+        }
       }
 
       Ok(())
