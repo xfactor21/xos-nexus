@@ -27,8 +27,15 @@ function hostOf(url: string): string {
 export default function Knowledge({ active }: { active: boolean }) {
   const nodes = useCoreGraph((s) => s.nodes);
   const edges = useCoreGraph((s) => s.edges);
+  const deleteNode = useCoreGraph((s) => s.deleteNode);
   const [q, setQ] = useState('');
   const [selected, setSelected] = useState<string | null>(null);
+
+  function handleDeleteSnapshot(id: string, title: string) {
+    if (!confirm(`Delete "${title}"? This cannot be undone.`)) return;
+    deleteNode(id);
+    setSelected((cur) => (cur === id ? null : cur));
+  }
 
   const snapshots = useMemo(
     () =>
@@ -96,6 +103,16 @@ export default function Knowledge({ active }: { active: boolean }) {
             const meta = metaOf(n);
             return (
               <div key={n.id} className="knowledgeCard" onClick={() => setSelected(n.id)}>
+                <button
+                  className="dpBoardDel"
+                  title="delete snapshot"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleDeleteSnapshot(n.id, n.title);
+                  }}
+                >
+                  <Icon name="trash" size={12} />
+                </button>
                 <div className="knowledgeCardTitle">{n.title}</div>
                 <div className="knowledgeCardDesc">{meta.description || 'No description available.'}</div>
                 <div className="knowledgeCardMeta">
@@ -119,6 +136,13 @@ export default function Knowledge({ active }: { active: boolean }) {
                     {selectedMeta.url}
                   </a>
                 </div>
+                <span
+                  className="browserNavBtn"
+                  title="delete snapshot"
+                  onClick={() => handleDeleteSnapshot(selectedNode.id, selectedNode.title)}
+                >
+                  <Icon name="trash" size={14} />
+                </span>
                 <span className="browserNavBtn" onClick={() => setSelected(null)}>
                   <Icon name="close" size={14} />
                 </span>

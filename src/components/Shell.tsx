@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useUiStore } from '../stores/uiStore';
 import { useAuthStore } from '../stores/authStore';
 import { useCoreGraph } from '../stores/coreGraph';
-import { ROOMS, ROOM_NAME, DOCK_CONTENT } from '../core/rooms';
+import { ROOMS, ROOM_NAME } from '../core/rooms';
 import RoomOutlet from './RoomOutlet';
 import Icon from '../design-system/icons/Icon';
 import CockpitFrame from '../design-system/cockpit/CockpitFrame';
@@ -14,19 +14,30 @@ import CommandPalette from '../design-system/cockpit/CommandPalette';
 import { playSound } from '../lib/sound';
 import ShortcutsOverlay from '../design-system/cockpit/ShortcutsOverlay';
 
-/** App chrome — ported 1:1 from xos-prototype.html's #hud/#sb/#dock markup
- * and body.sb / body.nodock toggle classes. Also where Step 3's "populated
- * from Supabase, subscribed to Realtime" wiring kicks off — Shell only
- * mounts once a Captain is signed in (see App.tsx), so it's the right place
- * to hydrate coreGraph and open the Realtime subscription for their id. */
+/** App chrome — ported 1:1 from xos-prototype.html's #hud/#sb markup and
+ * body.sb toggle class. Also where Step 3's "populated from Supabase,
+ * subscribed to Realtime" wiring kicks off — Shell only mounts once a
+ * Captain is signed in (see App.tsx), so it's the right place to hydrate
+ * coreGraph and open the Realtime subscription for their id.
+ *
+ * Bug-fix note (Amendment v1.0 follow-up): the #dock/#tgDock "xAI tips"
+ * panel that used to live in this same bottom-right corner has been
+ * removed entirely — it was never literally the old hologram's caption
+ * bubble (that was a different, already-deleted component), but it shared
+ * the exact same corner as the new xAI character and, being open by
+ * default, its text rendered directly behind/around the character —
+ * which is exactly what read as "the old caption text is still peeking
+ * out" in review. Confirmed via a DOM-overlap query (every element whose
+ * bounding rect intersected the character's) that #dock/#dockBody were
+ * the only text-bearing elements there, then removed the panel, its
+ * toggle button, its uiStore state (dockOpen/toggleDock), and its CSS
+ * (design-system.css, legacy.css) rather than just repositioning it. */
 export default function Shell() {
   const room = useUiStore((s) => s.room);
   const go = useUiStore((s) => s.go);
   const sidebarOpen = useUiStore((s) => s.sidebarOpen);
-  const dockOpen = useUiStore((s) => s.dockOpen);
   const toggleSidebar = useUiStore((s) => s.toggleSidebar);
   const closeSidebar = useUiStore((s) => s.closeSidebar);
-  const toggleDock = useUiStore((s) => s.toggleDock);
   const userId = useAuthStore((s) => s.user?.id);
 
   // Forces one extra render post-mount so the spine's active-room glow
@@ -51,9 +62,6 @@ export default function Shell() {
   useEffect(() => {
     document.body.classList.toggle('sb', sidebarOpen);
   }, [sidebarOpen]);
-  useEffect(() => {
-    document.body.classList.toggle('nodock', !dockOpen);
-  }, [dockOpen]);
 
   // Neural Core's radial nodes are plain DOM (built outside React, like the
   // prototype's mkNode()) so they navigate by dispatching this event rather
@@ -90,7 +98,6 @@ export default function Shell() {
 
   const flow = ROOMS.filter((r) => r.section === 'FLOW');
   const systems = ROOMS.filter((r) => r.section === 'SYSTEMS');
-  const dock = DOCK_CONTENT[room];
 
   // Amendment v0.6 step 2: "neural spine" sidebar — icons sit on a glowing
   // vertical line instead of a plain list row. A pulse travels along the
@@ -183,24 +190,6 @@ export default function Shell() {
         {renderSpineSection(systems, 'SYSTEMS', 'systems')}
       </nav>
 
-      {/* xAI DOCK */}
-      <button id="tgDock" onClick={toggleDock}>
-        <Icon name="xai" size={16} glow="cyan" />
-      </button>
-      <div id="dock">
-        <h3 onClick={() => useUiStore.setState({ dockOpen: false })}>
-          <Icon name="xai" size={13} glow="cyan" /> xAI <span><Icon name="chevronDown" size={12} /></span>
-        </h3>
-        <div id="dockBody">
-          {dock?.map((d, i) => (
-            <p key={i}>
-              {d.tip ? <b>{d.tip}</b> : null}
-              {d.body}
-            </p>
-          ))}
-        </div>
-      </div>
-
       <RoomOutlet />
 
       {/* Bottom status bar — cockpit redesign: emits light upward per the
@@ -211,10 +200,12 @@ export default function Shell() {
       </div>
 
       {/* xAI character — persistent, autonomous, face-expressive presence,
-          every room, outside the right wing (#dock). Fixed position so it
-          survives room swaps. Amendment v1.0: real character (Canvas +
-          XAIAuto) replacing the old gyroscope-orb hologram and its floating
-          caption popup, both fully removed. */}
+          every room. Fixed position so it survives room swaps. Amendment
+          v1.0: real character (Canvas + XAIAuto) replacing the old
+          gyroscope-orb hologram and its floating caption popup, both fully
+          removed. The #dock "xAI tips" panel that used to share this
+          corner is also gone now (see the note above) — nothing text-based
+          renders behind this character anymore. */}
       <XaiCharacter />
 
       {/* OS-grade universal directives: reusable toasts, Cmd/Ctrl+K command

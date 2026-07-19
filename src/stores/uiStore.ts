@@ -34,7 +34,6 @@ export type Accent = 'mg' | 'pu' | 'cy';
 interface UiState {
   room: RoomId;
   sidebarOpen: boolean;
-  dockOpen: boolean;
   glow: number;
   autonomy: Autonomy;
   shellTarget: ShellTarget;
@@ -48,7 +47,6 @@ interface UiState {
   go: (r: RoomId) => void;
   toggleSidebar: () => void;
   closeSidebar: () => void;
-  toggleDock: () => void;
   setGlow: (v: number) => void;
   setAutonomy: (a: Autonomy) => void;
   setShellTarget: (s: ShellTarget) => void;
@@ -82,7 +80,7 @@ function applyUiScale(v: number) {
  * looked like they were sticking. Wrapping the whole store in zustand's
  * `persist` middleware, backed by localStorage (same precedent as
  * modules/projects/local.ts), actually saves these across relaunches.
- * `room`/`sidebarOpen`/`dockOpen` are deliberately left out of
+ * `room`/`sidebarOpen` are deliberately left out of
  * `partialize` below — those are transient navigation state and should
  * reset to a clean boot state on a fresh launch, not "remember" whatever
  * room happened to be open when the app last closed. */
@@ -91,7 +89,6 @@ export const useUiStore = create<UiState>()(
     (set) => ({
       room: 'obs',
       sidebarOpen: false,
-      dockOpen: true,
       glow: 1,
       autonomy: 'SUGGEST',
       // Sprint 002's shell decision was made and actually shipped back in
@@ -114,7 +111,6 @@ export const useUiStore = create<UiState>()(
       go: (r) => set({ room: r }),
       toggleSidebar: () => set((s) => ({ sidebarOpen: !s.sidebarOpen })),
       closeSidebar: () => set({ sidebarOpen: false }),
-      toggleDock: () => set((s) => ({ dockOpen: !s.dockOpen })),
       setGlow: (v) => {
         document.documentElement.style.setProperty('--glow', String(v));
         set({ glow: v });

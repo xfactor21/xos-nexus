@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import type { ReactElement } from 'react';
+import type { ReactElement, MouseEvent as RMouseEvent } from 'react';
 import { useCoreGraph } from '../../stores/coreGraph';
 import { nodeToBug, nodeToTask } from '../../core/mappers';
 import { supabase } from '../../lib/supabase';
@@ -164,6 +164,13 @@ export default function Projects({ active }: { active: boolean }) {
   const advanceTask = useCoreGraph((s) => s.advanceTask);
   const cycleBug = useCoreGraph((s) => s.cycleBug);
   const assignNodeToProject = useCoreGraph((s) => s.assignNodeToProject);
+  const deleteProject = useCoreGraph((s) => s.deleteProject);
+
+  function handleDeleteProject(id: string, name: string, e: RMouseEvent) {
+    e.stopPropagation();
+    if (!confirm(`Delete "${name}"? This cannot be undone. Captures already assigned to it will become unassigned, not deleted.`)) return;
+    deleteProject(id);
+  }
   // Cross-room drag-and-drop: real unassigned capture nodes, draggable onto
   // a project card below to assign them (a real project_id write, not a
   // local-only UI flag).
@@ -334,6 +341,9 @@ export default function Projects({ active }: { active: boolean }) {
                 <span className="hp">
                   <i style={{ width: p.health + '%' }} />
                 </span>
+                <button className="pcardDel" onClick={(e) => handleDeleteProject(p.id, p.name, e)} title="delete project">
+                  <Icon name="trash" size={12} />
+                </button>
               </div>
             );
           })}

@@ -39,21 +39,10 @@ export const ROOM_NAME: Record<RoomId, string> = Object.fromEntries(ROOMS.map((r
   string
 >;
 
-/** xAI dock copy per room — ported verbatim from the prototype's dockContent map. */
-export const DOCK_CONTENT: Record<RoomId, { tip?: string; body: string }[]> = {
-  obs: [{ body: 'This is your universe. Stars are nodes, constellations are projects. Website is dimming — 6 days dark.' }, { body: 'Try: switch views, tap stars, drift and zoom.' }],
-  core: [{ body: 'The Core is alive — every element of your work swirling in one mass. Feed it a thought below and watch the routing.' }],
-  capture: [{ body: 'Compound thoughts dissect into multiple nodes. Tap CHANGE on any routing to retrain me.' }],
-  projects: [{ body: 'Dark-mode cluster forming in StudyHive — 3 nodes today.' }, { body: 'Warning: Bug #17 blocks the onboarding demo. Fix attached.' }],
-  focus: [{ body: 'State an intent. I hold captures during the session so you stay locked in.' }, { body: 'Recall: your best sessions are 50-min StudyHive blocks.' }],
-  studio: [{ body: '"Logo glow" capture routed here. Frame "Onboarding 01" is affected by bug #16.' }],
-  roadmaps: [{ body: 'Position: Mid-Sprint 002. One goal remains: the shell decision.' }],
-  bugs: [{ body: '#17 is 92% similar to solved #14 — fix attached. #15 could bundle with a Website revival.' }],
-  releases: [{ body: 'History: Two tagged releases. v0.5.0 tags when you approve this build.' }],
-  vault: [{ body: 'Memory: 147 nodes retained. Most-recalled: the bee mascot decision.' }],
-  comms: [{ body: 'Channel: Ask me about bugs, projects, memories, or the roadmap.' }],
-  browser: [{ body: 'Bring back what you find — ADD TO MATRIX saves a page for offline recall, fully wired into the graph.' }],
-  knowledge: [{ body: 'Every saved page becomes a node — I link it to whatever it relates to, same as any capture.' }],
-  terminal: [{ body: 'A real Node + Python runtime, right here. I’ll never run a command without you confirming it first.' }],
-  settings: [{ body: 'Autonomy: I currently SUGGEST. Promote me when you trust the routing.' }],
-};
+// NOTE: the old `DOCK_CONTENT` map (the #dock/#tgDock "xAI tips" panel's
+// per-room copy) lived here and has been deliberately deleted, not just
+// unused. It shared the xAI character's bottom-right corner and, being
+// open by default, its text rendered directly behind the character —
+// which is what read as "old caption text still peeking out" during
+// review. See the removal note in Shell.tsx for the full DOM-verified
+// investigation.

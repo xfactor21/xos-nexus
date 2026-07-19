@@ -30,3 +30,10 @@ test-onboarding.tsx
 # not part of the app, regenerate as needed rather than maintaining.
 verify_*.mjs
 diag_*.mjs
+
+# Scratch harness that seeds fake projects/nodes directly into coreGraph's
+# Zustand state (bypassing Supabase) to exercise Projects/Bug Tracker/
+# Knowledge Matrix delete-button UI without a real signed-in Captain —
+# same dev-only precedent as test-shell.* above.
+test-shell-seeded.html
+test-shell-seeded.tsx

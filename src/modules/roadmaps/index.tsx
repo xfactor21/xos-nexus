@@ -13,6 +13,7 @@ export default function Roadmaps({ active }: { active: boolean }) {
   const memories = useCoreGraph((s) => s.memories);
   const reorderMilestones = useCoreGraph((s) => s.reorderMilestones);
   const updateMilestoneDate = useCoreGraph((s) => s.updateMilestoneDate);
+  const deleteMilestone = useCoreGraph((s) => s.deleteMilestone);
   const promoteMemoryToMilestone = useCoreGraph((s) => s.promoteMemoryToMilestone);
   const promoteBugToMilestone = useCoreGraph((s) => s.promoteBugToMilestone);
   const [view, setView] = useState<'track' | 'gantt'>('track');
@@ -86,6 +87,17 @@ export default function Roadmaps({ active }: { active: boolean }) {
                 </span>
                 <span className="st">
                   <Icon name={m.state === 'shipped' ? 'check' : m.state === 'current' ? 'bolt' : 'hourglass'} size={11} glow={m.state === 'current' ? 'cyan' : 'none'} /> {m.statusLabel}
+                </span>
+                <span
+                  className="lyDel milestoneDel"
+                  title="delete milestone"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (!confirm(`Delete milestone "${m.version} — ${m.title}"? This cannot be undone.`)) return;
+                    deleteMilestone(m.id);
+                  }}
+                >
+                  <Icon name="trash" size={12} />
                 </span>
               </h3>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 6 }}>

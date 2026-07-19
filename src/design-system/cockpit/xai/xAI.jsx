@@ -98,9 +98,12 @@ export default function XAI({ emotion='happy', action='idle', scale=1, position=
     // a frame-count instrumentation pass). Animating .rotation.x instead
     // (the outermost/extrinsic component) precesses the ring's tilt
     // continuously, which IS visible since X is not the torus's symmetry axis.
-    if(r1.current) r1.current.rotation.x += delta*0.85*m
-    if(r2.current) r2.current.rotation.x -= delta*0.62*m
-    if(r3.current) r3.current.rotation.x += delta*1.05*m
+    // Base rates doubled (0.85/0.62/1.05 -> 1.7/1.24/2.1) per Captain's
+    // "2x faster" direction — rings only; group.position.y bobbing above and
+    // the 'welcoming' group.rotation.z wiggle are untouched.
+    if(r1.current) r1.current.rotation.x += delta*1.7*m
+    if(r2.current) r2.current.rotation.x -= delta*1.24*m
+    if(r3.current) r3.current.rotation.x += delta*2.1*m
     if(core.current && action==='optimizing') core.current.scale.setScalar(1+Math.sin(t*6)*0.06)
   })
   

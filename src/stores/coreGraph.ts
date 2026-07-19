@@ -95,6 +95,7 @@ interface CoreGraphState {
 
   reorderMilestones: (orderedIds: string[]) => void;
   updateMilestoneDate: (id: string, date: string) => void;
+  deleteMilestone: (id: string) => void;
   promoteMemoryToMilestone: (memoryId: string, milestoneId: string) => void;
   /** Cross-room drag-and-drop (OS-grade directive): dragging a bug row onto
    * a Roadmaps milestone promotes it — mirrors promoteMemoryToMilestone's
@@ -104,6 +105,22 @@ interface CoreGraphState {
    * project card assigns it — a real write, not local-only, since
    * project_id lives on the `nodes` table itself. */
   assignNodeToProject: (nodeId: string, projectId: string) => Promise<void>;
+
+  /** Generic delete for any `nodes`-backed row — used by Bug Tracker and
+   * Knowledge Matrix (both just filtered views over `nodes`). Optimistic
+   * local removal (the Realtime DELETE handler in `subscribe` above would
+   * also catch this, but the round-trip has visible latency — the delete
+   * button should feel immediate, same as every other optimistic write in
+   * this store) + a real `.delete()` against Supabase, scoped by RLS's
+   * `own nodes` policy (auth.uid() = owner_id) so this can never delete
+   * another user's row even if the id were guessable. */
+  deleteNode: (id: string) => Promise<void>;
+  /** RLS's `own projects` policy covers DELETE the same way. The `nodes`
+   * table's `project_id` FK is ON DELETE SET NULL (confirmed live via the
+   * Supabase schema, not assumed) — deleting a project un-assigns its
+   * captures rather than deleting or orphaning them, so this is safe to
+   * offer without a "this will also delete N items" warning. */
+  deleteProject: (id: string) => Promise<void>;
 }
 
 function upsert<T extends { id: string }>(arr: T[], row: T): T[] {
@@ -278,6 +295,10 @@ export const useCoreGraph = create<CoreGraphState>((set, get) => ({
   updateMilestoneDate: (id, date) =>
     set((s) => ({ milestones: s.milestones.map((m) => (m.id === id ? { ...m, releaseDate: date } : m)) })),
 
+  // Milestones have no backing table (see the module doc comment) — delete
+  // is a plain local `set()`, same shape as reorderMilestones/updateMilestoneDate.
+  deleteMilestone: (id) => set((s) => ({ milestones: remove(s.milestones, id) })),
+
   promoteMemoryToMilestone: (memoryId, milestoneId) =>
     set((s) => {
       const mem = s.memories.find((m) => m.id === memoryId);
@@ -316,5 +337,42 @@ export const useCoreGraph = create<CoreGraphState>((set, get) => ({
     }
     const proj = get().projects.find((p) => p.id === projectId);
     pushToast(`Assigned "${n.title}" to ${proj?.name ?? 'project'}`, 'success');
+  },
+
+  deleteNode: async (id) => {
+    const n = get().nodes.find((x) => x.id === id);
+    if (!n) return;
+    set((s) => ({ nodes: remove(s.nodes, id) })); // optimistic
+    const { error } = await supabase.from('nodes').delete().eq('id', id);
+    if (error) {
+      console.error('deleteNode failed', error);
+      set((s) => ({ nodes: upsert(s.nodes, n) })); // roll back the optimistic removal
+      pushToast('Could not delete — try again', 'warn');
+      return;
+    }
+    pushToast(`Deleted "${n.title || n.kind}"`, 'success');
+  },
+
+  deleteProject: async (id) => {
+    const p = get().projects.find((x) => x.id === id);
+    if (!p) return;
+    set((s) => ({ projects: remove(s.projects, id) })); // optimistic
+    const { error } = await supabase.from('projects').delete().eq('id', id);
+    if (error) {
+      console.error('deleteProject failed', error);
+      set((s) => ({ projects: upsert(s.projects, p) })); // roll back
+      pushToast('Could not delete project — try again', 'warn');
+      return;
+    }
+    // nodes/memories/suggestions referencing this project have project_id
+    // SET NULL by the FK, not deleted — re-pull nodes so any that were
+    // showing under this project immediately reflect as unassigned rather
+    // than needing a refresh to notice the FK took effect.
+    const ownerId = get().ownerId;
+    if (ownerId) {
+      const { data } = await supabase.from('nodes').select('*').eq('owner_id', ownerId).order('created_at', { ascending: false });
+      if (data) set({ nodes: data as NodeRecord[] });
+    }
+    pushToast(`Deleted "${p.name}"`, 'success');
   },
 }));

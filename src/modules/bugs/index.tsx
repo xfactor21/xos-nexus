@@ -48,6 +48,12 @@ export default function Bugs({ active }: { active: boolean }) {
   const bugs = useMemo(() => nodes.filter((n) => n.kind === 'bug').map(nodeToBug), [nodes]);
   const cycleBug = useCoreGraph((s) => s.cycleBug);
   const updateBug = useCoreGraph((s) => s.updateBug);
+  const deleteNode = useCoreGraph((s) => s.deleteNode);
+
+  function handleDeleteBug(id: string, title: string) {
+    if (!confirm(`Delete "${title}"? This cannot be undone.`)) return;
+    deleteNode(id);
+  }
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
   const [savedView, setSavedView] = useState<SavedView>('none');
   const [query, setQuery] = useState('');
@@ -171,6 +177,9 @@ export default function Bugs({ active }: { active: boolean }) {
               </span>
               <span className="link" style={{ cursor: 'pointer' }} onClick={() => setOpenTimeline(openTimeline === b.id ? null : b.id)}>
                 <Icon name="chevronDown" size={12} /> LIFE OF THIS BUG
+              </span>
+              <span className="lyDel" style={{ marginLeft: 'auto', cursor: 'pointer' }} onClick={() => handleDeleteBug(b.id, b.title)} title="delete bug">
+                <Icon name="trash" size={12} />
               </span>
             </div>
             {openTimeline === b.id && (

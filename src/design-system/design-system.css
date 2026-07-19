@@ -640,15 +640,10 @@ input[type='range']:active::-moz-range-thumb {
   border-left: 2px solid var(--mg);
   box-shadow: inset -20px 0 40px rgba(255, 45, 120, 0.08), 4px 0 30px rgba(0, 0, 0, 0.5);
 }
-#dock {
-  transform: perspective(800px) rotateY(-4deg);
-  transform-origin: right center;
-  backdrop-filter: blur(18px);
-  border-right: 2px solid var(--cy);
-  box-shadow: inset 20px 0 40px rgba(0, 245, 255, 0.04), -4px 0 30px rgba(0, 0, 0, 0.5);
-  /* Panel materialisation — slides in on room nav rather than snapping. */
-  transition: transform 0.25s cubic-bezier(0.25, 0, 0.2, 1), opacity 0.25s cubic-bezier(0.25, 0, 0.2, 1);
-}
+/* #dock (the old "xAI tips" right-wing panel) removed entirely — it
+   shared the xAI character's bottom-right corner, and being open by
+   default its text rendered behind the character. See Shell.tsx's
+   removal note for the DOM-verified investigation. */
 
 /* Spine gradient now runs the full brand gradient, not a single hue. */
 .spineLine {
@@ -657,12 +652,10 @@ input[type='range']:active::-moz-range-thumb {
 
 /* ============================================================
    xAI CHARACTER — persistent, autonomous presence, every room.
-   Fixed bottom-right, outside the right wing (#dock sits at the
-   screen edge with its own z-index 95; the character floats just
-   inside of that, above the wing but never covered by it).
-   Amendment v1.0: replaces the old gyroscope-orb hologram AND its
-   floating caption popup (both removed) with the real face-expressive
-   xAI character (react-three-fiber Canvas) — see XaiCharacter.tsx.
+   Fixed bottom-right. Amendment v1.0: replaces the old gyroscope-orb
+   hologram AND its floating caption popup (both removed) with the real
+   face-expressive xAI character (react-three-fiber Canvas) — see
+   XaiCharacter.tsx.
    Container is ~2.9x the old orb's 58x68 footprint (Captain's explicit
    "2-3x bigger" direction, verified against before/after screenshots).
    Bug-fix pass #2: 250x250 was sized against a camera distance that didn't
@@ -1069,11 +1062,15 @@ body.widget-body {
   gap: 12px;
 }
 .knowledgeCard {
+  position: relative;
   border: 1px solid var(--edge);
   background: var(--glass);
   border-radius: 8px;
   padding: 14px 16px;
   cursor: pointer;
+}
+.knowledgeCard:hover .dpBoardDel {
+  opacity: 1;
 }
 .knowledgeCardTitle {
   font-size: 13px;
