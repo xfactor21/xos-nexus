@@ -1,6 +1,7 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Canvas } from '@react-three/fiber';
 import { XAIAuto, useXAI } from './xai/xAIController-FINAL';
+import XaiChatWindow from './XaiChatWindow';
 
 /**
  * Amendment v1.0 — real, face-expressive xAI character. Replaces the old
@@ -94,24 +95,80 @@ export function useXaiTriggerBridge() {
       setAiStatus('error');
       scheduleRevert(4000);
     }
+    function onGreeting() {
+      clearRevert();
+      setAiStatus('greeting');
+      scheduleRevert(4500);
+    }
     window.addEventListener('xos-xai-thinking', onThinking);
     window.addEventListener('xos-xai-success', onSuccess);
     window.addEventListener('xos-xai-error', onError);
+    window.addEventListener('xos-xai-greeting', onGreeting);
     return () => {
       clearRevert();
       window.removeEventListener('xos-xai-thinking', onThinking);
       window.removeEventListener('xos-xai-success', onSuccess);
       window.removeEventListener('xos-xai-error', onError);
+      window.removeEventListener('xos-xai-greeting', onGreeting);
     };
   }, [setAiStatus]);
 }
 
+/** Item #3 — short, status-tied proactive lines. NOT a resurrection of the
+ * old always-open #dock "tips" panel (that was permanent, unrelated text
+ * sitting behind the character) — this is a small transient bubble that
+ * only appears while status is non-idle, keyed off the exact same
+ * setAiStatus() lifecycle #4's chat window and the classify-capture pipeline
+ * already drive, so it's genuinely tied to what xAI is doing, not decorative
+ * copy running on its own timer. */
+const STATUS_LINES: Record<string, string> = {
+  greeting: 'Good to see you, Captain.',
+  thinking: 'Analyzing…',
+  success: 'Got it — filed and linked.',
+  error: "That didn't go through — want to try again?",
+  chatting: "I'm listening.",
+};
+
 export default function XaiCharacter() {
   useXaiTriggerBridge();
+  const { status } = useXAI() as { status: string };
+  const [chatOpen, setChatOpen] = useState(false);
+
+  // Fires once per app mount (real sign-in, not a demo timer loop) — the
+  // one proactive line that isn't a reaction to something the Captain just
+  // did, since nothing has happened yet at this point.
+  useEffect(() => {
+    const t = setTimeout(() => window.dispatchEvent(new Event('xos-xai-greeting')), 600);
+    return () => clearTimeout(t);
+  }, []);
+
+  const line = STATUS_LINES[status];
 
   return (
-    <div className="xaiChar" aria-hidden="true">
-      <XaiCharacterCanvas scale={1.6} />
-    </div>
+    <>
+      {/* Item #4 — tapping/clicking the character opens direct chat.
+          pointer-events is re-enabled only on this element (the container's
+          default in CSS is `none` so the character never eats clicks meant
+          for whatever sits behind its 320x320 bounding box in a given
+          room). */}
+      <div
+        className="xaiChar"
+        style={{ pointerEvents: 'auto', cursor: 'pointer' }}
+        role="button"
+        aria-label="Open xAI chat"
+        tabIndex={0}
+        onClick={() => setChatOpen((o) => !o)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            setChatOpen((o) => !o);
+          }
+        }}
+      >
+        {line && !chatOpen && <div className={`xaiCaption xaiCaption-${status}`}>{line}</div>}
+        <XaiCharacterCanvas scale={1.6} />
+      </div>
+      <XaiChatWindow open={chatOpen} onClose={() => setChatOpen(false)} />
+    </>
   );
 }
