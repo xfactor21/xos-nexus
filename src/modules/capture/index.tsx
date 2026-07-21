@@ -1,5 +1,5 @@
-import { useRef, useState } from 'react';
-import type { DissectedPiece } from '../../core/types';
+import { useMemo, useRef, useState } from 'react';
+import type { DissectedPiece, NodeKind } from '../../core/types';
 import { liveClassify } from '../../lib/copilotClient';
 import { commitOrQueue } from '../../lib/offlineSync';
 import { playSound } from '../../lib/sound';
@@ -7,6 +7,7 @@ import { isTauri } from '../../lib/localDb';
 import Icon from '../../design-system/icons/Icon';
 import type { IconName } from '../../design-system/icons/registry';
 import AmbientField from '../../design-system/background/AmbientField';
+import { useCoreGraph } from '../../stores/coreGraph';
 
 /** Poppable Quick Capture widget — real Tauri command (see
  * src-tauri/src/lib.rs's `open_capture_widget`), invoked lazily via a
@@ -24,12 +25,6 @@ async function openCaptureWidget() {
 // label, and renders via the shared Icon component at the JSX call site.
 // Same fix pattern as core/mappers.ts and modules/projects/index.tsx.
 type CapKind = 'IDEA' | 'BUG' | 'WRITING';
-
-const CAP_ICON: Record<CapKind, IconName> = {
-  IDEA: 'idea',
-  BUG: 'bugTracker',
-  WRITING: 'book',
-};
 
 const capDest: Record<CapKind, string> = {
   IDEA: 'DESIGN STUDIO › STUDYHIVE',
@@ -59,11 +54,37 @@ interface CapEntry {
   linked?: string;
 }
 
-const seedCaps: CapEntry[] = [
-  { text: 'Bee mascot should fly between onboarding steps', kind: 'IDEA', icon: CAP_ICON.IDEA, meta: 'IDEA', time: '2H AGO' },
-  { text: 'fix the login redirect loop on mobile', kind: 'BUG', icon: CAP_ICON.BUG, meta: 'BUG', time: '5H AGO', linked: 'LINKED TO SOLVED #14' },
-  { text: 'what if chapter 3 opens from the villain\'s POV', kind: 'WRITING', icon: CAP_ICON.WRITING, meta: 'WRITING', time: 'YESTERDAY' },
-];
+// Amendment: "Recent Captures" used to be seeded from this permanent
+// hardcoded 3-entry array (Bee mascot / login redirect / chapter 3), shown
+// identically for every account and never wired to real data — a brand-new
+// account would see these 3 fake rows forever, with real captures merely
+// prepended in front of them each session (and lost on refresh, since they
+// only ever lived in local useState). Fixed below: Recent Captures is now
+// derived from real `coreGraph.nodes` (RLS-scoped, per-account, persisted).
+const NODE_KIND_TO_CAP_ICON: Partial<Record<NodeKind, IconName>> = {
+  idea: 'idea',
+  bug: 'bugTracker',
+  task: 'checkCircle',
+  design: 'designStudio',
+  note: 'note',
+  doc: 'note',
+  roadmap_item: 'link',
+  release: 'link',
+  conversation: 'xai',
+  knowledge_snapshot: 'note',
+  capture: 'idea',
+};
+
+function relTime(iso: string): string {
+  const ms = Date.now() - new Date(iso).getTime();
+  const min = Math.floor(ms / 60000);
+  if (min < 1) return 'JUST NOW';
+  if (min < 60) return `${min}M AGO`;
+  const hr = Math.floor(min / 60);
+  if (hr < 24) return `${hr}H AGO`;
+  const days = Math.floor(hr / 24);
+  return days === 1 ? 'YESTERDAY' : `${days}D AGO`;
+}
 
 // dissect() heuristic piece kinds — plain labels now; icon looked up
 // separately at render time so the "kind" string never carries a glyph.
@@ -83,9 +104,37 @@ export default function Capture({ active }: { active: boolean }) {
   const [rec, setRec] = useState(false);
   const [bars, setBars] = useState<number[]>(Array(26).fill(20));
   const [pieces, setPieces] = useState<DissectedPiece[] | null>(null);
-  const [caps, setCaps] = useState(seedCaps);
+  // `caps` now holds ONLY transient, in-flight/optimistic rows (a capture
+  // that's mid-classify, queued offline, or that failed to save) — never
+  // seeded demo content. Once a capture genuinely lands as a node, it's
+  // removed from here and picked up by `realCaps` below instead.
+  const [caps, setCaps] = useState<CapEntry[]>([]);
   const wavT = useRef<ReturnType<typeof setInterval> | undefined>(undefined);
   const [changed, setChanged] = useState<Set<number>>(new Set());
+
+  const nodes = useCoreGraph((s) => s.nodes);
+  // Real, per-account, RLS-scoped "Recent Captures" — derived straight from
+  // the live nodes table (source === 'capture_text' marks nodes that came
+  // through Neural Capture specifically, vs. e.g. Design Studio or Roadmaps
+  // writing nodes directly). Newest first, capped at 10.
+  const realCaps: CapEntry[] = useMemo(
+    () =>
+      nodes
+        .filter((n) => n.source === 'capture_text')
+        .slice()
+        .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+        .slice(0, 10)
+        .map((n) => ({
+          text: n.title || n.body || '(empty capture)',
+          kind: null,
+          icon: NODE_KIND_TO_CAP_ICON[n.kind] ?? 'idea',
+          meta: n.kind.toUpperCase().replace('_', ' '),
+          time: relTime(n.created_at),
+          timeIcon: 'check' as IconName,
+        })),
+    [nodes],
+  );
+  const visibleCaps = useMemo(() => [...caps, ...realCaps], [caps, realCaps]);
 
   function toggleVoice() {
     setRec((r) => {
@@ -143,15 +192,13 @@ export default function Capture({ active }: { active: boolean }) {
     setPieces(null);
     setRaw('');
     try {
-      const result = await liveClassify(v);
+      await liveClassify(v);
       playSound('capture');
-      setCaps((c) =>
-        c.map((entry, i) =>
-          i === 0 && entry.time === 'SENDING…'
-            ? { ...entry, time: result.liveAI ? 'JUST NOW (xAI LIVE)' : 'JUST NOW (fallback mode)', timeIcon: 'check' as IconName }
-            : entry,
-        ),
-      );
+      // Real node now exists (RLS-scoped, will flow into `nodes` via the
+      // Realtime subscription or the next hydrate) — drop the optimistic
+      // placeholder row so it's replaced by the genuine entry in
+      // `realCaps`, not left duplicated forever.
+      setCaps((c) => c.filter((entry) => entry.time !== 'SENDING…'));
     } catch (err) {
       console.error('commitCap: liveClassify failed, writing via offline fallback', err);
       try {
@@ -254,7 +301,12 @@ export default function Capture({ active }: { active: boolean }) {
         RECENT CAPTURES
       </h2>
       <div id="caps">
-        {caps.map((c, i) => (
+        {visibleCaps.length === 0 && (
+          <div className="rsub" style={{ fontSize: 9 }}>
+            No captures yet — type a thought above and hit CAPTURE to begin.
+          </div>
+        )}
+        {visibleCaps.map((c, i) => (
           <div className="cap" key={i}>
             "{c.text}"
             <div className="meta">

@@ -19,14 +19,13 @@ const modules: { id: string; ic: IconName; nm: string }[] = [
   { id: 'vault', ic: 'memoryVault', nm: 'VAULT' },
   { id: 'comms', ic: 'comms', nm: 'COMMS' },
 ];
-const projs: { id: string; ic: IconName; nm: string }[] = [
-  { id: 'p-sh', ic: 'study', nm: 'STUDYHIVE' }, // StudyHive is education-themed; closest available concept icon
-  { id: 'p-mu', ic: 'music', nm: 'MUSIC' },
-  { id: 'p-we', ic: 'globe', nm: 'WEBSITE' },
-  { id: 'p-no', ic: 'book', nm: 'NOVEL' },
-];
-const slugToProj: Record<string, string> = { studyhive: 'p-sh', music: 'p-mu', website: 'p-we', novel: 'p-no' };
-const allMeta = [...modules, ...projs];
+// NOTE: this used to be a hardcoded 4-entry demo array (StudyHive/Music/
+// Website/Novel) that rendered on the ring for EVERY account regardless of
+// real data — a brand-new, genuinely empty account still saw "StudyHive"
+// etc. here, which is exactly the "old data won't go away" bug reported.
+// The ring is now built from the real `useCoreGraph` project list inside
+// the component (see `projs` there) — a fresh account with zero projects
+// renders zero project nodes on the ring, honestly.
 
 const KIND_ICON: Record<string, IconName> = {
   capture: 'neuralCapture', task: 'checkCircle', note: 'note', doc: 'file', bug: 'bugTracker', idea: 'idea',
@@ -88,6 +87,25 @@ export default function NeuralCore({ active }: { active: boolean }) {
   const projects = useCoreGraph((s) => s.projects);
   const nodes = useCoreGraph((s) => s.nodes);
   const edges = useCoreGraph((s) => s.edges);
+
+  // Real project ring data (replaces the old hardcoded StudyHive/Music/
+  // Website/Novel demo array) — a brand-new account with zero real projects
+  // now renders zero project nodes here, honestly, instead of fake ones.
+  const projs = useMemo<{ id: string; ic: IconName; nm: string }[]>(
+    () => projects.map((p) => ({ id: p.id, ic: (p.icon || 'projects') as IconName, nm: p.name.toUpperCase() })),
+    [projects],
+  );
+  const allMeta = useMemo(() => [...modules, ...projs], [projs]);
+  // Real project_slug -> project_id lookup for routing a freshly-classified
+  // capture node to the right project ring node (replaces the old hardcoded
+  // slugToProj map that only knew about the 4 fake demo projects).
+  const slugToProj = useMemo(() => {
+    const m: Record<string, string> = {};
+    projects.forEach((p) => {
+      m[p.slug] = p.id;
+    });
+    return m;
+  }, [projects]);
 
   useEffect(() => {
     const avgHealth = projects.length ? projects.reduce((s, p) => s + p.health, 0) / projects.length : 70;
@@ -390,6 +408,15 @@ export default function NeuralCore({ active }: { active: boolean }) {
     if (active) setTimeout(() => { coreResize(); layoutCore(); }, 50);
   }, [active]);
 
+  // Real project data from hydrate() typically arrives asynchronously after
+  // mount — re-layout the ring once it does (or changes) so the outer ring
+  // genuinely reflects the signed-in account's projects, not just whatever
+  // was present at the very first render.
+  useEffect(() => {
+    if (active) layoutCore();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projs, active]);
+
   // Command palette (Cmd/Ctrl+K) — scoped to fire only while the Core room
   // is active, per the Amendment's own placement of this directive under
   // Neural Core ("jump to any room without leaving the Core").
@@ -496,7 +523,7 @@ export default function NeuralCore({ active }: { active: boolean }) {
 
     if (liveResult?.nodes?.length) {
       const first = liveResult.nodes[0];
-      const projId = slugToProj[first.project_slug ?? ''] || 'p-sh';
+      const projId = slugToProj[first.project_slug ?? ''] || projects[0]?.id || 'core';
       const hops = ['capture'];
       if (first.kind === 'bug') hops.push('bugs');
       if (first.kind === 'design') hops.push('studio');
