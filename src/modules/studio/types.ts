@@ -174,6 +174,12 @@ export const IMPLEMENTED_MODES: StudioMode[] = [
   'pdfMarkup',
   'printLayout',
   'modelViewer',
+  // Item #6 batch 2, tool 1 of 5 (done one at a time, in order, per the
+  // Captain's direction) — real bezier pen + boolean ops. See
+  // VectorEditor.tsx for exactly what's real vs. the one disclosed
+  // simplification (booleans flatten curves to straight-edge polygons,
+  // same as every real boolean-ops implementation's polygon-clip core).
+  'vector',
 ];
 
 export interface StudioBoard {
