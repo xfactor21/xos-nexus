@@ -20,6 +20,12 @@ import ScreenshotAnnotator from './tools/ScreenshotAnnotator';
 import ChartBuilder from './tools/ChartBuilder';
 import AudioTrimmer from './tools/AudioTrimmer';
 import BackgroundRemover from './tools/BackgroundRemover';
+import LogoMaker from './tools/LogoMaker';
+import GifMaker from './tools/GifMaker';
+import VideoTrimmer from './tools/VideoTrimmer';
+import PdfMarkup from './tools/PdfMarkup';
+import PrintLayout from './tools/PrintLayout';
+import ModelViewer from './tools/ModelViewer';
 
 interface ModeMeta {
   label: string;
@@ -126,23 +132,27 @@ function seedFromLegacyIfNeeded(): StudioBoard[] {
  * actual tool lives in its own component and owns the full viewport below
  * this room's header.
  *
- * Genuinely implemented right now (Amendment v0.4 items 1 + 2): Draw/Paint
- * and Wireframe/Prototype (the two primary modes built in earlier batches),
- * plus 11 of the 17 "Show More" utility tools — Image Converter, Background
- * Remover, Color Palette Generator, Quick Photo Editor, Pixel Art Editor,
- * QR/Barcode Generator (QR only — a real Code128/etc. barcode symbology is
- * a distinct, larger undertaking than fit this pass), Meme Generator, Font
- * Pairing Explorer, Screenshot Annotator, Chart/Graph Builder, and Audio
- * Waveform Trimmer. Everything else in `MODE_META` is still shown (the
- * full 25-entry roster is real, not aspirational padding) but disabled
- * with an honest "not yet available" tag rather than a demotivating literal
- * "Coming soon" label. The 6 still-unbuilt primary modes (Animation, which
- * is Amendment v0.4's own next dedicated item; Vector, Diagram, Moodboard,
- * Presentation, Icon Design) and 6 still-unbuilt utility tools (Logo Maker,
- * Video Trimmer, PDF Markup, GIF Maker, Print Layout, and 3D Model
- * Viewer — the last of which the amendment itself already flags as
- * "stretch") get their own dedicated future passes the same way Animation
- * does, rather than 25 tools all built shallowly in one sitting.
+ * Genuinely implemented right now: Draw/Paint, Wireframe/Prototype, and
+ * Animation (the 3 primary modes built so far), plus all 17 "Show More"
+ * utility tools — Image Converter, Background Remover, Color Palette
+ * Generator, Quick Photo Editor, Pixel Art Editor, QR Generator (QR only —
+ * a real barcode symbology is a distinct undertaking), Meme Generator, Font
+ * Pairing Explorer, Screenshot Annotator, Chart/Graph Builder, Audio
+ * Waveform Trimmer, Logo Maker, GIF Maker, Video Trimmer (exports .webm —
+ * client-side MediaRecorder, not an MP4 re-mux), PDF Markup/Annotator (real
+ * pdfjs-dist render + pdf-lib re-export), Print Layout Designer (real
+ * multi-page PDF at true paper dimensions), and 3D Model Viewer (the
+ * stretch goal — glTF/GLB preview via three.js).
+ *
+ * Still genuinely not built: the 5 remaining primary creative modes —
+ * Vector/Illustration, Diagram/Flowchart, Moodboard/Collage,
+ * Presentation/Slide Deck, Icon Design — each pitched at matching a full
+ * standalone app (Illustrator/Whimsical/Milanote/Keynote/an icon-kit
+ * system) and each getting its own dedicated pass with sign-off before
+ * being built, one at a time, rather than shipped shallow. `MODE_META`
+ * still shows all 25 (the full roster is real, never aspirational padding)
+ * and the 5 unbuilt ones are disabled with an honest "not yet available"
+ * tag until each is actually done.
  */
 export default function Studio({ active }: { active: boolean }) {
   const [boards, setBoards] = useState<StudioBoard[]>(seedFromLegacyIfNeeded);
@@ -218,6 +228,12 @@ export default function Studio({ active }: { active: boolean }) {
         {openBoard.mode === 'chartBuilder' && <ChartBuilder boardId={openBoard.id} onExit={exitToBoards} />}
         {openBoard.mode === 'audioTrimmer' && <AudioTrimmer boardId={openBoard.id} onExit={exitToBoards} />}
         {openBoard.mode === 'backgroundRemover' && <BackgroundRemover boardId={openBoard.id} onExit={exitToBoards} />}
+        {openBoard.mode === 'logoMaker' && <LogoMaker boardId={openBoard.id} onExit={exitToBoards} />}
+        {openBoard.mode === 'gifMaker' && <GifMaker boardId={openBoard.id} onExit={exitToBoards} />}
+        {openBoard.mode === 'videoTrimmer' && <VideoTrimmer boardId={openBoard.id} onExit={exitToBoards} />}
+        {openBoard.mode === 'pdfMarkup' && <PdfMarkup boardId={openBoard.id} onExit={exitToBoards} />}
+        {openBoard.mode === 'printLayout' && <PrintLayout boardId={openBoard.id} onExit={exitToBoards} />}
+        {openBoard.mode === 'modelViewer' && <ModelViewer boardId={openBoard.id} onExit={exitToBoards} />}
       </section>
     );
   }

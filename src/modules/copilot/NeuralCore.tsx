@@ -235,8 +235,16 @@ export default function NeuralCore({ active }: { active: boolean }) {
     // Unmount every bub icon root BEFORE the DOM nodes they're mounted into
     // are removed — React roots don't clean themselves up just because
     // their container left the document.
-    bubRoots.current.forEach((root) => root.unmount());
+    // Deferred via setTimeout rather than unmounted synchronously here:
+    // calling root.unmount() synchronously inside an effect (especially
+    // under StrictMode's mount->cleanup->remount double-invoke) can race
+    // React's own in-flight render/commit for this root ("Attempted to
+    // synchronously unmount a root while React was already rendering"),
+    // which was found to corrupt paint for the rest of the page, not just
+    // this component — a real bug, not just a console warning.
+    const rootsToUnmount = Array.from(bubRoots.current.values());
     bubRoots.current.clear();
+    setTimeout(() => rootsToUnmount.forEach((root) => root.unmount()), 0);
     stage.querySelectorAll('.cnode').forEach((x) => x.remove());
     const W = stage.clientWidth,
       H = stage.clientHeight,

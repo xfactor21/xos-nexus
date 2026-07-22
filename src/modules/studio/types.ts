@@ -164,6 +164,16 @@ export const IMPLEMENTED_MODES: StudioMode[] = [
   'chartBuilder',
   'audioTrimmer',
   'backgroundRemover',
+  // Punch-list item #6, batch 1 — the 6 smaller utility tools (the 5
+  // remaining primary creative modes — Vector, Diagram, Moodboard,
+  // Presentation, Icon Design — are each their own larger dedicated pass,
+  // done one at a time with sign-off, not bundled in here).
+  'logoMaker',
+  'gifMaker',
+  'videoTrimmer',
+  'pdfMarkup',
+  'printLayout',
+  'modelViewer',
 ];
 
 export interface StudioBoard {
