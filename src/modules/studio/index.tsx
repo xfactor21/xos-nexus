@@ -12,6 +12,7 @@ import Animation from './Animation';
 import VectorEditor from './VectorEditor';
 import DiagramEditor from './DiagramEditor';
 import MoodboardEditor from './MoodboardEditor';
+import PresentationEditor from './PresentationEditor';
 import ImageConverter from './tools/ImageConverter';
 import PaletteGenerator from './tools/PaletteGenerator';
 import QuickPhotoEditor from './tools/QuickPhotoEditor';
@@ -163,15 +164,19 @@ function seedFromLegacyIfNeeded(): StudioBoard[] {
  * with real z-ordering and a real rasterized PNG export — every tile is
  * redrawn onto an offscreen canvas with its own rotation transform, not a
  * DOM-to-image screenshot shortcut.
+ * Presentation/Slide Deck (PresentationEditor.tsx) is a multi-slide editor
+ * with layout templates (title, title+body, two-column, image+caption,
+ * blank), draggable/resizable text and image blocks, per-slide background
+ * color, slide reorder/duplicate/delete, a real fullscreen Present mode
+ * (arrow-key/click navigation), and a real multi-page PDF export via
+ * `pdf-lib` (genuine embedded images and drawn text at real point
+ * coordinates per slide). Disclosed gap: no speaker notes or transitions.
  *
- * Still genuinely not built: the 2 remaining primary creative modes —
- * Presentation/Slide Deck, Icon Design — each pitched at matching a full
- * standalone app (Keynote/an icon-kit system) and each getting its own
- * dedicated pass with sign-off before being built, one at a time, rather
- * than shipped shallow. `MODE_META` still shows all 25 (the full roster
- * is real, never aspirational padding) and the 2 unbuilt ones are
- * disabled with an honest "not yet available" tag until each is actually
- * done.
+ * Still genuinely not built: the 1 remaining primary creative mode — Icon
+ * Design — pitched at matching a full icon-kit system, getting its own
+ * dedicated pass with sign-off before being built. `MODE_META` still
+ * shows all 25 (the full roster is real, never aspirational padding) and
+ * it's disabled with an honest "not yet available" tag until it's done.
  */
 export default function Studio({ active }: { active: boolean }) {
   const [boards, setBoards] = useState<StudioBoard[]>(seedFromLegacyIfNeeded);
@@ -239,6 +244,7 @@ export default function Studio({ active }: { active: boolean }) {
         {openBoard.mode === 'vector' && <VectorEditor boardId={openBoard.id} onExit={exitToBoards} />}
         {openBoard.mode === 'diagram' && <DiagramEditor boardId={openBoard.id} onExit={exitToBoards} />}
         {openBoard.mode === 'moodboard' && <MoodboardEditor boardId={openBoard.id} onExit={exitToBoards} />}
+        {openBoard.mode === 'presentation' && <PresentationEditor boardId={openBoard.id} onExit={exitToBoards} />}
         {openBoard.mode === 'imageConverter' && <ImageConverter boardId={openBoard.id} onExit={exitToBoards} />}
         {openBoard.mode === 'paletteGenerator' && <PaletteGenerator boardId={openBoard.id} onExit={exitToBoards} />}
         {openBoard.mode === 'quickPhotoEditor' && <QuickPhotoEditor boardId={openBoard.id} onExit={exitToBoards} />}

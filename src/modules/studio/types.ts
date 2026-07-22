@@ -188,6 +188,10 @@ export const IMPLEMENTED_MODES: StudioMode[] = [
   // real drag/resize/rotate and a real rasterized PNG export (per-tile
   // canvas transforms, not a DOM screenshot). See MoodboardEditor.tsx.
   'moodboard',
+  // Item #6 batch 2, tool 4 of 5 — multi-slide deck editor with layout
+  // templates, real fullscreen Present mode, and a real multi-page PDF
+  // export via pdf-lib. See PresentationEditor.tsx.
+  'presentation',
 ];
 
 export interface StudioBoard {
