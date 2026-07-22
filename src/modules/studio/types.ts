@@ -180,6 +180,10 @@ export const IMPLEMENTED_MODES: StudioMode[] = [
   // simplification (booleans flatten curves to straight-edge polygons,
   // same as every real boolean-ops implementation's polygon-clip core).
   'vector',
+  // Item #6 batch 2, tool 2 of 5 — real connector geometry that stays
+  // attached to nodes as they move (recomputed each render, not fixed
+  // coordinates). See DiagramEditor.tsx.
+  'diagram',
 ];
 
 export interface StudioBoard {

@@ -10,6 +10,7 @@ import DrawPaint from './draw/DrawPaint';
 import Wireframe from './Wireframe';
 import Animation from './Animation';
 import VectorEditor from './VectorEditor';
+import DiagramEditor from './DiagramEditor';
 import ImageConverter from './tools/ImageConverter';
 import PaletteGenerator from './tools/PaletteGenerator';
 import QuickPhotoEditor from './tools/QuickPhotoEditor';
@@ -134,31 +135,36 @@ function seedFromLegacyIfNeeded(): StudioBoard[] {
  * this room's header.
  *
  * Genuinely implemented right now: Draw/Paint, Wireframe/Prototype,
- * Animation, and Vector/Illustration (4 of the 8 primary modes), plus all
- * 17 "Show More" utility tools — Image Converter, Background Remover,
- * Color Palette Generator, Quick Photo Editor, Pixel Art Editor, QR
- * Generator (QR only — a real barcode symbology is a distinct undertaking),
- * Meme Generator, Font Pairing Explorer, Screenshot Annotator, Chart/Graph
- * Builder, Audio Waveform Trimmer, Logo Maker, GIF Maker, Video Trimmer
- * (exports .webm — client-side MediaRecorder, not an MP4 re-mux), PDF
- * Markup/Annotator (real pdfjs-dist render + pdf-lib re-export), Print
- * Layout Designer (real multi-page PDF at true paper dimensions), and 3D
- * Model Viewer (the stretch goal — glTF/GLB preview via three.js).
+ * Animation, Vector/Illustration, and Diagram/Flowchart (5 of the 8
+ * primary modes), plus all 17 "Show More" utility tools — Image Converter,
+ * Background Remover, Color Palette Generator, Quick Photo Editor, Pixel
+ * Art Editor, QR Generator (QR only — a real barcode symbology is a
+ * distinct undertaking), Meme Generator, Font Pairing Explorer, Screenshot
+ * Annotator, Chart/Graph Builder, Audio Waveform Trimmer, Logo Maker, GIF
+ * Maker, Video Trimmer (exports .webm — client-side MediaRecorder, not an
+ * MP4 re-mux), PDF Markup/Annotator (real pdfjs-dist render + pdf-lib
+ * re-export), Print Layout Designer (real multi-page PDF at true paper
+ * dimensions), and 3D Model Viewer (the stretch goal — glTF/GLB preview
+ * via three.js).
  * Vector/Illustration (VectorEditor.tsx) is a real bezier pen tool with
  * mirrored curve handles, direct-select anchor editing, rect/ellipse
  * primitives, a real layer list, and real union/subtract/intersect/exclude
  * boolean ops via `polybooljs` — one disclosed simplification: boolean
  * results flatten curves to straight-edge polygons first, same as every
  * real boolean-ops implementation's polygon-clip core.
+ * Diagram/Flowchart (DiagramEditor.tsx) has real connector geometry —
+ * exact closed-form boundary clipping per node shape (rect/diamond/rounded
+ * terminal), recomputed live every render so connectors genuinely stay
+ * attached and re-route as nodes move, not fixed coordinates — plus
+ * swimlanes, inline text editing, and real SVG export.
  *
- * Still genuinely not built: the 4 remaining primary creative modes —
- * Diagram/Flowchart, Moodboard/Collage, Presentation/Slide Deck, Icon
- * Design — each pitched at matching a full standalone app (Whimsical/
- * Milanote/Keynote/an icon-kit system) and each getting its own dedicated
- * pass with sign-off before being built, one at a time, rather than
- * shipped shallow. `MODE_META` still shows all 25 (the full roster is
- * real, never aspirational padding) and the 4 unbuilt ones are disabled
- * with an honest "not yet available"
+ * Still genuinely not built: the 3 remaining primary creative modes —
+ * Moodboard/Collage, Presentation/Slide Deck, Icon Design — each pitched
+ * at matching a full standalone app (Milanote/Keynote/an icon-kit system)
+ * and each getting its own dedicated pass with sign-off before being
+ * built, one at a time, rather than shipped shallow. `MODE_META` still
+ * shows all 25 (the full roster is real, never aspirational padding) and
+ * the 3 unbuilt ones are disabled with an honest "not yet available"
  * tag until each is actually done.
  */
 export default function Studio({ active }: { active: boolean }) {
@@ -225,6 +231,7 @@ export default function Studio({ active }: { active: boolean }) {
         {openBoard.mode === 'wireframe' && <Wireframe boardId={openBoard.id} isSeed={openBoard.id === seedBoardId} onExit={exitToBoards} />}
         {openBoard.mode === 'animation' && <Animation boardId={openBoard.id} onExit={exitToBoards} />}
         {openBoard.mode === 'vector' && <VectorEditor boardId={openBoard.id} onExit={exitToBoards} />}
+        {openBoard.mode === 'diagram' && <DiagramEditor boardId={openBoard.id} onExit={exitToBoards} />}
         {openBoard.mode === 'imageConverter' && <ImageConverter boardId={openBoard.id} onExit={exitToBoards} />}
         {openBoard.mode === 'paletteGenerator' && <PaletteGenerator boardId={openBoard.id} onExit={exitToBoards} />}
         {openBoard.mode === 'quickPhotoEditor' && <QuickPhotoEditor boardId={openBoard.id} onExit={exitToBoards} />}
