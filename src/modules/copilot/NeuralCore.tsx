@@ -1,11 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { KeyboardEvent as ReactKeyboardEvent, ReactNode } from 'react';
+import { createRoot } from 'react-dom/client';
+import type { Root } from 'react-dom/client';
 import { liveClassify, offlineClassify } from '../../lib/copilotClient';
 import { commitOrQueue } from '../../lib/offlineSync';
 import { useCoreGraph } from '../../stores/coreGraph';
 import { ROOMS } from '../../core/rooms';
 import { pendingCaptureCount } from '../../lib/localDb';
 import Icon from '../../design-system/icons/Icon';
+import DataIcon from '../../design-system/icons/DataIcon';
 import type { IconName } from '../../design-system/icons/registry';
 
 const modules: { id: string; ic: IconName; nm: string }[] = [
@@ -69,6 +72,15 @@ export default function NeuralCore({ active }: { active: boolean }) {
   );
   const cStreams = useRef<{ a: number; d: number; hue: string }[]>([]);
   const nodePos = useRef<Record<string, [number, number]>>({});
+  // Item #5 — ring node icons. layoutCore() builds nodes as raw DOM (see
+  // mkNode below), so the shared <DataIcon> component (the exact same
+  // icon-rendering logic Projects room uses for its cards — see
+  // projects/index.tsx) is mounted into each node's `.bub` span via its own
+  // small React root rather than reimplemented as a second icon system.
+  // Roots are tracked here so layoutCore() can unmount them before their
+  // DOM nodes are torn down on re-layout (resize, active toggle, real
+  // project data arriving) — otherwise every re-layout would leak roots.
+  const bubRoots = useRef<Map<string, Root>>(new Map());
   /** Real project-health + 24h node-creation "workload" — read every frame
    * by the draw loop to grade the blob's color/energy, refreshed whenever
    * live graph data changes (kept in a ref so the RAF loop, set up once,
@@ -220,6 +232,11 @@ export default function NeuralCore({ active }: { active: boolean }) {
     const stage = stageRef.current;
     const svg = svgRef.current;
     if (!stage || !svg) return;
+    // Unmount every bub icon root BEFORE the DOM nodes they're mounted into
+    // are removed — React roots don't clean themselves up just because
+    // their container left the document.
+    bubRoots.current.forEach((root) => root.unmount());
+    bubRoots.current.clear();
     stage.querySelectorAll('.cnode').forEach((x) => x.remove());
     const W = stage.clientWidth,
       H = stage.clientHeight,
@@ -245,13 +262,18 @@ export default function NeuralCore({ active }: { active: boolean }) {
       el.id = 'n-' + d.id;
       el.style.left = x + 'px';
       el.style.top = y + 'px';
-      // Raw DOM innerHTML — non-JSX context, the <Icon> React component can't be
-      // mounted here, so the bubble glyph is intentionally omitted (Amendment
-      // v0.6 step 1 non-JSX carve-out). `d.ic` is kept as an IconName on the
-      // data for a future JSX-based node renderer.
       el.innerHTML = `<span class="bub"></span><span class="nm">${d.nm}</span>`;
       el.onclick = onClick;
       stage.appendChild(el);
+      // Mount the exact same DataIcon component Projects room renders its
+      // project/classification glyphs with (see projects/index.tsx) into
+      // the bubble — reused, not reimplemented, per the fix requirement.
+      const bubEl = el.querySelector('.bub');
+      if (bubEl) {
+        const root = createRoot(bubEl);
+        bubRoots.current.set(d.id, root);
+        root.render(<DataIcon value={d.ic} size={cls === 'proj' ? 15 : 14} glow={cls === 'proj' ? 'purple' : 'cyan'} />);
+      }
     };
     modules.forEach((m) => mkNode(m, 'mod', () => dockAndGo(m.id, m.id)));
     projs.forEach((p) => mkNode(p, 'proj', () => dockAndGo('projects', p.id)));
@@ -400,6 +422,8 @@ export default function NeuralCore({ active }: { active: boolean }) {
     return () => {
       cancelAnimationFrame(raf.current);
       removeEventListener('resize', onResize);
+      bubRoots.current.forEach((root) => root.unmount());
+      bubRoots.current.clear();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
