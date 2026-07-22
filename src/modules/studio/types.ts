@@ -192,6 +192,10 @@ export const IMPLEMENTED_MODES: StudioMode[] = [
   // templates, real fullscreen Present mode, and a real multi-page PDF
   // export via pdf-lib. See PresentationEditor.tsx.
   'presentation',
+  // Item #6 batch 2, tool 5 of 5 (final tool in the sequence) — icon-set
+  // editor with real dual output: vector SVG (one <rect> per filled grid
+  // cell) and rasterized PNG at 4 standard sizes. See IconDesignEditor.tsx.
+  'iconDesign',
 ];
 
 export interface StudioBoard {
