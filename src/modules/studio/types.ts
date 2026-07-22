@@ -184,6 +184,10 @@ export const IMPLEMENTED_MODES: StudioMode[] = [
   // attached to nodes as they move (recomputed each render, not fixed
   // coordinates). See DiagramEditor.tsx.
   'diagram',
+  // Item #6 batch 2, tool 3 of 5 — free-form image/swatch/note board with
+  // real drag/resize/rotate and a real rasterized PNG export (per-tile
+  // canvas transforms, not a DOM screenshot). See MoodboardEditor.tsx.
+  'moodboard',
 ];
 
 export interface StudioBoard {
