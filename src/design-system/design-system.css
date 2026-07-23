@@ -527,6 +527,47 @@ input[type='range']:active::-moz-range-thumb {
    shared layer, not a per-room patch. See CockpitFrame.tsx,
    GlobalParticles.tsx, XaiCharacter.tsx.
    ============================================================ */
+/* Redesign pass — real painterly nebula/galaxy art behind every room,
+   dimmed under a flat dark scrim so panel text stays legible. This is
+   the backmost visual layer — GlobalParticles/CockpitFrame render after
+   it in Shell.tsx and composite on top.
+   NOTE: deliberately z-index:0, NOT a negative value. html/body/#root
+   all set an explicit `background: var(--void)` (see index.css) — when
+   the root element has its own background, a NEGATIVE-z-index child of
+   <body> paints *behind the browser's canvas background paint*, not
+   just "behind body's own background color" as the stacking-context
+   model would suggest, and becomes fully invisible even though var(--void)
+   is technically "above" it. Confirmed by literally reproducing this
+   (an earlier draft used z-index:-1 and rendered nothing) before fixing
+   it here — z-index:0 plus this being the first element Shell.tsx
+   mounts (so later siblings naturally paint over it at the same z-index)
+   avoids the gotcha entirely. */
+.nebulaBackdrop {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+.nebulaBackdropImg {
+  display: block;
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center;
+  opacity: 0.55;
+  filter: saturate(1.1) brightness(0.95);
+}
+.nebulaBackdropVignette {
+  position: absolute;
+  inset: 0;
+  background: rgba(5, 8, 13, 0.4);
+}
+
 .globalParticles {
   position: fixed;
   inset: 0;
