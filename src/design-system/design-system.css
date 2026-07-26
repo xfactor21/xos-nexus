@@ -318,6 +318,49 @@ body.sb .navLabel {
     border-color 0.25s ease,
     transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
+/* Redesign pass — small corner-bracket ticks on every panel surface,
+   matching the reference concept's "⌐...⌐" framed-panel language (every
+   card/panel in the concept mockup has a short L-shaped bracket in each
+   corner, cyan/magenta alternating diagonally). Applied here as a single
+   shared ::before layer (::after is already the hover-spotlight glow
+   above) so it reaches every .gpanel/.card/.cap/.mem/.rel/.bug instance
+   app-wide — 39+ call sites — without editing any of them individually,
+   same "shared design-system layer, not a per-room patch" approach as
+   CockpitFrame/NebulaBackdrop. Built from 8 background-image gradient
+   layers (2 short bars per corner) rather than 4 new DOM elements, so it
+   costs nothing structurally and can't be clipped by a panel's own
+   overflow:hidden the way a real bordered pseudo-box sometimes can. */
+.gpanel::before,
+.card::before,
+.cap::before,
+.mem::before,
+.rel::before,
+.bug::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-repeat: no-repeat;
+  background-image:
+    linear-gradient(90deg, rgba(0, 245, 255, 0.65), rgba(0, 245, 255, 0.65)),
+    linear-gradient(180deg, rgba(0, 245, 255, 0.65), rgba(0, 245, 255, 0.65)),
+    linear-gradient(270deg, rgba(255, 45, 120, 0.65), rgba(255, 45, 120, 0.65)),
+    linear-gradient(180deg, rgba(255, 45, 120, 0.65), rgba(255, 45, 120, 0.65)),
+    linear-gradient(90deg, rgba(255, 45, 120, 0.65), rgba(255, 45, 120, 0.65)),
+    linear-gradient(0deg, rgba(255, 45, 120, 0.65), rgba(255, 45, 120, 0.65)),
+    linear-gradient(270deg, rgba(0, 245, 255, 0.65), rgba(0, 245, 255, 0.65)),
+    linear-gradient(0deg, rgba(0, 245, 255, 0.65), rgba(0, 245, 255, 0.65));
+  background-size:
+    12px 1.5px, 1.5px 12px,
+    12px 1.5px, 1.5px 12px,
+    12px 1.5px, 1.5px 12px,
+    12px 1.5px, 1.5px 12px;
+  background-position:
+    top left, top left,
+    top right, top right,
+    bottom left, bottom left,
+    bottom right, bottom right;
+}
 .gpanel::after,
 .card::after,
 .cap::after,
