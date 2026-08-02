@@ -144,6 +144,17 @@ opacity:0;transform:translateY(8px);animation:rise .4s forwards}
 .pcardDel{width:20px;height:20px;display:grid;place-items:center;color:var(--text-dim);opacity:0;transition:opacity .15s;cursor:pointer;flex-shrink:0}
 .pcard:hover .pcardDel{opacity:1}
 .pcardDel:hover{color:var(--magenta)}
+
+/* Redesign checkpoint 3 — modular draggable project cards. Grab handle is
+   a dedicated affordance (rather than making the whole card draggable) so
+   click-to-open and the capture-assignment drop target both keep working
+   without a drag gesture accidentally hijacking a click. */
+.pcardHandle{width:18px;height:22px;display:grid;place-items:center;color:var(--text-dim);opacity:0;transition:opacity .15s,color .15s;cursor:grab;flex-shrink:0}
+.pcard:hover .pcardHandle{opacity:.65}
+.pcardHandle:hover{opacity:1 !important;color:var(--cyan)}
+.pcardHandle:active{cursor:grabbing}
+.pcardDragging{opacity:.4 !important;border-style:dashed}
+.pcardDragOver{border-left-color:var(--magenta);box-shadow:0 -2px 0 var(--magenta) inset;transform:translateY(2px);transition:transform .1s}
 #vitals{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0}
 .vital{border:1px solid var(--edge);padding:7px 12px;text-align:center;min-width:66px;background:var(--glass)}
 .vital .n{font-family:var(--font-disp);font-size:15px;color:var(--cyan)}

@@ -9,6 +9,9 @@ import {
   setProjectClass,
   getWidgetOrder,
   setWidgetOrder,
+  getCardOrder,
+  setCardOrder,
+  applyCardOrder,
   slugify,
   type ProjectClassId,
   type WidgetId,
@@ -149,9 +152,40 @@ export default function Projects({ active }: { active: boolean }) {
   const [createErr, setCreateErr] = useState('');
   const [widgetOrder, setWidgetOrderState] = useState<WidgetId[]>(['health', 'heatmap', 'deps', 'activity']);
   const [dragId, setDragId] = useState<WidgetId | null>(null);
+  // Redesign checkpoint 3: modular draggable project cards — same
+  // drag-to-reorder pattern as the OVERVIEW widgets above, applied to the
+  // top-level card grid, with a real cross-session order persisted per
+  // owner (see local.ts's CARD_ORDER_KEY).
+  const [cardDragId, setCardDragId] = useState<string | null>(null);
+  const [cardOverId, setCardOverId] = useState<string | null>(null);
+  // Bumped on every drop so the `projects` memo below re-reads localStorage
+  // (getCardOrder isn't reactive state on its own — same reason
+  // widgetOrder above is mirrored into useState rather than read live).
+  const [cardOrderRev, setCardOrderRev] = useState(0);
 
-  const projects = useCoreGraph((s) => s.projects);
+  const rawProjects = useCoreGraph((s) => s.projects);
   const ownerId = useCoreGraph((s) => s.ownerId);
+  const projects = useMemo(
+    () => (ownerId ? applyCardOrder(rawProjects, getCardOrder(ownerId)) : rawProjects),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [rawProjects, ownerId, cardOrderRev],
+  );
+
+  function reorderCards(overId: string) {
+    if (!cardDragId || cardDragId === overId || !ownerId) {
+      setCardDragId(null);
+      setCardOverId(null);
+      return;
+    }
+    const ids = projects.map((p) => p.id);
+    const without = ids.filter((id) => id !== cardDragId);
+    const overIdx = without.indexOf(overId);
+    const next = [...without.slice(0, overIdx), cardDragId, ...without.slice(overIdx)];
+    setCardOrder(ownerId, next);
+    setCardDragId(null);
+    setCardOverId(null);
+    setCardOrderRev((n) => n + 1);
+  }
   // Select the raw, store-stable `nodes` array and derive tasks/bugs locally
   // via useMemo, rather than a store selector that builds a fresh array on
   // every call (`(s) => s.tasks()` style) — that pattern makes
@@ -309,15 +343,43 @@ export default function Projects({ active }: { active: boolean }) {
             return (
               <div
                 key={p.id}
-                className={`pcard gpanel ${p.isStale ? 'warn' : ''}`}
-                style={{ opacity: dim, filter: p.isStale ? 'saturate(.5)' : undefined }}
+                className={`pcard gpanel ${p.isStale ? 'warn' : ''} ${cardDragId === p.id ? 'pcardDragging' : ''} ${cardOverId === p.id && cardDragId && cardDragId !== p.id ? 'pcardDragOver' : ''}`}
+                style={{ opacity: cardDragId === p.id ? 0.4 : dim, filter: p.isStale ? 'saturate(.5)' : undefined }}
                 onClick={() => setOpenId(p.id)}
-                onDragOver={(e) => e.preventDefault()}
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  if (cardDragId && cardDragId !== p.id) setCardOverId(p.id);
+                }}
+                onDragLeave={() => setCardOverId((id) => (id === p.id ? null : id))}
                 onDrop={(e) => {
                   const nodeId = e.dataTransfer.getData('application/x-xos-capture');
-                  if (nodeId) assignNodeToProject(nodeId, p.id);
+                  if (nodeId) {
+                    assignNodeToProject(nodeId, p.id);
+                    return;
+                  }
+                  reorderCards(p.id);
                 }}
               >
+                {/* Modular draggable cards — grabbing anywhere on the handle
+                    picks the whole card up; the rest of the card keeps its
+                    click-to-open + capture-assignment drop behavior above. */}
+                <span
+                  className="pcardHandle"
+                  draggable
+                  title="drag to reorder"
+                  onClick={(e) => e.stopPropagation()}
+                  onDragStart={(e) => {
+                    e.stopPropagation();
+                    e.dataTransfer.effectAllowed = 'move';
+                    setCardDragId(p.id);
+                  }}
+                  onDragEnd={() => {
+                    setCardDragId(null);
+                    setCardOverId(null);
+                  }}
+                >
+                  <Icon name="menu" size={12} />
+                </span>
                 <span className="ic">
                   <DataIcon value={p.icon} size={16} />
                 </span>
