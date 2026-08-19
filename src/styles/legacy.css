@@ -561,6 +561,11 @@ input[type=range]{width:100%;accent-color:#00F5FF}
 .dpBoardIcon{font-size:20px}
 .dpBoardName{font-size:12px;letter-spacing:.5px;color:var(--text);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .dpBoardRename{width:100%;background:rgba(0,0,0,.3);border:1px solid var(--cyan);color:var(--cyan);font-size:12px;padding:3px 6px;margin-top:2px}
+/* Redesign checkpoint 9 — board grid ring readout (see index.tsx's
+   BoardRing/freshnessOf for rationale: a real recency-decay ring, reusing
+   the HealthRing/CoherenceRing visual language, in place of the old plain
+   mode icon alone). */
+.dpBoardTop{display:flex;align-items:flex-start;justify-content:space-between}
 .dpBoardMode{font-size:9px;letter-spacing:1px;color:var(--cyan-dim);text-transform:uppercase;margin-top:auto}
 .dpBoardUpdated{font-size:9px;color:var(--text-dim)}
 .dpBoardDel{position:absolute;right:8px;top:8px;width:20px;height:20px;display:grid;place-items:center;color:var(--text-dim);opacity:0;transition:opacity .15s;font-size:11px;cursor:pointer}
