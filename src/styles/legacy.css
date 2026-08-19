@@ -33,8 +33,15 @@ body.sb #sbShade{opacity:1;pointer-events:auto}
 
 .room{display:none;padding:56px 12px 120px;max-width:1100px;margin:0 auto;min-height:100vh}
 .room.on{display:block}
-.rh{font-size:15px;letter-spacing:3px;color:var(--cyan);margin:8px 0 3px}
-.rsub{font-size:10px;letter-spacing:1px;color:var(--text-dim);margin-bottom:16px}
+/* Redesign checkpoint 4 — hero room headers. The reference concept treats
+   every room's title as a big bold display headline ("PROJECTS // 6
+   ACTIVE", "MEMORY VAULT // 483 FRAGMENTS") rather than a small tracked
+   label — this was the single biggest legibility gap between v2 and the
+   concept screenshots. Kept as one shared rule (not per-room) so every
+   room picks it up automatically. */
+.rh{font-size:30px;font-weight:800;letter-spacing:0.5px;color:var(--text);margin:6px 0 4px;line-height:1.1;text-transform:uppercase}
+.rh svg,.rh .ic{filter:drop-shadow(0 0 10px var(--cyan))}
+.rsub{font-size:11px;letter-spacing:2px;color:var(--text-dim);margin-bottom:20px;text-transform:uppercase}
 .chip{border:1px solid var(--edge);color:var(--text-dim);padding:8px 14px;font-size:10px;letter-spacing:1px;cursor:pointer;display:inline-block}
 .chip.on{color:var(--cyan);border-color:var(--cyan);background:rgba(0,245,255,.07)}
 .cap{border:1px solid rgba(0,245,255,.1);background:rgba(15,21,32,.55);padding:10px 12px;margin-bottom:8px;font-size:12px;line-height:1.5}
@@ -133,23 +140,41 @@ opacity:0;transform:translateY(8px);animation:rise .4s forwards}
 .piece .fix{color:var(--text-dim);border:1px solid rgba(200,216,232,.2);padding:2px 7px;cursor:pointer;letter-spacing:1px}
 
 /* ===== PROJECTS ===== */
-.pcard{display:flex;align-items:center;gap:13px;padding:13px;margin-bottom:9px;cursor:pointer;border-left:3px solid var(--cyan)}
+/* Redesign checkpoint 4 — project cards restructured from a single-column
+   flat list into a real modular card grid (2-up on wide viewports),
+   matching the concept's "PROJECTS // 6 ACTIVE" board layout instead of a
+   vertical settings-style list. */
+#plist{display:grid;grid-template-columns:1fr;gap:12px}
+@media (min-width:640px){#plist{grid-template-columns:1fr 1fr}}
+#plist>.chip,#plist>.unassignedCaptures,#plist>.rsub{grid-column:1/-1}
+.pcard{position:relative;display:block;padding:16px;cursor:pointer;border-left:3px solid var(--cyan)}
 .pcard .ic{font-size:22px}
-.pcard h3{font-size:12px;letter-spacing:2px}
-.pcard .mt{font-size:9px;letter-spacing:1px;color:var(--text-dim);margin-top:3px}
-.pcard .hp{margin-left:auto;width:56px;height:3px;background:rgba(255,255,255,.12)}
-.pcard .hp i{display:block;height:100%;background:var(--cyan)}
+.pcard h3{font-size:12px;letter-spacing:2px;margin:0}
+.pcard .mt{font-size:9px;letter-spacing:1px;color:var(--text-dim);margin:8px 0}
 .pcard.warn{border-left-color:var(--amber)}
 .pcard.warn .hp i{background:var(--amber)}
-.pcardDel{width:20px;height:20px;display:grid;place-items:center;color:var(--text-dim);opacity:0;transition:opacity .15s;cursor:pointer;flex-shrink:0}
+.pcardDel{position:absolute;top:10px;right:10px;width:20px;height:20px;display:grid;place-items:center;color:var(--text-dim);opacity:0;transition:opacity .15s;cursor:pointer;flex-shrink:0;z-index:2}
 .pcard:hover .pcardDel{opacity:1}
 .pcardDel:hover{color:var(--magenta)}
+.pcardBody{display:flex;flex-direction:column;gap:2px}
+.pcardTop{display:flex;align-items:flex-start;gap:10px}
+.pcardTitle{flex:1;min-width:0}
+.pcardTitle h3{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pcardRing text{font-family:var(--font-disp,inherit)}
+.pcardSpark{display:flex;align-items:flex-end;gap:4px;height:34px;margin:10px 0 12px}
+.pcardSpark i{flex:1;border-radius:2px 2px 0 0;opacity:.85;min-height:3px}
+.pcardTimeline{width:100%;padding:8px;background:rgba(255,255,255,.03);border:1px solid;border-radius:2px;font-size:9px;letter-spacing:1.5px;cursor:pointer;transition:background .15s}
+.pcardTimeline:hover{background:rgba(255,255,255,.08)}
 
 /* Redesign checkpoint 3 — modular draggable project cards. Grab handle is
    a dedicated affordance (rather than making the whole card draggable) so
    click-to-open and the capture-assignment drop target both keep working
    without a drag gesture accidentally hijacking a click. */
-.pcardHandle{width:18px;height:22px;display:grid;place-items:center;color:var(--text-dim);opacity:0;transition:opacity .15s,color .15s;cursor:grab;flex-shrink:0}
+/* Absolutely positioned (not an inline flex child) since checkpoint 4
+   restructured .pcard from a flex row into a block card with its own
+   internal grid — the handle now floats in the top-right corner instead of
+   pushing the icon/title over. */
+.pcardHandle{position:absolute;top:10px;right:32px;width:18px;height:22px;display:grid;place-items:center;color:var(--text-dim);opacity:0;transition:opacity .15s,color .15s;cursor:grab;flex-shrink:0;z-index:2;background:rgba(5,8,13,.5);border-radius:2px}
 .pcard:hover .pcardHandle{opacity:.65}
 .pcardHandle:hover{opacity:1 !important;color:var(--cyan)}
 .pcardHandle:active{cursor:grabbing}
@@ -237,6 +262,20 @@ background-image:radial-gradient(rgba(0,245,255,.10) 1px,transparent 1px);backgr
 .rel:before{content:'';position:absolute;left:-19px;top:16px;width:10px;height:10px;border-radius:50%;background:var(--void);border:2px solid var(--cyan);box-shadow:0 0 8px rgba(0,245,255,.5)}
 .rel.cur:before{background:var(--amber);border-color:var(--amber)}
 .rel.fut:before{border-color:var(--text-dim);box-shadow:none}
+/* Redesign checkpoint 5 — wide-viewport timeline restructure: the concept
+   runs the connecting line down the CENTER with cards alternating left/
+   right of it, not a single left-aligned column. Mobile (below 760px)
+   keeps the original single-column layout untouched — alternating cards
+   only make sense once there's room either side of the line. */
+@media (min-width:760px){
+  .track{padding-left:0;max-width:900px;margin-left:auto;margin-right:auto}
+  .track:before{left:50%;margin-left:-1px}
+  .rel{width:calc(50% - 34px)}
+  .rel:before{left:auto;right:-34px;top:16px}
+  .track>.rel:nth-child(odd){margin-right:calc(50% + 34px)}
+  .track>.rel:nth-child(even){margin-left:calc(50% + 34px)}
+  .track>.rel:nth-child(even):before{right:auto;left:-34px}
+}
 .rel h3{font-size:12px;letter-spacing:2px;display:flex;justify-content:space-between;flex-wrap:wrap;gap:6px}
 .rel h3 .st{font-size:9px;letter-spacing:1px;color:var(--cyan)}
 .rel.cur h3 .st{color:var(--amber)}
