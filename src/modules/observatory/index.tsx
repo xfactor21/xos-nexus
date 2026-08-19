@@ -62,6 +62,36 @@ interface Comet {
  *  - Shareable snapshot export — the canvas already contains everything
  *    rendered, so export is a genuine `toBlob` capture, not a mockup.
  */
+/** Small SVG ring, ported from Projects' HealthRing pattern (checkpoint 4/5) so
+ * the Observatory's flagship bar gets the same "real instrument" ring language
+ * as the rest of the redesigned rooms, applied here to overall mind
+ * coherence (mean project health) rather than a single project. */
+function CoherenceRing({ pct, color }: { pct: number; color: string }) {
+  const r = 26;
+  const c = 2 * Math.PI * r;
+  const dash = (Math.max(0, Math.min(100, pct)) / 100) * c;
+  return (
+    <svg width="62" height="62" viewBox="0 0 62 62" className="coherenceRing" aria-hidden="true">
+      <circle cx="31" cy="31" r={r} fill="none" stroke="rgba(255,255,255,.08)" strokeWidth="4" />
+      <circle
+        cx="31"
+        cy="31"
+        r={r}
+        fill="none"
+        stroke={color}
+        strokeWidth="4"
+        strokeLinecap="round"
+        strokeDasharray={`${dash} ${c - dash}`}
+        transform="rotate(-90 31 31)"
+        style={{ filter: `drop-shadow(0 0 5px ${color})`, transition: 'stroke-dasharray .6s ease' }}
+      />
+      <text x="31" y="35" textAnchor="middle" fontSize="13" fontWeight={700} fill="var(--text)">
+        {Math.round(pct)}%
+      </text>
+    </svg>
+  );
+}
+
 export default function Observatory({ active }: { active: boolean }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const sectionRef = useRef<HTMLElement>(null);
@@ -92,6 +122,14 @@ export default function Observatory({ active }: { active: boolean }) {
   const projects = useCoreGraph((s) => s.projects);
   const nodes = useCoreGraph((s) => s.nodes);
   const edges = useCoreGraph((s) => s.edges);
+
+  // Flagship bar stats — real numbers off the live graph, not placeholders.
+  // "Coherence" = mean project health, mirroring the ring language Projects
+  // already uses so this room reads as another instrument in the same panel.
+  const coherence = projects.length ? projects.reduce((sum, p) => sum + p.health, 0) / projects.length : 0;
+  const coherenceColor = coherence >= 66 ? '#00F5FF' : coherence >= 33 ? '#FFB800' : '#FF2D78';
+  const staleCount = projects.filter((p) => p.isStale).length;
+  const missionCount = nodes.filter((n) => n.ai_classified).length;
 
   // seed — re-runs whenever the live graph changes (hydrate or realtime)
   useEffect(() => {
@@ -545,6 +583,32 @@ export default function Observatory({ active }: { active: boolean }) {
       <div id="obsHead">
         <h1>THE OBSERVATORY</h1>
         <p>"WHAT IS MY MIND CREATING?"</p>
+      </div>
+      <div id="obsCoherence" title="mean health across all projects — the mind's overall coherence">
+        <CoherenceRing pct={coherence} color={coherenceColor} />
+        <span className="obsCoherenceLabel">COHERENCE</span>
+      </div>
+      <div id="obsStats">
+        <div className="obsStat">
+          <span className="obsStatVal">{projects.length}</span>
+          <span className="obsStatLabel">PROJECTS</span>
+        </div>
+        <div className="obsStat">
+          <span className="obsStatVal">{stars.current.filter((s) => !s.hub).length}</span>
+          <span className="obsStatLabel">NODES</span>
+        </div>
+        <div className="obsStat">
+          <span className="obsStatVal">{edges.length}</span>
+          <span className="obsStatLabel">EDGES</span>
+        </div>
+        <div className="obsStat">
+          <span className="obsStatVal">{missionCount}</span>
+          <span className="obsStatLabel">CLASSIFIED</span>
+        </div>
+        <div className={`obsStat ${staleCount > 0 ? 'warn' : ''}`}>
+          <span className="obsStatVal">{staleCount}</span>
+          <span className="obsStatLabel">STALE</span>
+        </div>
       </div>
       <div id="views">
         {(
