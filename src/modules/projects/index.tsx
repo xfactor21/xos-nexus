@@ -58,6 +58,65 @@ function relTime(iso: string) {
   return `${Math.floor(h / 24)}d ago`;
 }
 
+/** Redesign checkpoint 4 — modular project card, structural element 2: an
+ * SVG conic-style progress ring (stroke-dasharray on a circle) replacing
+ * the old flat linear health bar, matching the concept's per-card percent
+ * ring. Real `p.health`, not a fixture — just a different visual encoding
+ * of the same number the old `.hp` bar showed. */
+function HealthRing({ pct, color }: { pct: number; color: string }) {
+  const r = 20;
+  const c = 2 * Math.PI * r;
+  const dash = (Math.max(0, Math.min(100, pct)) / 100) * c;
+  return (
+    <svg width="48" height="48" viewBox="0 0 48 48" className="pcardRing" aria-hidden="true">
+      <circle cx="24" cy="24" r={r} fill="none" stroke="rgba(255,255,255,.1)" strokeWidth="4" />
+      <circle
+        cx="24"
+        cy="24"
+        r={r}
+        fill="none"
+        stroke={color}
+        strokeWidth="4"
+        strokeLinecap="round"
+        strokeDasharray={`${dash} ${c - dash}`}
+        transform="rotate(-90 24 24)"
+        style={{ filter: `drop-shadow(0 0 4px ${color})`, transition: 'stroke-dasharray .4s ease' }}
+      />
+      <text x="24" y="27" textAnchor="middle" fontSize="11" fontWeight={700} fill="var(--text)">
+        {Math.round(pct)}%
+      </text>
+    </svg>
+  );
+}
+
+/** A tiny deterministic (seeded off the project id, not Math.random — same
+ * project always renders the same bars across re-renders/reloads) 7-bar
+ * sparkline, matching the concept's per-card activity bars. This is an
+ * illustrative rhythm shaped by the project's real health value (higher
+ * health -> taller/more-consistent recent bars), not fixture data pretending
+ * to be a real time series — there's no per-day granularity to show yet. */
+function seededBars(seed: string, health: number): number[] {
+  let h = 0;
+  for (let i = 0; i < seed.length; i++) h = (h * 31 + seed.charCodeAt(i)) >>> 0;
+  const bars: number[] = [];
+  for (let i = 0; i < 7; i++) {
+    h = (h * 1103515245 + 12345) >>> 0;
+    const jitter = (h % 40) - 20; // -20..19
+    bars.push(Math.max(12, Math.min(100, health + jitter * (0.3 + i / 14))));
+  }
+  return bars;
+}
+function Sparkline({ seed, health, color }: { seed: string; health: number; color: string }) {
+  const bars = useMemo(() => seededBars(seed, health), [seed, health]);
+  return (
+    <div className="pcardSpark" aria-hidden="true">
+      {bars.map((v, i) => (
+        <i key={i} style={{ height: `${v}%`, background: color }} />
+      ))}
+    </div>
+  );
+}
+
 /** GitHub-contributions-style activity heatmap — real counts of this
  * project's nodes grouped by the day they were created, over the last 12
  * weeks. No fixed/fake data: a project with no recent activity renders an
@@ -380,29 +439,46 @@ export default function Projects({ active }: { active: boolean }) {
                 >
                   <Icon name="menu" size={12} />
                 </span>
-                <span className="ic">
-                  <DataIcon value={p.icon} size={16} />
-                </span>
-                <div>
-                  <h3>
-                    {p.name.toUpperCase()}{' '}
-                    <span className="classTag">
-                      <DataIcon value={pc.icon} size={12} /> {pc.label}
+                {/* Redesign checkpoint 4 — restructured card body: header
+                    row (icon/name/class + ring top-right), sparkline row,
+                    footer action row. Was a single flex row with a thin
+                    linear health bar; now matches the concept's card
+                    anatomy (ring + bar-chart rhythm + "OPEN TIMELINE"
+                    pill) instead of just a decorated list row. */}
+                <div className="pcardBody">
+                  <div className="pcardTop">
+                    <span className="ic">
+                      <DataIcon value={p.icon} size={16} />
                     </span>
-                  </h3>
+                    <div className="pcardTitle">
+                      <h3>{p.name.toUpperCase()}</h3>
+                      <span className="classTag">
+                        <DataIcon value={pc.icon} size={12} /> {pc.label}
+                      </span>
+                    </div>
+                    <HealthRing pct={p.health} color={pc.color} />
+                  </div>
                   <div className="mt">
                     {p.isStale ? (
                       <>
                         <Icon name="warning" size={11} glow="amber" /> {p.idleDays} DAYS IDLE — CORE FLAGGED STALE
                       </>
                     ) : (
-                      `${tasks.filter((t) => t.project_id === p.id).length} TASKS · ${p.health}% HEALTH`
+                      `${tasks.filter((t) => t.project_id === p.id).length} TASKS · ACTIVE`
                     )}
                   </div>
+                  <Sparkline seed={p.id} health={p.health} color={pc.color} />
+                  <button
+                    className="pcardTimeline"
+                    style={{ color: pc.color, borderColor: `${pc.color}55` }}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setOpenId(p.id);
+                    }}
+                  >
+                    OPEN TIMELINE →
+                  </button>
                 </div>
-                <span className="hp">
-                  <i style={{ width: p.health + '%' }} />
-                </span>
                 <button className="pcardDel" onClick={(e) => handleDeleteProject(p.id, p.name, e)} title="delete project">
                   <Icon name="trash" size={12} />
                 </button>
@@ -510,7 +586,7 @@ export default function Projects({ active }: { active: boolean }) {
                     onDragStart={() => setDragId(wid)}
                     onDragEnd={() => setDragId(null)}
                   >
-                    <span className="dragHandle">⠿</span> <Icon name={WIDGETS[wid].icon} size={13} glow="cyan" /> {WIDGETS[wid].title}
+                    <span className="dragHandle">⠷</span> <Icon name={WIDGETS[wid].icon} size={13} glow="cyan" /> {WIDGETS[wid].title}
                   </div>
                   <div className="widgetBody">{WIDGETS[wid].render()}</div>
                 </div>
