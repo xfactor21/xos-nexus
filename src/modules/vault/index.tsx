@@ -21,6 +21,18 @@ const KIND_ANGLE: Record<string, number> = {
   preference: 216,
   history: 288,
 };
+/** Redesign checkpoint 8 — memory-kind glyphs. Feedback: the vault's list
+ * read as a wall of identical text blocks with only a small tracked label
+ * distinguishing kinds; a per-kind icon glyph (matched to the same kind
+ * taxonomy the graph view already colors by) gives each card an immediate
+ * visual anchor at a glance, before reading the label. */
+const KIND_ICON: Record<string, import('../../design-system/icons/registry').IconName> = {
+  decision: 'checkCircle',
+  learning: 'study',
+  pattern: 'diagram',
+  preference: 'star',
+  history: 'hourglass',
+};
 
 /** Cockpit redesign — Memory Vault gets an Obsidian-style graph view
  * (real cluster browsing by kind, positioned/sized from real data — no
@@ -121,14 +133,19 @@ export default function Vault({ active }: { active: boolean }) {
           {filtered.map((m) => {
             const band = strengthBand(strengthOf(m));
             return (
-              <div className="mem" key={m.id}>
-                <span className="k">
-                  {m.kind.toUpperCase()} · {m.createdLabel}
-                  <span className={`memStrength memStrength-${band}`}>{band.toUpperCase()}</span>
-                </span>
-                {m.content}
-                <div className="mt">
-                  <Icon name="xai" size={12} glow="cyan" /> RECALLED {m.recalledCount}× THIS WEEK · LINKED TO {m.linkedNodeCount} NODES
+              <div className="mem memTall" key={m.id}>
+                <div className="memGlyph" style={{ color: KIND_HUE[m.kind] }}>
+                  <Icon name={KIND_ICON[m.kind] ?? 'note'} size={20} />
+                </div>
+                <div className="memMain">
+                  <span className="k">
+                    {m.kind.toUpperCase()} · {m.createdLabel}
+                    <span className={`memStrength memStrength-${band}`}>{band.toUpperCase()}</span>
+                  </span>
+                  {m.content}
+                  <div className="mt">
+                    <Icon name="xai" size={12} glow="cyan" /> RECALLED {m.recalledCount}× THIS WEEK · LINKED TO {m.linkedNodeCount} NODES
+                  </div>
                 </div>
               </div>
             );
@@ -175,16 +192,21 @@ export default function Vault({ active }: { active: boolean }) {
             ))}
           </div>
           {selectedMemory && (
-            <div className="mem" style={{ marginTop: 10 }}>
-              <span className="k">
-                {selectedMemory.kind.toUpperCase()} · {selectedMemory.createdLabel}
-                <span className={`memStrength memStrength-${strengthBand(strengthOf(selectedMemory))}`}>
-                  {strengthBand(strengthOf(selectedMemory)).toUpperCase()}
+            <div className="mem memTall" style={{ marginTop: 10 }}>
+              <div className="memGlyph" style={{ color: KIND_HUE[selectedMemory.kind] }}>
+                <Icon name={KIND_ICON[selectedMemory.kind] ?? 'note'} size={20} />
+              </div>
+              <div className="memMain">
+                <span className="k">
+                  {selectedMemory.kind.toUpperCase()} · {selectedMemory.createdLabel}
+                  <span className={`memStrength memStrength-${strengthBand(strengthOf(selectedMemory))}`}>
+                    {strengthBand(strengthOf(selectedMemory)).toUpperCase()}
+                  </span>
                 </span>
-              </span>
-              {selectedMemory.content}
-              <div className="mt">
-                <Icon name="xai" size={12} glow="cyan" /> RECALLED {selectedMemory.recalledCount}× THIS WEEK · LINKED TO {selectedMemory.linkedNodeCount} NODES
+                {selectedMemory.content}
+                <div className="mt">
+                  <Icon name="xai" size={12} glow="cyan" /> RECALLED {selectedMemory.recalledCount}× THIS WEEK · LINKED TO {selectedMemory.linkedNodeCount} NODES
+                </div>
               </div>
             </div>
           )}
