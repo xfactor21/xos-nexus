@@ -81,6 +81,44 @@ const MODE_META: Record<StudioMode, ModeMeta> = {
   modelViewer: { label: '3D Model Viewer', icon: 'hexagon', blurb: 'Preview a 3D model file', ref: 'stretch', category: 'utility' },
 };
 
+/** Redesign checkpoint 9 — Design Studio board grid gets a real ring
+ * readout, reusing the HealthRing/CoherenceRing visual language from
+ * Projects/Observatory. Boards don't carry a "health" metric the way
+ * projects do, and per-mode snapshot data lives under inconsistent
+ * localStorage keys we don't want to reach into just to render the grid —
+ * so rather than fabricate a number, the ring reuses the one real,
+ * consistently-available signal every board already has: recency
+ * (updatedAt), on the same decay-curve intuition as the Memory Vault's
+ * strength badge. Freshly-touched boards read as a full ring; boards that
+ * haven't been opened in a while visibly fade. */
+function freshnessOf(updatedAt: string): number {
+  const days = Math.max(0, (Date.now() - new Date(updatedAt).getTime()) / 86_400_000);
+  const halfLife = 5; // days
+  return Math.pow(0.5, days / halfLife) * 100;
+}
+function BoardRing({ pct, color }: { pct: number; color: string }) {
+  const r = 15;
+  const c = 2 * Math.PI * r;
+  const dash = (Math.max(0, Math.min(100, pct)) / 100) * c;
+  return (
+    <svg width="36" height="36" viewBox="0 0 36 36" className="boardRing" aria-hidden="true">
+      <circle cx="18" cy="18" r={r} fill="none" stroke="rgba(255,255,255,.1)" strokeWidth="3" />
+      <circle
+        cx="18"
+        cy="18"
+        r={r}
+        fill="none"
+        stroke={color}
+        strokeWidth="3"
+        strokeLinecap="round"
+        strokeDasharray={`${dash} ${c - dash}`}
+        transform="rotate(-90 18 18)"
+        style={{ transition: 'stroke-dasharray .4s ease' }}
+      />
+    </svg>
+  );
+}
+
 const PRIMARY_ORDER: StudioMode[] = ['draw', 'wireframe', 'animation', 'vector', 'diagram', 'moodboard', 'presentation', 'iconDesign'];
 const UTILITY_ORDER: StudioMode[] = [
   'imageConverter',
@@ -304,8 +342,11 @@ export default function Studio({ active }: { active: boolean }) {
             <button className="dpBoardDel" onClick={(e) => handleDelete(b.id, e)} title="delete board">
               <Icon name="trash" size={12} />
             </button>
-            <div className="dpBoardIcon">
-              <Icon name={MODE_META[b.mode].icon} size={20} />
+            <div className="dpBoardTop">
+              <div className="dpBoardIcon">
+                <Icon name={MODE_META[b.mode].icon} size={20} />
+              </div>
+              <BoardRing pct={freshnessOf(b.updatedAt)} color={freshnessOf(b.updatedAt) >= 50 ? 'var(--cyan)' : freshnessOf(b.updatedAt) >= 15 ? 'var(--amber)' : 'var(--text-dim)'} />
             </div>
             {renamingId === b.id ? (
               <input
