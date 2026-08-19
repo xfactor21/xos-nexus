@@ -368,6 +368,16 @@ input[type=range]{width:100%;accent-color:#00F5FF}
 .mem .k{font-size:9px;letter-spacing:2px;color:var(--purple);margin-bottom:4px;display:block}
 .mem .mt{font-size:9px;color:var(--text-dim);letter-spacing:1px;margin-top:6px}
 
+/* Redesign checkpoint 8 — Memory Vault taller cards + kind glyphs. Feedback
+   identified the list as a wall of near-identical text blocks; each card is
+   now a two-column row (icon glyph rail + content) with more vertical
+   breathing room, so a kind is legible from its icon+color before reading
+   the label, matching the icon-forward language of the rest of the redesign
+   (HealthRing icons, room-header icons). */
+.memTall{display:flex;gap:12px;padding:14px 14px 14px 12px;min-height:78px;align-items:flex-start}
+.memGlyph{flex-shrink:0;width:34px;height:34px;border-radius:50%;display:grid;place-items:center;background:rgba(255,255,255,.04);border:1px solid currentColor;opacity:.9}
+.memMain{flex:1;min-width:0}
+
 /* Memory Vault uplift: decay/strength badge, "on this day" panel, Obsidian-
    style graph view (cluster browsing by kind). */
 .memStrength{float:right;font-size:8px;letter-spacing:1px;padding:1px 6px;border:1px solid}
