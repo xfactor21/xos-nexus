@@ -233,6 +233,11 @@ export default function Studio({ active }: { active: boolean }) {
   const [newMode, setNewMode] = useState<StudioMode>('draw');
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameVal, setRenameVal] = useState('');
+  // Temporary: 3-way pink/violet accent variant switcher for live compare
+  // (see legacy.css "STUDIO ACCENT VARIANTS"). Cyan stays the app's primary
+  // in all three — this only changes how the accent is layered in. Remove
+  // this state + the chip row once one variant is picked.
+  const [accent, setAccent] = useState<'a' | 'b' | 'c'>('a');
 
   const openBoard = boards.find((b) => b.id === openId) || null;
 
@@ -314,7 +319,7 @@ export default function Studio({ active }: { active: boolean }) {
   }
 
   return (
-    <section className={`room ambient ${active ? 'on' : ''}`} id="r-studio" style={{ maxWidth: 'none', padding: '56px 8px 90px 76px' }}>
+    <section className={`room ambient ${active ? 'on' : ''}`} id="r-studio" data-accent={accent} style={{ maxWidth: 'none', padding: '56px 8px 90px 76px' }}>
       {/* Amendment v0.6 step 3: only the board-grid/mode-picker landing view
           gets the ambient field — the `if (openBoard)` branch above hands
           off entirely to a sub-tool (DrawPaint/Wireframe/Animation/etc.),
@@ -328,6 +333,13 @@ export default function Studio({ active }: { active: boolean }) {
       </h2>
       <div className="rsub" style={{ paddingLeft: 4 }}>
         A BOARD PER PROJECT · PICK A MODE LIKE PICKING A FILE TYPE · EVERYTHING FEEDS THE CORE
+      </div>
+      <div id="accentSwitch">
+        {(['a', 'b', 'c'] as const).map((v) => (
+          <span key={v} className={`chip ${accent === v ? 'on' : ''}`} onClick={() => setAccent(v)}>
+            {v === 'a' ? 'A · HAIRLINE' : v === 'b' ? 'B · CORNER BLEED' : 'C · THREAD'}
+          </span>
+        ))}
       </div>
 
       <div id="dpBoardGrid">
@@ -346,7 +358,19 @@ export default function Studio({ active }: { active: boolean }) {
               <div className="dpBoardIcon">
                 <Icon name={MODE_META[b.mode].icon} size={20} />
               </div>
-              <BoardRing pct={freshnessOf(b.updatedAt)} color={freshnessOf(b.updatedAt) >= 50 ? 'var(--cyan)' : freshnessOf(b.updatedAt) >= 15 ? 'var(--amber)' : 'var(--text-dim)'} />
+              <BoardRing
+                pct={freshnessOf(b.updatedAt)}
+                color={
+                  freshnessOf(b.updatedAt) >= 50
+                    ? accent === 'c'
+                      ? 'var(--purple)' // Variant C: freshest reads pink/violet-adjacent — the accent
+                        // is load-bearing here (real recency), not decoration.
+                      : 'var(--cyan)'
+                    : freshnessOf(b.updatedAt) >= 15
+                      ? 'var(--amber)'
+                      : 'var(--text-dim)'
+                }
+              />
             </div>
             {renamingId === b.id ? (
               <input
