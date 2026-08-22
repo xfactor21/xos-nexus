@@ -572,6 +572,43 @@ input[type=range]{width:100%;accent-color:#00F5FF}
 .dpBoardCard:hover .dpBoardDel{opacity:1}
 .dpBoardDel:hover{color:var(--magenta)}
 
+/* ============================================================
+   STUDIO ACCENT VARIANTS — cyan stays primary everywhere; these
+   three options each add a *subtle* hot-pink/violet accent on top,
+   never replacing cyan. Scoped to #r-studio only via [data-accent],
+   switchable live with the ACCENT chip row for side-by-side compare.
+   Pick one, then I'll delete the other two + the switcher. ---
+   Shared gradient: magenta -> violet -> cyan, used as a thin line/
+   glow accent, not a fill — keeps it "gradient line work", not a
+   repaint. */
+#r-studio{--accent-grad:linear-gradient(90deg,var(--magenta),var(--purple) 55%,var(--cyan))}
+#accentSwitch{display:flex;gap:6px;margin:2px 0 10px 4px}
+#accentSwitch .chip{font-size:8.5px}
+
+/* --- Variant A: "Hairline" — a 2px gradient rule under the room
+   title, and each board card's top edge gets the same hairline on
+   hover (replacing the plain cyan hover glow with a warmer sweep). --- */
+#r-studio[data-accent='a'] .rh{position:relative;padding-bottom:10px}
+#r-studio[data-accent='a'] .rh:after{content:'';position:absolute;left:4px;right:60%;bottom:0;height:2px;background:var(--accent-grad);opacity:.85}
+#r-studio[data-accent='a'] .dpBoardCard{border-top:2px solid transparent;transition:border-color .2s,box-shadow .2s,border-top-color .2s}
+#r-studio[data-accent='a'] .dpBoardCard:hover{border-top-image:var(--accent-grad) 1;border-image:var(--accent-grad) 1;box-shadow:0 0 18px rgba(139,92,246,.16)}
+
+/* --- Variant B: "Corner Bleed" — a soft pink/violet radial glow
+   tucked in each card's top-right corner (behind the freshness
+   ring), only visible on hover/active; cyan hover glow unchanged. --- */
+#r-studio[data-accent='b'] .dpBoardCard{overflow:hidden}
+#r-studio[data-accent='b'] .dpBoardCard:before{content:'';position:absolute;top:-30px;right:-30px;width:70px;height:70px;border-radius:50%;background:radial-gradient(circle,rgba(255,45,120,.35),rgba(139,92,246,.22) 55%,transparent 75%);opacity:0;transition:opacity .25s;pointer-events:none}
+#r-studio[data-accent='b'] .dpBoardCard:hover:before{opacity:1}
+#r-studio[data-accent='b'] .rsub{background:var(--accent-grad);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;opacity:.9}
+
+/* --- Variant C: "Thread" — the freshness ring's top band (already
+   real recency data) reads pink/violet instead of cyan when a board
+   is freshest, so the accent carries meaning instead of being pure
+   decoration; a matching thin gradient thread runs along the New
+   Board tile's dashed edge. --- */
+#r-studio[data-accent='c'] .dpNew{border-image:var(--accent-grad) 1;border-style:dashed}
+#r-studio[data-accent='c'] .dpBoardCard:hover{border-color:var(--purple);box-shadow:0 0 18px rgba(255,45,120,.14),0 0 18px rgba(0,245,255,.1)}
+
 .dpModal{position:fixed;inset:0;z-index:200;background:rgba(5,8,13,.72);backdrop-filter:blur(4px);display:grid;place-items:center;padding:20px}
 .dpModalBody{width:min(560px,100%);max-height:82vh;overflow-y:auto;padding:22px}
 .dpModalBody h3{font-size:11px;letter-spacing:2px;color:var(--cyan-dim);margin-bottom:12px}
