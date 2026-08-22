@@ -134,7 +134,14 @@ export default function Capture({ active }: { active: boolean }) {
         })),
     [nodes],
   );
-  const visibleCaps = useMemo(() => [...caps, ...realCaps], [caps, realCaps]);
+  // De-duped against realCaps by text so a resolved optimistic row (see
+  // commitCap) doesn't sit there permanently once the same node also
+  // lands from the Realtime subscription — the optimistic row is only
+  // needed for the gap before that happens.
+  const visibleCaps = useMemo(() => {
+    const realTexts = new Set(realCaps.map((r) => r.text));
+    return [...caps.filter((c) => c.time === 'SENDING…' || !realTexts.has(c.text)), ...realCaps];
+  }, [caps, realCaps]);
 
   function toggleVoice() {
     setRec((r) => {
@@ -192,13 +199,34 @@ export default function Capture({ active }: { active: boolean }) {
     setPieces(null);
     setRaw('');
     try {
-      await liveClassify(v);
+      const result = await liveClassify(v);
       playSound('capture');
-      // Real node now exists (RLS-scoped, will flow into `nodes` via the
-      // Realtime subscription or the next hydrate) — drop the optimistic
-      // placeholder row so it's replaced by the genuine entry in
-      // `realCaps`, not left duplicated forever.
-      setCaps((c) => c.filter((entry) => entry.time !== 'SENDING…'));
+      // Bug fix: this used to just drop the optimistic row and trust the
+      // Realtime subscription (or "next hydrate") to show the real node —
+      // but the edge function only broadcasts on its own project-channel
+      // (separate from the coreGraph postgres_changes subscription this
+      // room actually reads from), so on any latency the row simply
+      // vanished with nothing replacing it: looked exactly like the
+      // capture did nothing. Now the actual liveClassify() result (real
+      // kind/confidence/reasoning, and whether it got linked to anything)
+      // replaces the placeholder immediately; realCaps still takes over
+      // once the Realtime row lands, same as before.
+      const first = result.nodes?.[0];
+      setCaps((c) =>
+        c.map((entry, i) =>
+          i === 0 && entry.time === 'SENDING…'
+            ? first
+              ? {
+                  ...entry,
+                  meta: first.kind.toUpperCase().replace('_', ' '),
+                  time: 'JUST NOW',
+                  timeIcon: 'check' as IconName,
+                  linked: first.relationships?.length ? `LINKED TO ${first.relationships.length} NODE${first.relationships.length > 1 ? 'S' : ''}` : undefined,
+                }
+              : { ...entry, time: 'JUST NOW', timeIcon: 'check' as IconName }
+            : entry,
+        ),
+      );
     } catch (err) {
       console.error('commitCap: liveClassify failed, writing via offline fallback', err);
       try {

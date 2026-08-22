@@ -590,12 +590,15 @@ input[type='range']:active::-moz-range-thumb {
 }
 
 .xaiChar {
+  /* Sized ~65% of the original 320px box per Captain feedback ("way too
+     big") — XaiCharacter.tsx's scale prop is derived proportionally below
+     so the character keeps filling its container without clipping. */
   position: fixed;
   right: 4px;
   bottom: 4px;
   z-index: 110;
-  width: 320px;
-  height: 320px;
+  width: 210px;
+  height: 210px;
   pointer-events: none;
 }
 .xaiChar canvas {
@@ -605,7 +608,7 @@ input[type='range']:active::-moz-range-thumb {
 .xaiCaption {
   position: absolute;
   right: 8px;
-  bottom: 250px;
+  bottom: 165px;
   max-width: 220px;
   padding: 8px 12px;
   border-radius: 12px;
@@ -635,7 +638,7 @@ input[type='range']:active::-moz-range-thumb {
 .xaiChatWindow {
   position: fixed;
   right: 20px;
-  bottom: 300px;
+  bottom: 210px; /* tuned to the shrunk .xaiChar (was 300px for the 320px box) */
   z-index: 111;
   width: 300px;
   max-height: 380px;
