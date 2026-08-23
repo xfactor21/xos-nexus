@@ -46,6 +46,8 @@ export default function Settings({ active }: { active: boolean }) {
   const setSoundEnabled = useUiStore((s) => s.setSoundEnabled);
   const soundVolume = useUiStore((s) => s.soundVolume);
   const setSoundVolume = useUiStore((s) => s.setSoundVolume);
+  const pinkAccents = useUiStore((s) => s.pinkAccents);
+  const setPinkAccents = useUiStore((s) => s.setPinkAccents);
   const nodes = useCoreGraph((s) => s.nodes);
   const edges = useCoreGraph((s) => s.edges);
   const memories = useCoreGraph((s) => s.memories);
@@ -128,6 +130,19 @@ export default function Settings({ active }: { active: boolean }) {
               {a.label}
             </span>
           ))}
+        </div>
+      </div>
+      <div className="gpanel setrow">
+        <h3>PINK/VIOLET ACCENTS</h3>
+        <div className="d">
+          A subtle hot-pink/violet gradient thread — the header hairline, Design Studio's freshest-board
+          ring and New Board tile — layered on top of the cyan-primary cockpit. Cyan stays primary either way;
+          this only turns the secondary accent on or off app-wide.
+        </div>
+        <div className="optrow" style={{ margin: 0 }}>
+          <span className={`chip ${pinkAccents ? 'on' : ''}`} onClick={() => setPinkAccents(!pinkAccents)}>
+            <Icon name={pinkAccents ? 'checkCircle' : 'circle'} size={12} /> {pinkAccents ? 'ACCENTS ON' : 'ACCENTS OFF'}
+          </span>
         </div>
       </div>
       <div className="gpanel setrow">
