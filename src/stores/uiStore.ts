@@ -44,6 +44,14 @@ interface UiState {
   commandPaletteOpen: boolean;
   soundEnabled: boolean;
   soundVolume: number;
+  /** Cockpit redesign, Captain's design pass: the hot-pink/violet gradient
+   * "hairline + thread" accent (Design Studio pick, combo of variants 1+3 —
+   * see legacy.css's GLOBAL ACCENT block) rolled out app-wide as a subtle
+   * touch on top of the cyan-primary palette. Cyan stays primary regardless
+   * of this setting — this only toggles the secondary gradient accent, per
+   * "option to turn accents off in settings." Applied via a class on
+   * <html> (see applyPinkAccents below) so plain CSS can gate on it. */
+  pinkAccents: boolean;
   go: (r: RoomId) => void;
   toggleSidebar: () => void;
   closeSidebar: () => void;
@@ -57,6 +65,7 @@ interface UiState {
   setCommandPaletteOpen: (v: boolean) => void;
   setSoundEnabled: (v: boolean) => void;
   setSoundVolume: (v: number) => void;
+  setPinkAccents: (v: boolean) => void;
 }
 
 function applyAccent(a: Accent) {
@@ -68,6 +77,9 @@ function applyReduceMotion(v: boolean) {
 }
 function applyUiScale(v: number) {
   document.documentElement.style.setProperty('--ui-scale', String(v));
+}
+function applyPinkAccents(v: boolean) {
+  document.documentElement.classList.toggle('no-pink-accents', !v);
 }
 
 /** Bug fix (flagged by the Captain): Settings' xAI Autonomy, Shell Target,
@@ -104,6 +116,7 @@ export const useUiStore = create<UiState>()(
       commandPaletteOpen: false,
       soundEnabled: true,
       soundVolume: 0.6,
+      pinkAccents: true,
       // Amendment v0.6 step 2: the sidebar is now a persistent "neural spine"
       // (always at least visible as a collapsed dot-rail, never fully hidden —
       // see Shell.tsx), so selecting a room no longer force-collapses it the
@@ -136,6 +149,10 @@ export const useUiStore = create<UiState>()(
       setCommandPaletteOpen: (v) => set({ commandPaletteOpen: v }),
       setSoundEnabled: (v) => set({ soundEnabled: v }),
       setSoundVolume: (v) => set({ soundVolume: v }),
+      setPinkAccents: (v) => {
+        applyPinkAccents(v);
+        set({ pinkAccents: v });
+      },
     }),
     {
       name: 'xos-ui-settings',
@@ -148,6 +165,7 @@ export const useUiStore = create<UiState>()(
         uiScale: s.uiScale,
         soundEnabled: s.soundEnabled,
         soundVolume: s.soundVolume,
+        pinkAccents: s.pinkAccents,
       }),
       // The --glow/--accent/--ui-scale CSS custom properties and the
       // force-reduce-motion class all live outside React (read by canvas
@@ -161,6 +179,7 @@ export const useUiStore = create<UiState>()(
         applyAccent(state.accent);
         applyReduceMotion(state.reduceMotion);
         applyUiScale(state.uiScale);
+        applyPinkAccents(state.pinkAccents);
         syncTrayTooltip(state.autonomy);
       },
     }
