@@ -32,6 +32,12 @@ interface AuthState {
    * from Supabase, so `user` here stays in sync with what's actually
    * persisted rather than being set optimistically. */
   markOnboardingComplete: () => Promise<void>;
+  /** Mirrors markOnboardingComplete's pattern exactly, for the separate
+   * short feature-tour walkthrough (FeatureTour.tsx) — its own flag so it
+   * can be shown once to both brand-new Captains (after the cinematic) and
+   * existing Captains who already completed onboarding before this tour
+   * existed (on their next load). */
+  markFeatureTourComplete: () => Promise<void>;
 }
 
 let initialized = false;
@@ -97,6 +103,16 @@ export const useAuthStore = create<AuthState>((set) => ({
       // next login instead of the abbreviated one. Never block entry to
       // the app over this.
       console.error('markOnboardingComplete failed', error);
+    }
+  },
+
+  markFeatureTourComplete: async () => {
+    const { data, error } = await supabase.auth.updateUser({ data: { has_seen_feature_tour: true } });
+    if (!error && data.user) {
+      set({ user: data.user });
+    } else if (error) {
+      // Non-fatal: worst case the Captain sees the tour again next login.
+      console.error('markFeatureTourComplete failed', error);
     }
   },
 }));
