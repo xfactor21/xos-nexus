@@ -37,6 +37,14 @@ export interface ClassifiedNode {
 export interface ClassifyResult {
   nodes: ClassifiedNode[];
   liveAI?: boolean;
+  /** Bug fix: xAI chat (XaiChatWindow.tsx) used to show the *filing*
+   * reasoning as its reply — e.g. asking "what's 2+3" got back "The
+   * Captain is asking a direct arithmetic question, which is best handled
+   * as an interactive conversation node," never an actual answer. `reply`
+   * is a genuine, direct conversational response to what the Captain said,
+   * generated in the same AI call alongside (not instead of) the
+   * structured filing — the filing keeps happening exactly as before. */
+  reply?: string;
 }
 
 /** Step 7 Room B (Knowledge Matrix): a saved web page's kind/title/

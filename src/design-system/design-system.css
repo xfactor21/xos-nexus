@@ -690,6 +690,13 @@ input[type='range']:active::-moz-range-thumb {
   border-radius: 10px;
   max-width: 88%;
 }
+.xaiChatFiledNote {
+  margin-top: 4px;
+  font-size: 9px;
+  letter-spacing: 0.04em;
+  opacity: 0.55;
+  text-transform: uppercase;
+}
 .xaiChatMsg-you {
   align-self: flex-end;
   background: rgba(122, 92, 255, 0.18);

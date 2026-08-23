@@ -19,6 +19,10 @@ interface ChatMsg {
   from: 'you' | 'xai';
   text: string;
   pending?: boolean;
+  /** Small "Filed as X" note shown under a real xAI reply — the filing
+   * still happens on every message (unchanged), just no longer stands in
+   * for the reply itself. */
+  filedNote?: string;
 }
 
 export default function XaiChatWindow({ open, onClose }: { open: boolean; onClose: () => void }) {
@@ -46,11 +50,19 @@ export default function XaiChatWindow({ open, onClose }: { open: boolean; onClos
     setBusy(true);
     try {
       const result = await liveClassify(text);
+      // Bug fix: this used to show the *filing* reasoning as the reply
+      // ("Filed as CONVERSATION (95% confidence). The Captain is asking a
+      // direct arithmetic question...") — never an actual answer to what
+      // was said. `result.reply` (see copilotClient.ts) is now a genuine
+      // conversational response; the filing note is appended underneath,
+      // small, so the Captain can still see what got logged without it
+      // being the entire reply.
       const first = result.nodes?.[0];
-      const reply = first
-        ? `Filed as ${first.kind.toUpperCase().replace('_', ' ')}${first.project_slug ? ` → ${first.project_slug}` : ''} (${first.confidence}% confidence). ${first.reasoning}`
-        : "Got it — logged, though I couldn't pin down a clear category for that one.";
-      setMsgs((m) => [...m, { from: 'xai', text: reply }]);
+      const filedNote = first
+        ? `Filed as ${first.kind.toUpperCase().replace('_', ' ')}${first.project_slug ? ` → ${first.project_slug}` : ''}.`
+        : '';
+      const reply = result.reply || (first ? `Got it — logged as ${first.kind}. ${first.reasoning}` : "Got it — logged, though I couldn't pin down a clear category for that one.");
+      setMsgs((m) => [...m, { from: 'xai', text: reply, filedNote: filedNote || undefined }]);
     } catch (err) {
       console.error('XaiChatWindow: liveClassify failed', err);
       setMsgs((m) => [...m, { from: 'xai', text: "Couldn't reach the Core just now — that didn't get filed. Try again in a moment?" }]);
@@ -75,6 +87,7 @@ export default function XaiChatWindow({ open, onClose }: { open: boolean; onClos
         {msgs.map((m, i) => (
           <div key={i} className={`xaiChatMsg xaiChatMsg-${m.from}`}>
             {m.text}
+            {m.filedNote && <div className="xaiChatFiledNote">{m.filedNote}</div>}
           </div>
         ))}
         {busy && <div className="xaiChatMsg xaiChatMsg-xai xaiChatMsg-pending">thinking…</div>}
