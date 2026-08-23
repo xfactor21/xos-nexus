@@ -711,6 +711,69 @@ input[type='range']:active::-moz-range-thumb {
   opacity: 0.6;
   font-style: italic;
 }
+/* Confirm-before-filing prompt (Captain feedback: xAI should ask before
+   logging, not file silently — a Yes/No pair attached under the reply that
+   proposed a node, with a countdown bar; no reply = timeout = No, nothing
+   ever gets written). */
+.xaiChatConfirm {
+  align-self: flex-start;
+  max-width: 88%;
+  margin-top: -2px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  background: rgba(255, 0, 168, 0.07);
+  border: 1px solid rgba(255, 0, 168, 0.25);
+  border-radius: 10px;
+  padding: 8px 10px;
+  font-size: 11px;
+}
+.xaiChatConfirmRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.xaiChatConfirmBtns {
+  display: flex;
+  gap: 6px;
+}
+.xaiChatConfirmBtns button {
+  font-size: 10.5px;
+  padding: 4px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  background: transparent;
+  color: inherit;
+}
+.xaiChatConfirmYes {
+  border: 1px solid rgba(0, 245, 255, 0.4);
+  color: var(--cy);
+}
+.xaiChatConfirmYes:hover {
+  background: rgba(0, 245, 255, 0.15);
+}
+.xaiChatConfirmNo {
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  opacity: 0.75;
+}
+.xaiChatConfirmNo:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+.xaiChatConfirmBar {
+  height: 2px;
+  border-radius: 2px;
+  background: rgba(255, 0, 168, 0.6);
+  transform-origin: left;
+  animation: xaiChatConfirmShrink linear forwards;
+}
+@keyframes xaiChatConfirmShrink {
+  from { transform: scaleX(1); }
+  to { transform: scaleX(0); }
+}
+.xaiChatConfirmDone {
+  opacity: 0.55;
+  font-style: italic;
+}
 .xaiChatInputRow {
   display: flex;
   gap: 8px;
