@@ -5,6 +5,7 @@ import { IMPLEMENTED_MODES } from './types';
 import Icon from '../../design-system/icons/Icon';
 import type { IconName } from '../../design-system/icons/registry';
 import AmbientField from '../../design-system/background/AmbientField';
+import { useUiStore } from '../../stores/uiStore';
 import { loadBoards, createBoard, touchBoard, renameBoard, deleteBoard } from './boards';
 import DrawPaint from './draw/DrawPaint';
 import Wireframe from './Wireframe';
@@ -233,11 +234,12 @@ export default function Studio({ active }: { active: boolean }) {
   const [newMode, setNewMode] = useState<StudioMode>('draw');
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameVal, setRenameVal] = useState('');
-  // Temporary: 3-way pink/violet accent variant switcher for live compare
-  // (see legacy.css "STUDIO ACCENT VARIANTS"). Cyan stays the app's primary
-  // in all three — this only changes how the accent is layered in. Remove
-  // this state + the chip row once one variant is picked.
-  const [accent, setAccent] = useState<'a' | 'b' | 'c'>('a');
+  // Design pass resolved (Captain's pick: "combo of 1 and 3" — the header
+  // hairline from variant A plus the freshness-ring/New-Board thread from
+  // variant C; see legacy.css's GLOBAL ACCENT block). The old 3-way live
+  // switcher is gone — this now just reads the persisted Settings toggle
+  // ("option to turn accents off in settings").
+  const pinkAccents = useUiStore((s) => s.pinkAccents);
 
   const openBoard = boards.find((b) => b.id === openId) || null;
 
@@ -319,7 +321,7 @@ export default function Studio({ active }: { active: boolean }) {
   }
 
   return (
-    <section className={`room ambient ${active ? 'on' : ''}`} id="r-studio" data-accent={accent} style={{ maxWidth: 'none', padding: '56px 8px 90px 76px' }}>
+    <section className={`room ambient ${active ? 'on' : ''}`} id="r-studio" style={{ maxWidth: 'none', padding: '56px 8px 90px 76px' }}>
       {/* Amendment v0.6 step 3: only the board-grid/mode-picker landing view
           gets the ambient field — the `if (openBoard)` branch above hands
           off entirely to a sub-tool (DrawPaint/Wireframe/Animation/etc.),
@@ -334,14 +336,6 @@ export default function Studio({ active }: { active: boolean }) {
       <div className="rsub" style={{ paddingLeft: 4 }}>
         A BOARD PER PROJECT · PICK A MODE LIKE PICKING A FILE TYPE · EVERYTHING FEEDS THE CORE
       </div>
-      <div id="accentSwitch">
-        {(['a', 'b', 'c'] as const).map((v) => (
-          <span key={v} className={`chip ${accent === v ? 'on' : ''}`} onClick={() => setAccent(v)}>
-            {v === 'a' ? 'A · HAIRLINE' : v === 'b' ? 'B · CORNER BLEED' : 'C · THREAD'}
-          </span>
-        ))}
-      </div>
-
       <div id="dpBoardGrid">
         <div className="dpBoardCard dpNew" onClick={() => setCreating(true)}>
           <div className="dpNewPlus">
@@ -362,9 +356,9 @@ export default function Studio({ active }: { active: boolean }) {
                 pct={freshnessOf(b.updatedAt)}
                 color={
                   freshnessOf(b.updatedAt) >= 50
-                    ? accent === 'c'
-                      ? 'var(--purple)' // Variant C: freshest reads pink/violet-adjacent — the accent
-                        // is load-bearing here (real recency), not decoration.
+                    ? pinkAccents
+                      ? 'var(--purple)' // Freshest reads pink/violet-adjacent when accents are on — the
+                        // accent is load-bearing here (real recency), not decoration.
                       : 'var(--cyan)'
                     : freshnessOf(b.updatedAt) >= 15
                       ? 'var(--amber)'
