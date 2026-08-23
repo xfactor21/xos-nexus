@@ -113,6 +113,48 @@ export async function saveKnowledgeSnapshot(snapshot: PageSnapshot): Promise<Sna
   }
 }
 
+/** Part C — real AI-learning feedback. When a Captain edits tags or adds an
+ * association via the Neural Core details panel (coreGraph.updateNodeTags /
+ * createEdge), that's a genuine human correction of what the graph should
+ * look like — this pulls a small, recent sample of exactly that signal
+ * (edges a human created, and nodes a human tagged) and sends it to
+ * classify-capture as extra context lines so the model's prompt genuinely
+ * reflects the Captain's own corrections, not just the stock recent-nodes/
+ * memories context it already had. Best-effort: any failure here degrades
+ * to "no extra context" rather than blocking capture. */
+async function fetchUserContext(ownerId: string): Promise<string[]> {
+  try {
+    const [edgesRes, nodesRes] = await Promise.all([
+      supabase
+        .from('edges')
+        .select('from_node, to_node, relation')
+        .eq('owner_id', ownerId)
+        .eq('created_by', 'user')
+        .order('created_at', { ascending: false })
+        .limit(15),
+      supabase
+        .from('nodes')
+        .select('title, metadata')
+        .eq('owner_id', ownerId)
+        .not('metadata->tags', 'is', null)
+        .order('created_at', { ascending: false })
+        .limit(15),
+    ]);
+    const lines: string[] = [];
+    (edgesRes.data ?? []).forEach((e) => {
+      lines.push(`Captain manually linked two nodes as "${e.relation}"`);
+    });
+    (nodesRes.data ?? []).forEach((n) => {
+      const tags = ((n.metadata as Record<string, unknown> | null)?.tags as string[] | undefined) ?? [];
+      if (tags.length) lines.push(`Captain tagged "${n.title}" with: ${tags.join(', ')}`);
+    });
+    return lines;
+  } catch (err) {
+    console.error('fetchUserContext failed (non-fatal)', err);
+    return [];
+  }
+}
+
 /**
  * `autoCommit` plumbs through to the `classify-capture` Edge Function
  * (v15+): omitted/true (default) keeps every existing caller's behavior —
@@ -131,8 +173,9 @@ export async function liveClassify(
   try {
     const ownerId = ownerIdOverride ?? (await currentOwnerId());
     if (!ownerId) throw new Error('liveClassify: no signed-in Captain — sign in before capturing.');
+    const userContext = await fetchUserContext(ownerId);
     const { data, error } = await supabase.functions.invoke('classify-capture', {
-      body: { text, owner_id: ownerId, autoCommit },
+      body: { text, owner_id: ownerId, autoCommit, userContext },
     });
     if (error) throw error;
     xaiSuccess();
