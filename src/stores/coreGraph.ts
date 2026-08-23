@@ -106,6 +106,17 @@ interface CoreGraphState {
    * project_id lives on the `nodes` table itself. */
   assignNodeToProject: (nodeId: string, projectId: string) => Promise<void>;
 
+  /** Neural Core drag/details panel (part B): rename a node — same
+   * optimistic+rollback pattern as everything else in this store. */
+  updateNodeTitle: (id: string, title: string) => Promise<void>;
+  /** Tags live in nodes.metadata.tags (jsonb), shallow-merged same as
+   * updateBug's severity/assignee patch. */
+  updateNodeTags: (id: string, tags: string[]) => Promise<void>;
+  /** Neural Core association editing: create/delete an edge row directly
+   * (relation defaults to 'associated' when the caller doesn't care). */
+  createEdge: (fromNode: string, toNode: string, relation?: EdgeRecord['relation']) => Promise<void>;
+  deleteEdge: (edgeId: string) => Promise<void>;
+
   /** Generic delete for any `nodes`-backed row — used by Bug Tracker and
    * Knowledge Matrix (both just filtered views over `nodes`). Optimistic
    * local removal (the Realtime DELETE handler in `subscribe` above would
@@ -337,6 +348,59 @@ export const useCoreGraph = create<CoreGraphState>((set, get) => ({
     }
     const proj = get().projects.find((p) => p.id === projectId);
     pushToast(`Assigned "${n.title}" to ${proj?.name ?? 'project'}`, 'success');
+  },
+
+  updateNodeTitle: async (id, title) => {
+    const n = get().nodes.find((x) => x.id === id);
+    if (!n) return;
+    set((s) => ({ nodes: upsert(s.nodes, { ...n, title }) })); // optimistic
+    const { error } = await supabase.from('nodes').update({ title }).eq('id', id);
+    if (error) {
+      console.error('updateNodeTitle failed', error);
+      set((s) => ({ nodes: upsert(s.nodes, n) })); // rollback
+      pushToast('Could not rename — try again', 'warn');
+    }
+  },
+
+  updateNodeTags: async (id, tags) => {
+    const n = get().nodes.find((x) => x.id === id);
+    if (!n) return;
+    const meta = { ...((n.metadata ?? {}) as Record<string, unknown>), tags };
+    set((s) => ({ nodes: upsert(s.nodes, { ...n, metadata: meta }) })); // optimistic
+    const { error } = await supabase.from('nodes').update({ metadata: meta }).eq('id', id);
+    if (error) {
+      console.error('updateNodeTags failed', error);
+      set((s) => ({ nodes: upsert(s.nodes, n) })); // rollback
+      pushToast('Could not update tags — try again', 'warn');
+    }
+  },
+
+  createEdge: async (fromNode, toNode, relation = 'relates_to') => {
+    const ownerId = get().ownerId;
+    if (!ownerId || fromNode === toNode) return;
+    const { data, error } = await supabase
+      .from('edges')
+      .insert({ owner_id: ownerId, from_node: fromNode, to_node: toNode, relation, created_by: 'user' })
+      .select()
+      .single();
+    if (error) {
+      console.error('createEdge failed', error);
+      pushToast('Could not create association — try again', 'warn');
+      return;
+    }
+    if (data) set((s) => ({ edges: upsert(s.edges, data as EdgeRecord) })); // realtime would also catch this, but no need to wait
+  },
+
+  deleteEdge: async (edgeId) => {
+    const e = get().edges.find((x) => x.id === edgeId);
+    if (!e) return;
+    set((s) => ({ edges: remove(s.edges, edgeId) })); // optimistic
+    const { error } = await supabase.from('edges').delete().eq('id', edgeId);
+    if (error) {
+      console.error('deleteEdge failed', error);
+      set((s) => ({ edges: upsert(s.edges, e) })); // rollback
+      pushToast('Could not remove association — try again', 'warn');
+    }
   },
 
   deleteNode: async (id) => {
