@@ -894,3 +894,53 @@ html:not(.no-pink-accents) .knowledgeCard:hover:before{opacity:.75}
 .animTrackRow{position:relative;height:22px;border-bottom:1px solid rgba(0,245,255,.06);cursor:pointer}
 .animKeyDot{position:absolute;top:5px;width:11px;height:11px;transform:translateX(-50%) rotate(45deg);background:var(--purple);border:1px solid rgba(5,8,13,.6);cursor:pointer}
 .animKeyDot.sel{background:var(--cyan)}
+
+/* ---- Neural Core drag interactivity + details panel (Part A/B) ---- */
+.cnode{touch-action:none}
+.cnode.dragging{filter:brightness(1.9);z-index:20;cursor:grabbing}
+.cnode.grouped .bub{box-shadow:0 0 0 3px rgba(255,184,0,.35),0 0 18px rgba(255,184,0,.35)!important}
+
+#corePanelOverlay{position:fixed;inset:0;background:rgba(2,4,8,.55);backdrop-filter:blur(3px);z-index:90;display:flex;justify-content:flex-end}
+#corePanel{width:min(360px,92vw);height:100%;background:var(--glass);backdrop-filter:blur(22px);border-left:1px solid rgba(0,245,255,.4);box-shadow:-20px 0 60px rgba(0,0,0,.5);display:flex;flex-direction:column;overflow-y:auto;padding:18px}
+#corePanelHead{display:flex;align-items:center;gap:8px;margin-bottom:14px}
+#corePanelHead h3{font-size:13px;letter-spacing:1.5px;flex:1;color:var(--cyan)}
+#corePanelName{flex:1;background:transparent;border:1px solid var(--edge);padding:6px 8px;font-size:13px;letter-spacing:1px;color:var(--text)}
+#corePanelClose{color:var(--text-dim);cursor:pointer;padding:4px}
+#corePanelClose:hover{color:var(--magenta)}
+.corePanelSection{margin-bottom:16px}
+.corePanelLabel{font-size:8.5px;letter-spacing:1.5px;color:var(--text-dim);margin-bottom:8px}
+.corePanelEmpty{font-size:11px;color:var(--text-dim);line-height:1.5}
+.corePanelChips{display:flex;flex-wrap:wrap;gap:5px;align-items:center}
+.corePanelChip{display:inline-flex;align-items:center;gap:4px;font-size:9.5px;letter-spacing:.5px;padding:3px 7px;background:rgba(0,245,255,.08);border:1px solid rgba(0,245,255,.25);color:var(--cyan);border-radius:2px}
+.corePanelChipX{cursor:pointer;color:var(--text-dim);margin-left:2px}
+.corePanelChipX:hover{color:var(--magenta)}
+.corePanelTagInput{background:transparent;border:1px dashed var(--edge);font-size:9.5px;padding:3px 6px;width:64px;color:var(--text)}
+.corePanelNodeList{display:flex;flex-direction:column;gap:10px}
+.corePanelNodeRow{border:1px solid var(--edge);padding:9px;background:rgba(255,255,255,.02)}
+.corePanelNodeTitle{width:100%;background:transparent;border:none;border-bottom:1px solid transparent;font-size:12px;color:var(--text);margin-bottom:6px;padding:2px 0}
+.corePanelNodeTitle:focus{border-bottom-color:var(--cyan)}
+.corePanelAssoc{margin-top:7px;display:flex;flex-direction:column;gap:4px}
+.corePanelAssocRow{font-size:9.5px;color:var(--purple);display:flex;align-items:center;gap:4px}
+.corePanelAddRow{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.corePanelAddRow select{background:rgba(10,14,20,.7);border:1px solid var(--edge);color:var(--text);font-size:10px;padding:5px;max-width:120px}
+.corePanelAddRow button{color:var(--cyan);border:1px solid rgba(0,245,255,.3);padding:5px 7px;cursor:pointer}
+.corePanelAddRow button:disabled{opacity:.35;cursor:not-allowed}
+.corePanelFoot{margin-top:auto;padding-top:12px}
+#corePanelGo{width:100%;display:flex;align-items:center;justify-content:center;gap:6px;padding:10px;background:rgba(0,245,255,.08);border:1px solid rgba(0,245,255,.4);color:var(--cyan);letter-spacing:1.5px;font-size:11px;cursor:pointer}
+#corePanelGo:hover{background:rgba(0,245,255,.16)}
+
+/* ---- Feature Tour (Part D) ---- */
+#tourOverlay{position:fixed;inset:0;background:rgba(2,4,8,.75);backdrop-filter:blur(6px);z-index:200;display:flex;align-items:center;justify-content:center}
+#tourCard{width:min(420px,92vw);background:var(--glass);backdrop-filter:blur(22px);border:1px solid rgba(0,245,255,.4);box-shadow:0 0 60px rgba(0,245,255,.15);padding:30px 26px 22px;text-align:center;position:relative}
+#tourSkip{position:absolute;top:12px;right:14px;font-size:8.5px;letter-spacing:1.5px;color:var(--text-dim);cursor:pointer}
+#tourSkip:hover{color:var(--magenta)}
+#tourIcon{display:flex;justify-content:center;margin-bottom:14px}
+#tourTitle{font-size:15px;letter-spacing:1px;color:var(--cyan);margin-bottom:10px}
+#tourBody{font-size:12px;line-height:1.6;color:var(--text-dim);margin-bottom:20px}
+#tourDots{display:flex;justify-content:center;gap:6px;margin-bottom:18px}
+.tourDot{width:6px;height:6px;border-radius:50%;background:var(--edge);cursor:pointer}
+.tourDot.on{background:var(--cyan);box-shadow:0 0 6px var(--cyan)}
+#tourNav{display:flex;justify-content:space-between;align-items:center}
+#tourNav button{display:flex;align-items:center;gap:5px;font-size:10px;letter-spacing:1px;padding:8px 14px;border:1px solid var(--edge);color:var(--text);cursor:pointer}
+#tourBack:disabled{opacity:.3;cursor:not-allowed}
+#tourNext{border-color:rgba(0,245,255,.4)!important;color:var(--cyan)!important}
