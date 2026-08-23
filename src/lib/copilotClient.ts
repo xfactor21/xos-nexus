@@ -45,6 +45,10 @@ export interface ClassifyResult {
    * generated in the same AI call alongside (not instead of) the
    * structured filing — the filing keeps happening exactly as before. */
   reply?: string;
+  /** false when this call used `autoCommit: false` and the returned
+   * `nodes` are unpersisted proposals (no `id` field) — the chat surface
+   * uses this to decide whether to show a confirm/decline prompt. */
+  committed?: boolean;
 }
 
 /** Step 7 Room B (Knowledge Matrix): a saved web page's kind/title/
@@ -109,17 +113,66 @@ export async function saveKnowledgeSnapshot(snapshot: PageSnapshot): Promise<Sna
   }
 }
 
-export async function liveClassify(text: string, ownerIdOverride: string | null = null): Promise<ClassifyResult> {
+/**
+ * `autoCommit` plumbs through to the `classify-capture` Edge Function
+ * (v15+): omitted/true (default) keeps every existing caller's behavior —
+ * Neural Capture, Knowledge Matrix, etc. — writing nodes immediately, same
+ * as before this param existed. The xAI chat surface passes `false` so
+ * xAI answers first and proposes filing rather than filing silently; see
+ * `commitClassifiedNodes()` below for the actual write, and
+ * XaiChatWindow.tsx for the confirm/decline UI built on top of this.
+ */
+export async function liveClassify(
+  text: string,
+  ownerIdOverride: string | null = null,
+  autoCommit: boolean = true
+): Promise<ClassifyResult> {
   xaiThinking();
   try {
     const ownerId = ownerIdOverride ?? (await currentOwnerId());
     if (!ownerId) throw new Error('liveClassify: no signed-in Captain — sign in before capturing.');
     const { data, error } = await supabase.functions.invoke('classify-capture', {
-      body: { text, owner_id: ownerId },
+      body: { text, owner_id: ownerId, autoCommit },
     });
     if (error) throw error;
     xaiSuccess();
     return data as ClassifyResult;
+  } catch (err) {
+    xaiError();
+    throw err;
+  }
+}
+
+/** Result of the deferred `commitNodes` path — actually writes nodes that
+ * a prior `liveClassify(text, owner, false)` call only proposed. Called
+ * when the Captain taps "Yes" on the chat confirm prompt. */
+export interface CommitResult {
+  nodes: (ClassifiedNode & { id: string })[];
+  committed: boolean;
+}
+
+/**
+ * Item — "would you like me to log that? (no reply times out as a no)":
+ * this is the "yes" path. Re-sends the exact proposed node objects xAI
+ * returned from a prior `autoCommit:false` call; the Edge Function
+ * re-validates relationship ids against fresh context and actually writes
+ * them this time. If the Captain never answers (or says no), this is
+ * simply never called — nothing was ever saved, by construction.
+ */
+export async function commitClassifiedNodes(
+  nodes: ClassifiedNode[],
+  ownerIdOverride: string | null = null
+): Promise<CommitResult> {
+  xaiThinking();
+  try {
+    const ownerId = ownerIdOverride ?? (await currentOwnerId());
+    if (!ownerId) throw new Error('commitClassifiedNodes: no signed-in Captain — sign in before capturing.');
+    const { data, error } = await supabase.functions.invoke('classify-capture', {
+      body: { owner_id: ownerId, commitNodes: nodes },
+    });
+    if (error) throw error;
+    xaiSuccess();
+    return data as CommitResult;
   } catch (err) {
     xaiError();
     throw err;
