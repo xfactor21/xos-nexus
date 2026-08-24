@@ -3,6 +3,7 @@ import { useCoreGraph } from '../../stores/coreGraph';
 import type { MemoryRecord } from '../../core/types';
 import Icon from '../../design-system/icons/Icon';
 import AmbientField from '../../design-system/background/AmbientField';
+import ShipAmbience from '../../design-system/background/ShipAmbience';
 
 type Kind = 'all' | 'decision' | 'learning' | 'pattern';
 type ViewMode = 'list' | 'graph';
@@ -21,11 +22,6 @@ const KIND_ANGLE: Record<string, number> = {
   preference: 216,
   history: 288,
 };
-/** Redesign checkpoint 8 — memory-kind glyphs. Feedback: the vault's list
- * read as a wall of identical text blocks with only a small tracked label
- * distinguishing kinds; a per-kind icon glyph (matched to the same kind
- * taxonomy the graph view already colors by) gives each card an immediate
- * visual anchor at a glance, before reading the label. */
 const KIND_ICON: Record<string, import('../../design-system/icons/registry').IconName> = {
   decision: 'checkCircle',
   learning: 'study',
@@ -34,17 +30,9 @@ const KIND_ICON: Record<string, import('../../design-system/icons/registry').Ico
   history: 'hourglass',
 };
 
-/** Cockpit redesign — Memory Vault gets an Obsidian-style graph view
- * (real cluster browsing by kind, positioned/sized from real data — no
- * canned layout), strength/decay indicators computed off actual age +
- * linkage (not a fabricated metric), and an "on this day" panel that scans
- * real created_at values for same-month/day memories from prior years. */
 function ageDays(iso: string): number {
   return Math.max(0, (Date.now() - new Date(iso).getTime()) / 86_400_000);
 }
-/** Decay curve: half-life ~40 days, boosted by how connected the memory is
- * to the rest of the graph (well-linked memories fade slower — they keep
- * getting reinforced by association, same intuition as spaced repetition). */
 function strengthOf(m: MemoryRecord): number {
   const halfLife = 40 * (1 + m.linkedNodeCount * 0.35 + m.recalledCount * 0.5);
   return Math.pow(0.5, ageDays(m.created_at) / halfLife);
@@ -64,9 +52,6 @@ export default function Vault({ active }: { active: boolean }) {
 
   const filtered = memories.filter((m) => (kind === 'all' || m.kind === kind) && (!q || m.content.toLowerCase().includes(q.toLowerCase())));
 
-  // "On this day" — real scan of created_at for same month+day, any prior
-  // year. No fabricated entries; renders nothing if history doesn't reach
-  // back far enough yet.
   const onThisDay = useMemo(() => {
     const today = new Date();
     return memories.filter((m) => {
@@ -75,15 +60,12 @@ export default function Vault({ active }: { active: boolean }) {
     });
   }, [memories]);
 
-  // Graph layout — deterministic per-id hash so re-renders don't jitter
-  // node positions; radius shrinks toward the cluster center as a memory's
-  // decay strength rises (stronger = pulled toward the "living" core).
   function layout(m: MemoryRecord, idxInKind: number, totalInKind: number) {
     const baseAngle = (KIND_ANGLE[m.kind] ?? 0) * (Math.PI / 180);
     const spread = (Math.PI / 180) * 50;
     const angle = baseAngle + (totalInKind > 1 ? (idxInKind / (totalInKind - 1) - 0.5) * spread : 0);
     const s = strengthOf(m);
-    const r = 34 + (1 - s) * 26; // % of container radius
+    const r = 34 + (1 - s) * 26;
     return { x: 50 + Math.cos(angle) * r, y: 50 + Math.sin(angle) * r, s };
   }
   const byKind = useMemo(() => {
@@ -96,6 +78,7 @@ export default function Vault({ active }: { active: boolean }) {
   return (
     <section className={`room ambient ${active ? 'on' : ''}`} id="r-vault">
       <AmbientField mood="purple" density={24} active={active} parallax />
+      <ShipAmbience kind="terminal" corner="tl" active={active} />
       <div className="roomInner">
       <h2 className="rh">
         <Icon name="memoryVault" size={16} glow="cyan" /> MEMORY VAULT
