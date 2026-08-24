@@ -1,4 +1,4 @@
-use tauri::{Manager, Url};
+use tauri::{Emitter, Manager, Url};
 
 #[cfg(desktop)]
 use tauri::{
@@ -6,6 +6,26 @@ use tauri::{
   tray::TrayIconBuilder,
   LogicalPosition, LogicalSize, Webview, WebviewBuilder, WebviewUrl, WebviewWindowBuilder, WindowEvent, Wry,
 };
+
+// Terminal room "SHELL" runtime + "RUN DEV SERVER" (Part 2): a genuine OS
+// child process, not a simulated/allowlisted terminal — see the commands
+// below (shell_run_sync / shell_spawn_bg / shell_kill_bg). Desktop-only for
+// the same reason the browser-view is: browsers (and, per Tauri's own
+// mobile story, iOS/Android app sandboxes) have no OS process-spawning
+// model to hook into — this is a hard platform limit, not a missing
+// feature. std::process::Child (not the shell plugin) so arbitrary
+// developer commands ("npm install", "npm run dev", "cargo build", ...)
+// aren't constrained by the shell plugin's static per-command allowlist
+// scope, which real dependency-install/dev-server workflows would blow
+// through immediately.
+#[cfg(desktop)]
+use std::collections::HashMap;
+#[cfg(desktop)]
+use std::io::{BufRead, BufReader};
+#[cfg(desktop)]
+use std::process::{Child, Stdio};
+#[cfg(desktop)]
+use std::sync::Mutex;
 
 // --- Desktop-only surfaces (system tray, poppable Quick Capture widget,
 // native child-webview Browser room) -----------------------------------
@@ -123,6 +143,27 @@ const BROWSER_VIEW_MOBILE_ERR: &str =
 /// ResizeObserver), or navigates + repositions the existing one — the room
 /// stays mounted across navigation (see RoomOutlet.tsx), so this is
 /// idempotent rather than always constructing a fresh webview.
+/// Real Chrome-like back/forward (bug fix): the frontend's history stack
+/// (Browser room, index.tsx) only ever knew about navigations IT initiated
+/// (address bar, its own back/forward buttons) — a link clicked *inside* the
+/// loaded page navigated the native child webview directly, with no way for
+/// the frontend to find out, so the in-app back button couldn't undo it (it
+/// looked disabled, or jumped to the wrong entry). `on_navigation` fires for
+/// every navigation this webview makes, ours AND link-clicked ones alike, so
+/// emitting it here lets the frontend's history stack track organic in-page
+/// navigation exactly like a real browser's does — this is the actual fix,
+/// registered once when the child webview is first built (it stays attached
+/// for the webview's whole lifetime, so later `.navigate()` calls below
+/// still fire it too).
+#[cfg(desktop)]
+fn browser_nav_handler(app: &tauri::AppHandle) -> impl Fn(&Url) -> bool + Send + 'static {
+  let app = app.clone();
+  move |url: &Url| {
+    let _ = app.emit("browser-nav", url.to_string());
+    true // never block a navigation — this hook is for observing, not gating
+  }
+}
+
 #[tauri::command]
 fn open_browser_view(
   #[allow(unused_variables)] app: tauri::AppHandle,
@@ -147,7 +188,7 @@ fn open_browser_view(
     let window = main_as_webview.window();
     window
       .add_child(
-        WebviewBuilder::new(BROWSER_VIEW_LABEL, WebviewUrl::External(parsed)),
+        WebviewBuilder::new(BROWSER_VIEW_LABEL, WebviewUrl::External(parsed)).on_navigation(browser_nav_handler(&app)),
         LogicalPosition::new(x, y),
         LogicalSize::new(width, height),
       )
@@ -293,9 +334,204 @@ async fn fetch_page_snapshot(url: String) -> Result<PageSnapshot, String> {
   Ok(PageSnapshot { url, title, description, text_content })
 }
 
+// ---------------------------------------------------------------------------
+// Terminal room (Part 2): real OS shell execution.
+//
+// This is a genuine child process spawned via std::process::Command — the
+// SAME primitive a real terminal emulator uses — not a hardcoded command
+// allowlist or a WASM sandbox (unlike the other five Terminal runtimes,
+// which are real-but-sandboxed language runtimes; see the module doc
+// comment in modules/terminal/index.tsx). It runs `npm install`,
+// `npm run dev`, `cargo build`, or anything else the Captain types, with
+// the Captain's own OS-level permissions — desktop-only, since that's a
+// hard platform limit (browsers cannot spawn OS processes at all; there is
+// no frontend-only workaround for this, on this app or any other web app).
+//
+// Two shapes:
+//   - shell_run_sync: runs one command to completion and returns its full
+//     stdout/stderr/exit code. Backs the Terminal room's "SHELL" runtime
+//     REPL — same one-line-in, one-result-out shape as its Go/PHP REPLs
+//     (a fresh process per line; no persistent shell session/env across
+//     lines — same honestly-documented limitation those two already have).
+//   - shell_spawn_bg / shell_kill_bg: starts a long-running background
+//     process (e.g. `npm run dev`) whose stdout/stderr streams to the
+//     frontend line-by-line via the "shell-output" Tauri event as it runs,
+//     and a "shell-exit" event when it terminates. Backs the "RUN DEV
+//     SERVER" button. ShellState tracks live children by pid so
+//     shell_kill_bg can actually stop one.
+// ---------------------------------------------------------------------------
+
+#[cfg(desktop)]
+struct ShellState(Mutex<HashMap<u32, Child>>);
+
+#[derive(serde::Serialize)]
+struct ShellResult {
+  stdout: String,
+  stderr: String,
+  code: Option<i32>,
+}
+
+#[cfg(desktop)]
+fn build_shell_command(cmd: &str, cwd: &Option<String>) -> std::process::Command {
+  let mut c = if cfg!(target_os = "windows") {
+    let mut c = std::process::Command::new("cmd");
+    c.arg("/C").arg(cmd);
+    c
+  } else {
+    let mut c = std::process::Command::new("sh");
+    c.arg("-c").arg(cmd);
+    c
+  };
+  if let Some(dir) = cwd {
+    if !dir.trim().is_empty() {
+      c.current_dir(dir);
+    }
+  }
+  c
+}
+
+#[tauri::command]
+async fn shell_run_sync(
+  #[allow(unused_variables)] cmd: String,
+  #[allow(unused_variables)] cwd: Option<String>,
+) -> Result<ShellResult, String> {
+  #[cfg(desktop)]
+  {
+    // Runs on a blocking-pool thread (a real, possibly slow child process —
+    // `npm install` can take tens of seconds) rather than the async
+    // runtime's own worker threads, same reasoning `spawn_blocking` exists
+    // for generally: a genuinely blocking wait shouldn't tie up threads
+    // other in-flight `invoke` calls need.
+    tauri::async_runtime::spawn_blocking(move || {
+      let output = build_shell_command(&cmd, &cwd)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output()
+        .map_err(|e| e.to_string())?;
+      Ok(ShellResult {
+        stdout: String::from_utf8_lossy(&output.stdout).to_string(),
+        stderr: String::from_utf8_lossy(&output.stderr).to_string(),
+        code: output.status.code(),
+      })
+    })
+    .await
+    .map_err(|e| e.to_string())?
+  }
+  #[cfg(mobile)]
+  {
+    Err("Real shell execution isn't available on mobile — no OS child-process model to spawn into (a hard platform limit, not a missing feature).".into())
+  }
+}
+
+#[derive(serde::Serialize, Clone)]
+struct ShellOutputEvent {
+  pid: u32,
+  stream: String,
+  line: String,
+}
+#[derive(serde::Serialize, Clone)]
+struct ShellExitEvent {
+  pid: u32,
+  code: Option<i32>,
+}
+
+#[tauri::command]
+fn shell_spawn_bg(
+  #[allow(unused_variables)] app: tauri::AppHandle,
+  #[allow(unused_variables)] cmd: String,
+  #[allow(unused_variables)] cwd: Option<String>,
+) -> Result<u32, String> {
+  #[cfg(desktop)]
+  {
+    let mut child = build_shell_command(&cmd, &cwd)
+      .stdout(Stdio::piped())
+      .stderr(Stdio::piped())
+      .spawn()
+      .map_err(|e| e.to_string())?;
+    let pid = child.id();
+    let stdout = child.stdout.take();
+    let stderr = child.stderr.take();
+
+    {
+      let state = app.state::<ShellState>();
+      let mut map = state.0.lock().map_err(|_| "shell state lock poisoned".to_string())?;
+      map.insert(pid, child);
+    }
+
+    if let Some(out) = stdout {
+      let app_out = app.clone();
+      std::thread::spawn(move || {
+        for line in BufReader::new(out).lines().map_while(Result::ok) {
+          let _ = app_out.emit("shell-output", ShellOutputEvent { pid, stream: "stdout".into(), line });
+        }
+      });
+    }
+    if let Some(err) = stderr {
+      let app_err = app.clone();
+      std::thread::spawn(move || {
+        for line in BufReader::new(err).lines().map_while(Result::ok) {
+          let _ = app_err.emit("shell-output", ShellOutputEvent { pid, stream: "stderr".into(), line });
+        }
+      });
+    }
+
+    // Polls for the child's exit rather than a blocking `.wait()` — the
+    // Child stays owned by ShellState's map the whole time (so
+    // shell_kill_bg can still reach it to kill it early), so this thread
+    // borrows it through the same Mutex on each poll instead of taking
+    // ownership outright.
+    let app_wait = app.clone();
+    std::thread::spawn(move || loop {
+      std::thread::sleep(std::time::Duration::from_millis(300));
+      let state = app_wait.state::<ShellState>();
+      let mut map = match state.0.lock() {
+        Ok(m) => m,
+        Err(_) => break,
+      };
+      let exited: Option<Option<i32>> = match map.get_mut(&pid) {
+        Some(child) => match child.try_wait() {
+          Ok(Some(status)) => Some(status.code()),
+          Ok(None) => None,
+          Err(_) => Some(None),
+        },
+        None => break, // already removed (killed via shell_kill_bg)
+      };
+      if let Some(code) = exited {
+        map.remove(&pid);
+        drop(map);
+        let _ = app_wait.emit("shell-exit", ShellExitEvent { pid, code });
+        break;
+      }
+    });
+
+    Ok(pid)
+  }
+  #[cfg(mobile)]
+  {
+    Err("Real shell execution isn't available on mobile — no OS child-process model to spawn into (a hard platform limit, not a missing feature).".into())
+  }
+}
+
+#[tauri::command]
+fn shell_kill_bg(#[allow(unused_variables)] app: tauri::AppHandle, #[allow(unused_variables)] pid: u32) -> Result<(), String> {
+  #[cfg(desktop)]
+  {
+    let state = app.state::<ShellState>();
+    let mut map = state.0.lock().map_err(|_| "shell state lock poisoned".to_string())?;
+    if let Some(mut child) = map.remove(&pid) {
+      child.kill().map_err(|e| e.to_string())?;
+    }
+    Ok(())
+  }
+  #[cfg(mobile)]
+  {
+    Ok(())
+  }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-  tauri::Builder::default()
+  let builder = tauri::Builder::default()
     // Step 8: local SQLite mirror for offline-first capture (see
     // src/lib/localDb.ts + src/lib/offlineSync.ts on the frontend side).
     .plugin(tauri_plugin_sql::Builder::default().build())
@@ -305,6 +541,11 @@ pub fn run() {
     // Browser room modules on the frontend side.
     .plugin(tauri_plugin_dialog::init())
     .plugin(tauri_plugin_fs::init())
+    // Browser room "open externally" fallback + Terminal room's "open my
+    // dev server in the system browser" — see src/lib/opener.ts on the
+    // frontend side. Cross-platform (desktop + mobile both have a default-
+    // app-handler concept), unlike the shell/browser-view state below.
+    .plugin(tauri_plugin_opener::init())
     .invoke_handler(tauri::generate_handler![
       set_tray_tooltip,
       open_capture_widget,
@@ -313,8 +554,17 @@ pub fn run() {
       set_browser_view_bounds,
       hide_browser_view,
       close_browser_view,
-      fetch_page_snapshot
-    ])
+      fetch_page_snapshot,
+      shell_run_sync,
+      shell_spawn_bg,
+      shell_kill_bg
+    ]);
+  // ShellState (live background-process tracking for shell_spawn_bg /
+  // shell_kill_bg) only has meaning where OS processes can actually be
+  // spawned — see the #[cfg(desktop)] commands above.
+  #[cfg(desktop)]
+  let builder = builder.manage(ShellState(Mutex::new(HashMap::new())));
+  builder
     .setup(|app| {
       if cfg!(debug_assertions) {
         app.handle().plugin(
