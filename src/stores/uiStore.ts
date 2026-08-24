@@ -24,12 +24,6 @@ export type RoomId =
 
 export type Autonomy = 'OBSERVE ONLY' | 'SUGGEST' | 'ROUTE AUTOMATICALLY' | 'FULL COPILOT';
 export type ShellTarget = 'ELECTRON' | 'TAURI' | 'UNDECIDED';
-/** Cockpit redesign — accent controls which of the three brand hues drives
- * single-color emphasis chrome (active nav border, active thread accent,
- * etc). The base mg/pu/cy/pk palette itself stays fixed everywhere else per
- * the brief's "non-negotiable" color system — this only reassigns which one
- * is *dominant*, it doesn't introduce new colors. */
-export type Accent = 'mg' | 'pu' | 'cy';
 
 interface UiState {
   room: RoomId;
@@ -37,7 +31,6 @@ interface UiState {
   glow: number;
   autonomy: Autonomy;
   shellTarget: ShellTarget;
-  accent: Accent;
   reduceMotion: boolean;
   uiScale: number;
   shortcutsOpen: boolean;
@@ -58,7 +51,6 @@ interface UiState {
   setGlow: (v: number) => void;
   setAutonomy: (a: Autonomy) => void;
   setShellTarget: (s: ShellTarget) => void;
-  setAccent: (a: Accent) => void;
   setReduceMotion: (v: boolean) => void;
   setUiScale: (v: number) => void;
   setShortcutsOpen: (v: boolean) => void;
@@ -68,10 +60,6 @@ interface UiState {
   setPinkAccents: (v: boolean) => void;
 }
 
-function applyAccent(a: Accent) {
-  const map: Record<Accent, string> = { mg: 'var(--mg)', pu: 'var(--pu)', cy: 'var(--cy)' };
-  document.documentElement.style.setProperty('--accent', map[a]);
-}
 function applyReduceMotion(v: boolean) {
   document.documentElement.classList.toggle('force-reduce-motion', v);
 }
@@ -109,7 +97,6 @@ export const useUiStore = create<UiState>()(
       // real decision instead of the stale "UNDECIDED" the Settings picker
       // showed before this fix.
       shellTarget: 'TAURI',
-      accent: 'mg',
       reduceMotion: false,
       uiScale: 1,
       shortcutsOpen: false,
@@ -133,10 +120,6 @@ export const useUiStore = create<UiState>()(
         set({ autonomy: a });
       },
       setShellTarget: (s) => set({ shellTarget: s }),
-      setAccent: (a) => {
-        applyAccent(a);
-        set({ accent: a });
-      },
       setReduceMotion: (v) => {
         applyReduceMotion(v);
         set({ reduceMotion: v });
@@ -160,7 +143,6 @@ export const useUiStore = create<UiState>()(
         glow: s.glow,
         autonomy: s.autonomy,
         shellTarget: s.shellTarget,
-        accent: s.accent,
         reduceMotion: s.reduceMotion,
         uiScale: s.uiScale,
         soundEnabled: s.soundEnabled,
@@ -176,7 +158,6 @@ export const useUiStore = create<UiState>()(
       onRehydrateStorage: () => (state) => {
         if (!state) return;
         document.documentElement.style.setProperty('--glow', String(state.glow));
-        applyAccent(state.accent);
         applyReduceMotion(state.reduceMotion);
         applyUiScale(state.uiScale);
         applyPinkAccents(state.pinkAccents);
