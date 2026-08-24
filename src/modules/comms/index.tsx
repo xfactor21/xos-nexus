@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useCoreGraph } from '../../stores/coreGraph';
 import Icon from '../../design-system/icons/Icon';
 import AmbientField from '../../design-system/background/AmbientField';
+import ShipAmbience from '../../design-system/background/ShipAmbience';
 
 interface Card {
   kind: 'project' | 'bug';
@@ -35,16 +36,6 @@ function newThread(title: string, first: Msg, xaiInitiated = false): Thread {
   return { id: `t-${Math.random().toString(36).slice(2, 9)}`, title, msgs: [first], unread: xaiInitiated, xaiInitiated };
 }
 
-/** COMMS — cockpit redesign: real AI chat UX means multi-thread, not one
- * endless scrollback, plus xAI-initiated threads (it opens a channel on you
- * unprompted, same "arriving on its own" idea as the hologram, driven off
- * the same real coreGraph.isStale signal — not a fake timer) and rich
- * inline cards for anything referencing a real project/bug instead of
- * flattening it to plain text. The keyword-matched reply engine itself is
- * the pre-existing mock from Step 5 (no live LLM endpoint is wired into
- * this codebase — copilotClient.ts only does classification, not chat —
- * so this is a UX-layer uplift over the same simulated backend, not a new
- * backend claim). */
 export default function Comms({ active }: { active: boolean }) {
   const projects = useCoreGraph((s) => s.projects);
   const [threads, setThreads] = useState<Thread[]>(() => [
@@ -54,8 +45,6 @@ export default function Comms({ active }: { active: boolean }) {
   const [val, setVal] = useState('');
   const spawnedStale = useRef(false);
 
-  // xAI-initiated thread — fires once, off the real stale-project signal
-  // (coreGraph's computed `isStale`), not a canned demo timer.
   useEffect(() => {
     if (spawnedStale.current) return;
     const stale = projects.find((p) => p.isStale);
@@ -111,6 +100,7 @@ export default function Comms({ active }: { active: boolean }) {
   return (
     <section className={`room ambient ${active ? 'on' : ''}`} id="r-comms">
       <AmbientField mood="cyan" density={22} active={active} parallax />
+      <ShipAmbience kind="lights" corner="bl" active={active} />
       <div className="roomInner">
       <h2 className="rh">
         <Icon name="comms" size={16} glow="cyan" /> COMMS
