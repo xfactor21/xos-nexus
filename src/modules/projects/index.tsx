@@ -21,12 +21,10 @@ import Icon from '../../design-system/icons/Icon';
 import DataIcon from '../../design-system/icons/DataIcon';
 import type { IconName } from '../../design-system/icons/registry';
 import AmbientField from '../../design-system/background/AmbientField';
+import ShipAmbience from '../../design-system/background/ShipAmbience';
 
 type Zone = 'zoverview' | 'zboard' | 'zdocs' | 'zbugs' | 'zfeed';
 
-// Amendment v0.6 step 1: mock/demo copy no longer embeds icon glyphs in the
-// string data itself (📄/◈ prefixes) — icons render at the JSX call site
-// instead, driven by an explicit `fromAI` flag rather than a text marker.
 const docs = [
   { t: 'Dark Mode — Requirements', meta: 'CREATED FROM NEURAL CAPTURE', fromAI: true, tag: 'NEW' },
   { t: 'Onboarding Flow Spec', meta: 'LINKED TO 4 TASKS', fromAI: false, tag: 'AI-DRAFTED' },
@@ -34,7 +32,6 @@ const docs = [
   { t: 'Brand Voice Guide', meta: '6 DAYS AGO', fromAI: false, tag: '' },
 ];
 const feed = [
-  // ASCII "->" (not a Unicode arrow) since `body` renders as plain text, not JSX.
   { body: 'xAI linked bug #17 -> solved #14 (92% similarity)', time: '5H AGO', fromAI: true },
   { body: 'Neural Capture routed 4 nodes into this project', time: 'YESTERDAY', fromAI: false },
   { body: '"Onboarding Flow" promoted to Sprint 002 milestone', time: 'YESTERDAY', fromAI: true },
@@ -58,11 +55,6 @@ function relTime(iso: string) {
   return `${Math.floor(h / 24)}d ago`;
 }
 
-/** Redesign checkpoint 4 — modular project card, structural element 2: an
- * SVG conic-style progress ring (stroke-dasharray on a circle) replacing
- * the old flat linear health bar, matching the concept's per-card percent
- * ring. Real `p.health`, not a fixture — just a different visual encoding
- * of the same number the old `.hp` bar showed. */
 function HealthRing({ pct, color }: { pct: number; color: string }) {
   const r = 20;
   const c = 2 * Math.PI * r;
@@ -89,19 +81,13 @@ function HealthRing({ pct, color }: { pct: number; color: string }) {
   );
 }
 
-/** A tiny deterministic (seeded off the project id, not Math.random — same
- * project always renders the same bars across re-renders/reloads) 7-bar
- * sparkline, matching the concept's per-card activity bars. This is an
- * illustrative rhythm shaped by the project's real health value (higher
- * health -> taller/more-consistent recent bars), not fixture data pretending
- * to be a real time series — there's no per-day granularity to show yet. */
 function seededBars(seed: string, health: number): number[] {
   let h = 0;
   for (let i = 0; i < seed.length; i++) h = (h * 31 + seed.charCodeAt(i)) >>> 0;
   const bars: number[] = [];
   for (let i = 0; i < 7; i++) {
     h = (h * 1103515245 + 12345) >>> 0;
-    const jitter = (h % 40) - 20; // -20..19
+    const jitter = (h % 40) - 20;
     bars.push(Math.max(12, Math.min(100, health + jitter * (0.3 + i / 14))));
   }
   return bars;
@@ -117,10 +103,6 @@ function Sparkline({ seed, health, color }: { seed: string; health: number; colo
   );
 }
 
-/** GitHub-contributions-style activity heatmap — real counts of this
- * project's nodes grouped by the day they were created, over the last 12
- * weeks. No fixed/fake data: a project with no recent activity renders an
- * honestly empty grid. */
 function ActivityHeatmap({ projectNodes }: { projectNodes: NodeRecord[] }) {
   const weeks = 12;
   const days = weeks * 7;
@@ -153,9 +135,6 @@ function ActivityHeatmap({ projectNodes }: { projectNodes: NodeRecord[] }) {
   );
 }
 
-/** Cross-project dependency visualization — real, derived from the actual
- * `edges` table: any edge whose two endpoints belong to different projects
- * counts as a link between those projects, tallied and listed by count. */
 function DependencyList({ openId, nodes, edges, projects }: { openId: string; nodes: NodeRecord[]; edges: { from_node: string; to_node: string; relation: string }[]; projects: ProjectRecord[] }) {
   const links = useMemo(() => {
     const nodeProject = new Map(nodes.map((n) => [n.id, n.project_id]));
@@ -190,17 +169,6 @@ function DependencyList({ openId, nodes, edges, projects }: { openId: string; no
   );
 }
 
-/** PROJECTS — Room Overhaul Batch 3: raised to a Linear/Notion-caliber
- * per-project workspace. Ported originally 1:1 from xos-prototype.html's
- * card list → board/docs/bugs/activity zones; now adds a real "New Project"
- * flow with a class picker that reshapes the workspace per class, a
- * draggable-widget OVERVIEW zone (health, activity heatmap, cross-project
- * dependencies, recent activity — all computed from real graph data, not
- * fixtures), improved health (task-completion blended with recency), and
- * dormant-project dimming that echoes the Observatory's star-brightness
- * metaphor. Board + bugs still read live from the shared coreGraph store
- * (Step 3); docs/legacy activity feed stay illustrative — no real `docs`
- * table exists in the deployed schema yet. */
 export default function Projects({ active }: { active: boolean }) {
   const [openId, setOpenId] = useState<string | null>(null);
   const [zone, setZone] = useState<Zone>('zoverview');
@@ -211,15 +179,8 @@ export default function Projects({ active }: { active: boolean }) {
   const [createErr, setCreateErr] = useState('');
   const [widgetOrder, setWidgetOrderState] = useState<WidgetId[]>(['health', 'heatmap', 'deps', 'activity']);
   const [dragId, setDragId] = useState<WidgetId | null>(null);
-  // Redesign checkpoint 3: modular draggable project cards — same
-  // drag-to-reorder pattern as the OVERVIEW widgets above, applied to the
-  // top-level card grid, with a real cross-session order persisted per
-  // owner (see local.ts's CARD_ORDER_KEY).
   const [cardDragId, setCardDragId] = useState<string | null>(null);
   const [cardOverId, setCardOverId] = useState<string | null>(null);
-  // Bumped on every drop so the `projects` memo below re-reads localStorage
-  // (getCardOrder isn't reactive state on its own — same reason
-  // widgetOrder above is mirrored into useState rather than read live).
   const [cardOrderRev, setCardOrderRev] = useState(0);
 
   const rawProjects = useCoreGraph((s) => s.projects);
@@ -245,11 +206,6 @@ export default function Projects({ active }: { active: boolean }) {
     setCardOverId(null);
     setCardOrderRev((n) => n + 1);
   }
-  // Select the raw, store-stable `nodes` array and derive tasks/bugs locally
-  // via useMemo, rather than a store selector that builds a fresh array on
-  // every call (`(s) => s.tasks()` style) — that pattern makes
-  // useSyncExternalStore's snapshot unstable and can cascade into "Maximum
-  // update depth exceeded". Found and fixed across all rooms that used it.
   const nodes = useCoreGraph((s) => s.nodes);
   const edges = useCoreGraph((s) => s.edges);
   const tasks = useMemo(() => nodes.filter((n) => n.kind === 'task').map(nodeToTask), [nodes]);
@@ -264,9 +220,6 @@ export default function Projects({ active }: { active: boolean }) {
     if (!confirm(`Delete "${name}"? This cannot be undone. Captures already assigned to it will become unassigned, not deleted.`)) return;
     deleteProject(id);
   }
-  // Cross-room drag-and-drop: real unassigned capture nodes, draggable onto
-  // a project card below to assign them (a real project_id write, not a
-  // local-only UI flag).
   const unassignedCaptures = useMemo(() => nodes.filter((n) => n.kind === 'capture' && !n.project_id), [nodes]);
 
   const open = projects.find((p) => p.id === openId) ?? null;
@@ -368,6 +321,7 @@ export default function Projects({ active }: { active: boolean }) {
   return (
     <section className={`room ambient ${active ? 'on' : ''}`} id="r-projects">
       <AmbientField mood="cyan" density={28} active={active} parallax />
+      <ShipAmbience kind="lights" corner="tr" active={active} />
       <div className="roomInner">
       <h2 className="rh">
         <Icon name="projects" size={18} /> PROJECTS
@@ -419,9 +373,6 @@ export default function Projects({ active }: { active: boolean }) {
                   reorderCards(p.id);
                 }}
               >
-                {/* Modular draggable cards — grabbing anywhere on the handle
-                    picks the whole card up; the rest of the card keeps its
-                    click-to-open + capture-assignment drop behavior above. */}
                 <span
                   className="pcardHandle"
                   draggable
@@ -439,12 +390,6 @@ export default function Projects({ active }: { active: boolean }) {
                 >
                   <Icon name="menu" size={12} />
                 </span>
-                {/* Redesign checkpoint 4 — restructured card body: header
-                    row (icon/name/class + ring top-right), sparkline row,
-                    footer action row. Was a single flex row with a thin
-                    linear health bar; now matches the concept's card
-                    anatomy (ring + bar-chart rhythm + "OPEN TIMELINE"
-                    pill) instead of just a decorated list row. */}
                 <div className="pcardBody">
                   <div className="pcardTop">
                     <span className="ic">
@@ -586,7 +531,7 @@ export default function Projects({ active }: { active: boolean }) {
                     onDragStart={() => setDragId(wid)}
                     onDragEnd={() => setDragId(null)}
                   >
-                    <span className="dragHandle">⠷</span> <Icon name={WIDGETS[wid].icon} size={13} glow="cyan" /> {WIDGETS[wid].title}
+                    <span className="dragHandle">⠠⠷</span> <Icon name={WIDGETS[wid].icon} size={13} glow="cyan" /> {WIDGETS[wid].title}
                   </div>
                   <div className="widgetBody">{WIDGETS[wid].render()}</div>
                 </div>
@@ -606,9 +551,6 @@ export default function Projects({ active }: { active: boolean }) {
                         {t.title}
                         <br />
                         {t.tags.map((tag, i) => (
-                          // Amendment v0.6 step 1: tags no longer embed the ◈
-                          // glyph as a text marker (see mappers.ts) — match on
-                          // the actual tag text instead.
                           <span key={i} className={`t ${/FROM CAPTURE/.test(tag) ? 'ai' : /BUG/.test(tag) ? 'bug' : ''}`}>
                             {tag}
                           </span>
