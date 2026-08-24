@@ -5,6 +5,7 @@ import { IMPLEMENTED_MODES } from './types';
 import Icon from '../../design-system/icons/Icon';
 import type { IconName } from '../../design-system/icons/registry';
 import AmbientField from '../../design-system/background/AmbientField';
+import ShipAmbience from '../../design-system/background/ShipAmbience';
 import { useUiStore } from '../../stores/uiStore';
 import { loadBoards, createBoard, touchBoard, renameBoard, deleteBoard } from './boards';
 import DrawPaint from './draw/DrawPaint';
@@ -41,19 +42,7 @@ interface ModeMeta {
   category: 'primary' | 'utility';
 }
 
-/**
- * Amendment v0.3 Section B's full New Project roster — 8 primary creative
- * modes shown immediately, plus a "Show More" reveal of 17 additional
- * utility tools, replacing the old flat 6-tile grid. `IMPLEMENTED_MODES`
- * (types.ts) is the honest allowlist of which of these 25 are actually
- * wired to a real tool right now; everything else still appears in the
- * picker (so the full roster the Captain was promised is visible and the
- * modal doesn't quietly shrink back down) but is disabled with a plain
- * "not yet available" tag — never the old literal "Coming soon" copy the
- * amendment called out, and never silently clickable into a blank room.
- */
 const MODE_META: Record<StudioMode, ModeMeta> = {
-  // ---- primary 8 ----
   draw: { label: 'Draw / Paint', icon: 'brush', blurb: 'Layers, real brushes, blend modes, filters', ref: 'Photoshop-caliber', category: 'primary' },
   wireframe: { label: 'Wireframe / Prototype', icon: 'rect', blurb: 'Infinite canvas, frames, sticky notes, flows', ref: 'Figma-caliber', category: 'primary' },
   animation: { label: 'Animation', icon: 'clapper', blurb: 'Timeline, keyframes, tweening', ref: 'After Effects-caliber', category: 'primary' },
@@ -62,7 +51,6 @@ const MODE_META: Record<StudioMode, ModeMeta> = {
   moodboard: { label: 'Moodboard / Collage', icon: 'image', blurb: 'Swatches, references, style tiles', ref: 'Milanote-caliber', category: 'primary' },
   presentation: { label: 'Presentation / Slide Deck', icon: 'slidedeck', blurb: 'Slides, layouts, speaker notes', ref: 'Keynote-caliber', category: 'primary' },
   iconDesign: { label: 'Icon Design', icon: 'hexagon', blurb: 'Pixel-grid + vector icon sets', ref: 'Icon-kit-caliber', category: 'primary' },
-  // ---- utility tools ("Show More") ----
   imageConverter: { label: 'Image Converter', icon: 'swap', blurb: 'Real PNG/JPEG/WebP conversion', ref: 'utility', category: 'utility' },
   backgroundRemover: { label: 'Background Remover', icon: 'scissors', blurb: 'Edge-seeded color-distance cutout', ref: 'utility', category: 'utility' },
   paletteGenerator: { label: 'Color Palette Generator', icon: 'droplet', blurb: 'From an image or a base color', ref: 'utility', category: 'utility' },
@@ -82,19 +70,9 @@ const MODE_META: Record<StudioMode, ModeMeta> = {
   modelViewer: { label: '3D Model Viewer', icon: 'hexagon', blurb: 'Preview a 3D model file', ref: 'stretch', category: 'utility' },
 };
 
-/** Redesign checkpoint 9 — Design Studio board grid gets a real ring
- * readout, reusing the HealthRing/CoherenceRing visual language from
- * Projects/Observatory. Boards don't carry a "health" metric the way
- * projects do, and per-mode snapshot data lives under inconsistent
- * localStorage keys we don't want to reach into just to render the grid —
- * so rather than fabricate a number, the ring reuses the one real,
- * consistently-available signal every board already has: recency
- * (updatedAt), on the same decay-curve intuition as the Memory Vault's
- * strength badge. Freshly-touched boards read as a full ring; boards that
- * haven't been opened in a while visibly fade. */
 function freshnessOf(updatedAt: string): number {
   const days = Math.max(0, (Date.now() - new Date(updatedAt).getTime()) / 86_400_000);
-  const halfLife = 5; // days
+  const halfLife = 5;
   return Math.pow(0.5, days / halfLife) * 100;
 }
 function BoardRing({ pct, color }: { pct: number; color: string }) {
@@ -141,15 +119,8 @@ const UTILITY_ORDER: StudioMode[] = [
   'modelViewer',
 ];
 
-/** Legacy single-canvas snapshot key from before the multi-board rework —
- * if present and no boards exist yet, we surface it as the seeded first
- * wireframe board rather than silently discarding a user's prior work. */
 const LEGACY_KEY = 'xos-studio-v1';
 
-/** Id of the auto-created default board, when this session had to create
- * one — tracked explicitly rather than inferred from array position, so
- * "should Wireframe fall back to SEED_STUDIO content" stays correct
- * regardless of board list order/deletion. */
 let seedBoardId: string | null = null;
 
 function seedFromLegacyIfNeeded(): StudioBoard[] {
@@ -169,62 +140,6 @@ function seedFromLegacyIfNeeded(): StudioBoard[] {
   return loadBoards();
 }
 
-/**
- * DESIGN STUDIO — Blueprint v0.3 Amendment v0.2: Design Studio becomes a
- * multi-mode creative suite, picking a mode per-board the way Figma picks
- * a file type. This component is the picker/router shell; each mode's
- * actual tool lives in its own component and owns the full viewport below
- * this room's header.
- *
- * Genuinely implemented right now: Draw/Paint, Wireframe/Prototype,
- * Animation, Vector/Illustration, and Diagram/Flowchart (5 of the 8
- * primary modes), plus all 17 "Show More" utility tools — Image Converter,
- * Background Remover, Color Palette Generator, Quick Photo Editor, Pixel
- * Art Editor, QR Generator (QR only — a real barcode symbology is a
- * distinct undertaking), Meme Generator, Font Pairing Explorer, Screenshot
- * Annotator, Chart/Graph Builder, Audio Waveform Trimmer, Logo Maker, GIF
- * Maker, Video Trimmer (exports .webm — client-side MediaRecorder, not an
- * MP4 re-mux), PDF Markup/Annotator (real pdfjs-dist render + pdf-lib
- * re-export), Print Layout Designer (real multi-page PDF at true paper
- * dimensions), and 3D Model Viewer (the stretch goal — glTF/GLB preview
- * via three.js).
- * Vector/Illustration (VectorEditor.tsx) is a real bezier pen tool with
- * mirrored curve handles, direct-select anchor editing, rect/ellipse
- * primitives, a real layer list, and real union/subtract/intersect/exclude
- * boolean ops via `polybooljs` — one disclosed simplification: boolean
- * results flatten curves to straight-edge polygons first, same as every
- * real boolean-ops implementation's polygon-clip core.
- * Diagram/Flowchart (DiagramEditor.tsx) has real connector geometry —
- * exact closed-form boundary clipping per node shape (rect/diamond/rounded
- * terminal), recomputed live every render so connectors genuinely stay
- * attached and re-route as nodes move, not fixed coordinates — plus
- * swimlanes, inline text editing, and real SVG export.
- * Moodboard/Collage (MoodboardEditor.tsx) is a free-form board of
- * draggable/resizable/rotatable image, color-swatch, and text-note tiles
- * with real z-ordering and a real rasterized PNG export — every tile is
- * redrawn onto an offscreen canvas with its own rotation transform, not a
- * DOM-to-image screenshot shortcut.
- * Presentation/Slide Deck (PresentationEditor.tsx) is a multi-slide editor
- * with layout templates (title, title+body, two-column, image+caption,
- * blank), draggable/resizable text and image blocks, per-slide background
- * color, slide reorder/duplicate/delete, a real fullscreen Present mode
- * (arrow-key/click navigation), and a real multi-page PDF export via
- * `pdf-lib` (genuine embedded images and drawn text at real point
- * coordinates per slide). Disclosed gap: no speaker notes or transitions.
- * Icon Design (IconDesignEditor.tsx) is a multi-icon set editor with real
- * dual output — a real vector SVG (one <rect> per filled pixel-grid cell,
- * genuinely scalable data, not a raster image renamed) and real
- * rasterized PNG export at 4 standard icon sizes (16/24/32/48px) drawn
- * per-size from the same grid data.
- *
- * As of this pass, all 8 primary creative modes and all 17 utility tools
- * are genuinely implemented — `IMPLEMENTED_MODES` in types.ts is the
- * source of truth and every entry in it has a real, working component
- * behind it (see each tool's own file-header comment for its specific,
- * honestly-disclosed scope boundaries — e.g. Vector's boolean ops
- * flattening curves, Video Trimmer's WebM-not-MP4 output). `MODE_META`
- * still lists the full 25-mode roster for reference.
- */
 export default function Studio({ active }: { active: boolean }) {
   const [boards, setBoards] = useState<StudioBoard[]>(seedFromLegacyIfNeeded);
   const [openId, setOpenId] = useState<string | null>(null);
@@ -234,11 +149,6 @@ export default function Studio({ active }: { active: boolean }) {
   const [newMode, setNewMode] = useState<StudioMode>('draw');
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameVal, setRenameVal] = useState('');
-  // Design pass resolved (Captain's pick: "combo of 1 and 3" — the header
-  // hairline from variant A plus the freshness-ring/New-Board thread from
-  // variant C; see legacy.css's GLOBAL ACCENT block). The old 3-way live
-  // switcher is gone — this now just reads the persisted Settings toggle
-  // ("option to turn accents off in settings").
   const pinkAccents = useUiStore((s) => s.pinkAccents);
 
   const openBoard = boards.find((b) => b.id === openId) || null;
@@ -322,13 +232,8 @@ export default function Studio({ active }: { active: boolean }) {
 
   return (
     <section className={`room ambient ${active ? 'on' : ''}`} id="r-studio" style={{ maxWidth: 'none', padding: '56px 8px 90px 76px' }}>
-      {/* Amendment v0.6 step 3: only the board-grid/mode-picker landing view
-          gets the ambient field — the `if (openBoard)` branch above hands
-          off entirely to a sub-tool (DrawPaint/Wireframe/Animation/etc.),
-          each with its own full canvas; a drifting particle layer behind
-          active creative-tool work is out of scope / would be a distraction,
-          not a room "feeling alive". */}
       <AmbientField mood="chromatic" density={30} active={active} parallax />
+      <ShipAmbience kind="comet" active={active} />
       <div className="roomInner">
       <h2 className="rh" style={{ paddingLeft: 4 }}>
         <Icon name="designStudio" size={18} /> DESIGN STUDIO
@@ -357,8 +262,7 @@ export default function Studio({ active }: { active: boolean }) {
                 color={
                   freshnessOf(b.updatedAt) >= 50
                     ? pinkAccents
-                      ? 'var(--purple)' // Freshest reads pink/violet-adjacent when accents are on — the
-                        // accent is load-bearing here (real recency), not decoration.
+                      ? 'var(--purple)'
                       : 'var(--cyan)'
                     : freshnessOf(b.updatedAt) >= 15
                       ? 'var(--amber)'
