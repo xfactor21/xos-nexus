@@ -12,6 +12,7 @@ import { pendingCaptureCount } from '../../lib/localDb';
 import Icon from '../../design-system/icons/Icon';
 import DataIcon from '../../design-system/icons/DataIcon';
 import type { IconName } from '../../design-system/icons/registry';
+import AiReviewPanel from './AiReviewPanel';
 
 /** A node's persisted position + optional group, keyed by node id (same ids
  * used in nodePos.current: module ids, project ids). Persisted to
@@ -38,6 +39,17 @@ function saveLayout(ownerId: string | null, layout: SavedLayout) {
     localStorage.setItem(layoutKey(ownerId), JSON.stringify(layout));
   } catch {
     /* best-effort — a full/blocked localStorage shouldn't break dragging */
+  }
+}
+/** Settings' "RESET NEURAL CORE LAYOUT" row calls this directly — a Captain
+ * who drags everything into an unreadable pile needs a real way back to the
+ * default radial layout without wiping any actual data (nodes/edges/tags
+ * are untouched; this only clears the persisted x/y/groupId positions). */
+export function resetCoreLayout(ownerId: string | null) {
+  try {
+    localStorage.removeItem(layoutKey(ownerId));
+  } catch {
+    /* best-effort */
   }
 }
 
@@ -148,6 +160,10 @@ export default function NeuralCore({ active }: { active: boolean }) {
   const updateNodeTags = useCoreGraph((s) => s.updateNodeTags);
   const createEdge = useCoreGraph((s) => s.createEdge);
   const deleteEdge = useCoreGraph((s) => s.deleteEdge);
+  const confirmEdge = useCoreGraph((s) => s.confirmEdge);
+  const correctEdge = useCoreGraph((s) => s.correctEdge);
+  const confirmNodeTags = useCoreGraph((s) => s.confirmNodeTags);
+  const [showAiReview, setShowAiReview] = useState(false);
 
   // Real project ring data (replaces the old hardcoded StudyHive/Music/
   // Website/Novel demo array) — a brand-new account with zero real projects
@@ -459,8 +475,8 @@ export default function NeuralCore({ active }: { active: boolean }) {
         root.render(<DataIcon value={d.ic} size={cls === 'proj' ? 15 : 14} glow={cls === 'proj' ? 'purple' : 'cyan'} />);
       }
     };
-    modules.forEach((m) => mkNode(m, 'mod', () => setPanelId(m.id), () => dockAndGo(m.id, m.id)));
-    projs.forEach((p) => mkNode(p, 'proj', () => setPanelId(p.id), () => dockAndGo('projects', p.id)));
+    modules.forEach((m) => mkNode(m, 'mod', () => { setShowAiReview(false); setPanelId(m.id); }, () => dockAndGo(m.id, m.id)));
+    projs.forEach((p) => mkNode(p, 'proj', () => { setShowAiReview(false); setPanelId(p.id); }, () => dockAndGo('projects', p.id)));
 
     svg.innerHTML = '';
     svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
@@ -819,6 +835,13 @@ export default function NeuralCore({ active }: { active: boolean }) {
       <canvas ref={cvRef} id="coreCv" />
       <div id="coreStage" ref={stageRef}>
         <svg id="lines" ref={svgRef} />
+        <button
+          id="coreAiReviewBtn"
+          title="Review xAI's tags & associations — accept, correct, or reject what it's done on its own"
+          onClick={() => { setPanelId(null); setShowAiReview(true); }}
+        >
+          <Icon name="tag" size={13} glow="cyan" /> REVIEW xAI
+        </button>
         <div id="coreGreet">
           <h1>{greeting}</h1>
           <p id="coreStats">{displayStats}</p>
@@ -913,6 +936,18 @@ export default function NeuralCore({ active }: { active: boolean }) {
           updateNodeTags={updateNodeTags}
           createEdge={createEdge}
           deleteEdge={deleteEdge}
+        />
+      )}
+      {showAiReview && (
+        <AiReviewPanel
+          nodes={nodes}
+          edges={edges}
+          onClose={() => setShowAiReview(false)}
+          confirmEdge={confirmEdge}
+          correctEdge={correctEdge}
+          deleteEdge={deleteEdge}
+          confirmNodeTags={confirmNodeTags}
+          updateNodeTags={updateNodeTags}
         />
       )}
     </section>
