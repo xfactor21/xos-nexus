@@ -1523,3 +1523,136 @@ body.widget-body {
     height: 260px;
   }
 }
+
+/* ============================================================
+   SHIP AMBIENCE — Captain's ask, done last on purpose: subtle per-room
+   decoration (comet passes, blinking console lights, a small decorative
+   "still running" terminal readout) layered behind real content. See
+   design-system/background/ShipAmbience.tsx's doc comment for the full
+   rationale and the two ways to back this out (Settings toggle, or a
+   plain git revert of this isolated addition).
+
+   Same z-index:0 fixed-inset layer AmbientField already uses (behind
+   .roomInner's z-index:1) — never on top of, never intercepting clicks on,
+   real UI. `.force-reduce-motion` (Settings > Reduce Motion) already
+   neuters every animation-duration below to ~0 globally; ShipAmbience.tsx
+   additionally skips mounting entirely under reduced motion so no
+   scheduling loop runs in the background for a motion-sensitive Captain.
+   ============================================================ */
+.shipAmbience {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.shipComet {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 130px;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, rgba(0, 245, 255, 0.9));
+  border-radius: 2px;
+  box-shadow: 0 0 10px rgba(0, 245, 255, 0.6);
+  animation-duration: 1.6s;
+  animation-timing-function: ease-in-out;
+  animation-fill-mode: forwards;
+}
+.shipComet-tl { animation-name: shipCometTL; }
+.shipComet-tr { animation-name: shipCometTR; }
+.shipComet-bl { animation-name: shipCometBL; }
+.shipComet-br { animation-name: shipCometBR; }
+@keyframes shipCometTL {
+  0% { transform: translate(-10vw, -10vh) rotate(35deg); opacity: 0; }
+  10% { opacity: 0.9; }
+  90% { opacity: 0.9; }
+  100% { transform: translate(110vw, 70vh) rotate(35deg); opacity: 0; }
+}
+@keyframes shipCometTR {
+  0% { transform: translate(110vw, -10vh) rotate(145deg); opacity: 0; }
+  10% { opacity: 0.9; }
+  90% { opacity: 0.9; }
+  100% { transform: translate(-10vw, 70vh) rotate(145deg); opacity: 0; }
+}
+@keyframes shipCometBL {
+  0% { transform: translate(-10vw, 110vh) rotate(-35deg); opacity: 0; }
+  10% { opacity: 0.9; }
+  90% { opacity: 0.9; }
+  100% { transform: translate(110vw, 30vh) rotate(-35deg); opacity: 0; }
+}
+@keyframes shipCometBR {
+  0% { transform: translate(110vw, 110vh) rotate(-145deg); opacity: 0; }
+  10% { opacity: 0.9; }
+  90% { opacity: 0.9; }
+  100% { transform: translate(-10vw, 30vh) rotate(-145deg); opacity: 0; }
+}
+
+.shipLights {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 6px;
+}
+.shipLights-tl { top: 52px; left: 8px; }
+.shipLights-tr { top: 52px; right: 8px; }
+.shipLights-bl { bottom: 14px; left: 8px; }
+.shipLights-br { bottom: 14px; right: 8px; }
+.shipLight {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  opacity: 0.2;
+  animation-name: shipLightBlink;
+  animation-iteration-count: infinite;
+  animation-timing-function: ease-in-out;
+}
+.shipLight-cyan { background: #00F5FF; box-shadow: 0 0 6px rgba(0, 245, 255, 0.8); }
+.shipLight-magenta { background: #FF2D78; box-shadow: 0 0 6px rgba(255, 45, 120, 0.8); }
+.shipLight-purple { background: #8B5CF6; box-shadow: 0 0 6px rgba(139, 92, 246, 0.8); }
+.shipLight-amber { background: #FFB800; box-shadow: 0 0 6px rgba(255, 184, 0, 0.8); }
+@keyframes shipLightBlink {
+  0%, 100% { opacity: 0.18; }
+  50% { opacity: 0.85; }
+}
+
+.shipTerminal {
+  position: absolute;
+  max-width: 180px;
+  padding: 5px 8px;
+  font-family: var(--font-mono, monospace);
+  font-size: 8.5px;
+  letter-spacing: 0.5px;
+  color: rgba(0, 245, 255, 0.35);
+  background: rgba(5, 8, 13, 0.3);
+  border: 1px solid rgba(0, 245, 255, 0.12);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.shipTerminal-tl { top: 52px; left: 8px; }
+.shipTerminal-tr { top: 52px; right: 8px; }
+.shipTerminal-bl { bottom: 14px; left: 8px; }
+.shipTerminal-br { bottom: 14px; right: 8px; }
+.shipTerminalLine {
+  display: inline-block;
+  animation: shipTermFade 0.5s ease;
+}
+@keyframes shipTermFade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+.shipTerminalCursor {
+  display: inline-block;
+  width: 5px;
+  height: 9px;
+  margin-left: 3px;
+  background: rgba(0, 245, 255, 0.5);
+  animation: shipTermBlink 1s steps(2) infinite;
+  vertical-align: middle;
+}
+@keyframes shipTermBlink {
+  50% { opacity: 0; }
+}
