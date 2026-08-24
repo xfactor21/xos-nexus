@@ -117,6 +117,26 @@ interface CoreGraphState {
   createEdge: (fromNode: string, toNode: string, relation?: EdgeRecord['relation']) => Promise<void>;
   deleteEdge: (edgeId: string) => Promise<void>;
 
+  /** "Review xAI's Tags & Associations" (Settings + Neural Core panel):
+   * accepting an AI-authored edge re-stamps it `created_by: 'user'` — the
+   * same column classify-capture's writeNodes() checks to tell AI proposals
+   * from human ones, and the exact column fetchUserContext() (copilotClient.ts)
+   * already filters on for what to feed back into future classification. So
+   * "accept" isn't cosmetic: it genuinely promotes that edge into the pool
+   * of confirmed-correct associations xAI's next classification call sees. */
+  confirmEdge: (edgeId: string) => Promise<void>;
+  /** Correcting an edge (wrong relation and/or wrong target) is a distinct
+   * action from delete-and-hope — it patches the row in place AND re-stamps
+   * `created_by: 'user'` for the same reason confirmEdge does: a correction
+   * is by definition Captain-verified ground truth now. */
+  correctEdge: (edgeId: string, patch: { relation?: EdgeRecord['relation']; to_node?: string }) => Promise<void>;
+  /** Marks a node's current tag set as Captain-confirmed-correct. Stored in
+   * metadata.tagsConfirmed (same shallow-merge jsonb pattern as updateBug) —
+   * fetchUserContext reads this to phrase confirmed tags differently
+   * ("Captain confirmed this tagging is correct") from freshly-edited ones,
+   * a stronger training signal than an edit alone. */
+  confirmNodeTags: (id: string) => Promise<void>;
+
   /** Generic delete for any `nodes`-backed row — used by Bug Tracker and
    * Knowledge Matrix (both just filtered views over `nodes`). Optimistic
    * local removal (the Realtime DELETE handler in `subscribe` above would
@@ -401,6 +421,51 @@ export const useCoreGraph = create<CoreGraphState>((set, get) => ({
       set((s) => ({ edges: upsert(s.edges, e) })); // rollback
       pushToast('Could not remove association — try again', 'warn');
     }
+  },
+
+  confirmEdge: async (edgeId) => {
+    const e = get().edges.find((x) => x.id === edgeId);
+    if (!e) return;
+    const next = { ...e, created_by: 'user' as const };
+    set((s) => ({ edges: upsert(s.edges, next) })); // optimistic
+    const { error } = await supabase.from('edges').update({ created_by: 'user' }).eq('id', edgeId);
+    if (error) {
+      console.error('confirmEdge failed', error);
+      set((s) => ({ edges: upsert(s.edges, e) })); // rollback
+      pushToast('Could not confirm association — try again', 'warn');
+      return;
+    }
+    pushToast('Confirmed — xAI will treat this as ground truth going forward.', 'success');
+  },
+
+  correctEdge: async (edgeId, patch) => {
+    const e = get().edges.find((x) => x.id === edgeId);
+    if (!e) return;
+    const next = { ...e, ...patch, created_by: 'user' as const };
+    set((s) => ({ edges: upsert(s.edges, next) })); // optimistic
+    const { error } = await supabase.from('edges').update({ ...patch, created_by: 'user' }).eq('id', edgeId);
+    if (error) {
+      console.error('correctEdge failed', error);
+      set((s) => ({ edges: upsert(s.edges, e) })); // rollback
+      pushToast('Could not correct association — try again', 'warn');
+      return;
+    }
+    pushToast('Correction saved — xAI will learn from this.', 'success');
+  },
+
+  confirmNodeTags: async (id) => {
+    const n = get().nodes.find((x) => x.id === id);
+    if (!n) return;
+    const meta = { ...((n.metadata ?? {}) as Record<string, unknown>), tagsConfirmed: true };
+    set((s) => ({ nodes: upsert(s.nodes, { ...n, metadata: meta }) })); // optimistic
+    const { error } = await supabase.from('nodes').update({ metadata: meta }).eq('id', id);
+    if (error) {
+      console.error('confirmNodeTags failed', error);
+      set((s) => ({ nodes: upsert(s.nodes, n) })); // rollback
+      pushToast('Could not confirm tags — try again', 'warn');
+      return;
+    }
+    pushToast('Confirmed — xAI will treat this tagging as correct.', 'success');
   },
 
   deleteNode: async (id) => {

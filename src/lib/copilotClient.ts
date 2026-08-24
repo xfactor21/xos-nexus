@@ -145,8 +145,18 @@ async function fetchUserContext(ownerId: string): Promise<string[]> {
       lines.push(`Captain manually linked two nodes as "${e.relation}"`);
     });
     (nodesRes.data ?? []).forEach((n) => {
-      const tags = ((n.metadata as Record<string, unknown> | null)?.tags as string[] | undefined) ?? [];
-      if (tags.length) lines.push(`Captain tagged "${n.title}" with: ${tags.join(', ')}`);
+      const meta = n.metadata as Record<string, unknown> | null;
+      const tags = (meta?.tags as string[] | undefined) ?? [];
+      if (!tags.length) return;
+      // "Review xAI's Tags & Associations" (Settings): a Captain-confirmed
+      // tag set is a stronger signal than a plain edit — it's explicit
+      // ground truth, not just "this is what got saved most recently" —
+      // so it gets its own phrasing the model can weight accordingly.
+      if (meta?.tagsConfirmed === true) {
+        lines.push(`Captain confirmed this tagging is correct: "${n.title}" — ${tags.join(', ')}`);
+      } else {
+        lines.push(`Captain tagged "${n.title}" with: ${tags.join(', ')}`);
+      }
     });
     return lines;
   } catch (err) {
