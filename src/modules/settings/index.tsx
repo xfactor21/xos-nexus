@@ -57,6 +57,8 @@ export default function Settings({ active }: { active: boolean }) {
   const setSoundVolume = useUiStore((s) => s.setSoundVolume);
   const pinkAccents = useUiStore((s) => s.pinkAccents);
   const setPinkAccents = useUiStore((s) => s.setPinkAccents);
+  const shipAmbience = useUiStore((s) => s.shipAmbience);
+  const setShipAmbience = useUiStore((s) => s.setShipAmbience);
   const go = useUiStore((s) => s.go);
   const nodes = useCoreGraph((s) => s.nodes);
   const edges = useCoreGraph((s) => s.edges);
@@ -165,6 +167,19 @@ export default function Settings({ active }: { active: boolean }) {
         <div className="optrow" style={{ margin: 0 }}>
           <span className={`chip ${pinkAccents ? 'on' : ''}`} onClick={() => setPinkAccents(!pinkAccents)}>
             <Icon name={pinkAccents ? 'checkCircle' : 'circle'} size={12} /> {pinkAccents ? 'ACCENTS ON' : 'ACCENTS OFF'}
+          </span>
+        </div>
+      </div>
+      <div className="gpanel setrow">
+        <h3>SHIP AMBIENCE</h3>
+        <div className="d">
+          Subtle per-room decoration — a comet occasionally crossing the screen, blinking console lights,
+          a small decorative "still running" terminal readout, different per room. Purely cosmetic, never
+          blocks or sits on top of real content. Turn it off here any time it's not landing for you.
+        </div>
+        <div className="optrow" style={{ margin: 0 }}>
+          <span className={`chip ${shipAmbience ? 'on' : ''}`} onClick={() => setShipAmbience(!shipAmbience)}>
+            <Icon name={shipAmbience ? 'checkCircle' : 'circle'} size={12} /> {shipAmbience ? 'AMBIENCE ON' : 'AMBIENCE OFF'}
           </span>
         </div>
       </div>

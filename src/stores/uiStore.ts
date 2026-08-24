@@ -45,6 +45,14 @@ interface UiState {
    * "option to turn accents off in settings." Applied via a class on
    * <html> (see applyPinkAccents below) so plain CSS can gate on it. */
   pinkAccents: boolean;
+  /** Captain's ask, explicitly saved for last and explicitly required to be
+   * easy to back out of: subtle per-room decoration (a comet occasionally
+   * crossing the screen, blinking console lights, a small decorative "still
+   * running" terminal panel — see design-system/background/ShipAmbience.tsx)
+   * layered behind every room's real content. This flag is the fast way
+   * back out — flip it off and every room's decoration disappears
+   * instantly, no code change needed. Defaults on. */
+  shipAmbience: boolean;
   go: (r: RoomId) => void;
   toggleSidebar: () => void;
   closeSidebar: () => void;
@@ -58,6 +66,7 @@ interface UiState {
   setSoundEnabled: (v: boolean) => void;
   setSoundVolume: (v: number) => void;
   setPinkAccents: (v: boolean) => void;
+  setShipAmbience: (v: boolean) => void;
 }
 
 function applyReduceMotion(v: boolean) {
@@ -104,6 +113,7 @@ export const useUiStore = create<UiState>()(
       soundEnabled: true,
       soundVolume: 0.6,
       pinkAccents: true,
+      shipAmbience: true,
       // Amendment v0.6 step 2: the sidebar is now a persistent "neural spine"
       // (always at least visible as a collapsed dot-rail, never fully hidden —
       // see Shell.tsx), so selecting a room no longer force-collapses it the
@@ -136,6 +146,7 @@ export const useUiStore = create<UiState>()(
         applyPinkAccents(v);
         set({ pinkAccents: v });
       },
+      setShipAmbience: (v) => set({ shipAmbience: v }),
     }),
     {
       name: 'xos-ui-settings',
@@ -148,6 +159,7 @@ export const useUiStore = create<UiState>()(
         soundEnabled: s.soundEnabled,
         soundVolume: s.soundVolume,
         pinkAccents: s.pinkAccents,
+        shipAmbience: s.shipAmbience,
       }),
       // The --glow/--accent/--ui-scale CSS custom properties and the
       // force-reduce-motion class all live outside React (read by canvas
