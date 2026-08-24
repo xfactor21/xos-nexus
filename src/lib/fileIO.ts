@@ -2,8 +2,8 @@ import { isTauri } from './localDb';
 
 /** Local-file open/edit/save for the Terminal (.py) and Browser (.html)
  * rooms. Desktop-only — every function here throws if called from the web
- * preview build, same "isTauri() gate" pattern used everywhere else
- * (Browser room's native webview, offlineSync's SQLite mirror).
+ * preview build, same "isTauri() gate" pattern used everywhere else (Browser
+ * room's native webview, offlineSync's SQLite mirror).
  *
  * Security note: `capabilities/default.json` grants `fs:allow-read-text-file`
  * / `fs:allow-write-text-file` with NO static path scope. That's
@@ -63,5 +63,17 @@ export async function saveTextFileAs(
   const path = await save({ defaultPath: defaultName, filters: [{ name: label, extensions }] });
   if (!path) return null;
   await writeTextFile(path, content);
+  return path;
+}
+
+/** Native "pick a folder" dialog — used by the Terminal room's SHELL
+ * runtime / RUN DEV SERVER (real OS command execution needs a real working
+ * directory, e.g. the Captain's actual project folder, not a hardcoded
+ * guess). Returns null if the Captain cancels. */
+export async function pickDirectory(): Promise<string | null> {
+  await requireTauri();
+  const { open } = await import('@tauri-apps/plugin-dialog');
+  const path = await open({ multiple: false, directory: true });
+  if (!path || typeof path !== 'string') return null;
   return path;
 }

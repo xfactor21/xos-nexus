@@ -5,16 +5,29 @@ import '@xterm/xterm/css/xterm.css';
 import { pushToast } from '../../stores/toastStore';
 import { playSound } from '../../lib/sound';
 import { isTauri } from '../../lib/localDb';
-import { openTextFile, writeTextFileAt, saveTextFileAs, type OpenedFile } from '../../lib/fileIO';
+import { openTextFile, writeTextFileAt, saveTextFileAs, pickDirectory, type OpenedFile } from '../../lib/fileIO';
+import { openExternally } from '../../lib/opener';
+import { useUiStore } from '../../stores/uiStore';
+import { useBrowserNavStore } from '../../stores/browserNavStore';
 import Icon from '../../design-system/icons/Icon';
 import AmbientField from '../../design-system/background/AmbientField';
 import CodeEditor from '../../design-system/CodeEditor';
 
-type Runtime = 'node' | 'python' | 'ruby' | 'php' | 'go';
+type Runtime = 'node' | 'python' | 'ruby' | 'php' | 'go' | 'shell';
+
+/** Same "isTauri() gate + dynamic import" pattern used everywhere else in
+ * xOS (uiStore's tray sync, the Browser room's browser-view commands) — the
+ * web/Netlify bundle never eagerly loads @tauri-apps/api for the SHELL
+ * runtime's commands, which only exist on desktop. */
+async function invokeTauri<T = unknown>(cmd: string, args?: Record<string, unknown>): Promise<T> {
+  const { invoke } = await import('@tauri-apps/api/core');
+  return invoke<T>(cmd, args);
+}
 
 /**
  * ROOM C — TERMINAL (Step 7). Hybrid, zero-hosted-infra execution, exactly
- * per the brief, now covering five real runtimes:
+ * per the brief, now covering five real-but-sandboxed language runtimes
+ * plus one genuinely unsandboxed one (SHELL, below):
  *   - Node/JS: StackBlitz WebContainers — a real Node.js runtime compiled to
  *     WASM, runs entirely client-side (genuine npm install/file
  *     system/process execution, not a simulation). Interactive shell.
@@ -47,6 +60,27 @@ type Runtime = 'node' | 'python' | 'ruby' | 'php' | 'go';
  * reasoning as Pyodide originally: works offline, no CDN dependency, and
  * sidesteps needing custom response headers for anything except
  * WebContainers (which genuinely can't be self-hosted).
+ *
+ * SHELL (real OS shell, desktop only): the honest answer to "can I install
+ * dependencies / run my project as a server" is that none of the five
+ * runtimes above can — they're real language runtimes, but each one is
+ * sandboxed (WASM/WASI, or WebContainers' own in-browser Node) with no
+ * access to the Captain's actual filesystem/OS process table, so `npm
+ * install` inside them installs into a virtual filesystem, not the
+ * Captain's real project folder. SHELL instead invokes a genuine
+ * `std::process::Command` child process on the Rust side
+ * (`shell_run_sync`/`shell_spawn_bg`/`shell_kill_bg`, src-tauri/src/lib.rs)
+ * — the actual OS shell, running with the Captain's real permissions
+ * against their real filesystem. This is possible ONLY in the packaged
+ * Tauri desktop build: browsers have no OS process-spawning API at all —
+ * a hard platform limit, not a missing feature — so the chip below is
+ * gated behind `isTauri()` and says so plainly on the web preview build
+ * instead of pretending to work. "RUN DEV SERVER" (also SHELL-only) spawns
+ * a real long-running background process (e.g. `npm run dev`), streams its
+ * real stdout/stderr into this terminal as it runs, sniffs a
+ * localhost/127.0.0.1 URL out of that real output, and hands it to the
+ * Browser room (Part 1) to actually view — same real embedded webview that
+ * room already has, not a second implementation of "load a URL."
  *
  * SAFETY GUARDRAIL: `runCommand(cmd, { source })` (used by every REPL
  * runtime below) is the single choke point anything types text into the
@@ -265,6 +299,25 @@ export default function TerminalRoom({ active }: { active: boolean }) {
   const [fileDirty, setFileDirty] = useState(false);
   const [fileResetKey, setFileResetKey] = useState(0);
   const [fileBusy, setFileBusy] = useState<'idle' | 'running' | 'saving'>('idle');
+
+  // SHELL runtime (real OS process, desktop only — see module doc comment
+  // above) + RUN DEV SERVER. cwdRef mirrors shellCwd so the REPL's `cd`
+  // handling and the background dev-server spawn both always read the
+  // latest value without stale-closure issues (same reasoning as
+  // currentUrlRef in the Browser room).
+  const [shellCwd, setShellCwd] = useState('');
+  const shellCwdRef = useRef(shellCwd);
+  useEffect(() => {
+    shellCwdRef.current = shellCwd;
+  }, [shellCwd]);
+  const [devCmd, setDevCmd] = useState('npm run dev');
+  const [devPid, setDevPid] = useState<number | null>(null);
+  const devPidRef = useRef<number | null>(null);
+  useEffect(() => {
+    devPidRef.current = devPid;
+  }, [devPid]);
+  const [devBusy, setDevBusy] = useState(false);
+  const [devUrl, setDevUrl] = useState<string | null>(null);
 
   useEffect(() => {
     if (!containerRef.current || termRef.current) return;
@@ -510,6 +563,169 @@ export default function TerminalRoom({ active }: { active: boolean }) {
     }
   }
 
+  async function startShell() {
+    const term = termRef.current;
+    if (!term) return;
+    if (!isTauri()) {
+      // The honest, explicit "why not" — not a disabled control that just
+      // silently does nothing. Real OS shell access needs a real OS
+      // process-spawning API, which no web browser exposes to a page; the
+      // packaged Tauri desktop build has it via src-tauri's shell_run_sync.
+      pushToast('Full shell access requires the desktop app — a browser tab cannot spawn OS processes.', 'warn');
+      setStatus('unsupported');
+      term.writeln('\r\n\x1b[31mSHELL needs the packaged desktop app.\x1b[0m Browsers have no OS process-spawning API — this is a hard platform limit, not something the web preview can work around.');
+      return;
+    }
+    clearActiveListeners();
+    setStatus('ready');
+    term.writeln('\r\nReal OS shell (genuine child processes via src-tauri, NOT a simulation). Each line runs to completion as its own process — no persistent env/exports across lines, but `cd` is tracked and applied to the next command.');
+    term.writeln(`Working directory: ${shellCwdRef.current || '(app default — use PICK FOLDER below to point this at your project)'}`);
+    attachRepl(term, 'sh> ', {
+      async evaluate(code) {
+        const trimmed = code.trim();
+        const cdMatch = trimmed.match(/^cd\s+(.+)$/);
+        if (cdMatch) {
+          const target = cdMatch[1].trim();
+          try {
+            // Resolves the target (handles "~", "..", relative paths, etc.
+            // the same way a real shell would) and echoes the resulting
+            // absolute path back, rather than this JS trying to reimplement
+            // path resolution itself. `pwd` is POSIX-only — this app's
+            // tested/shipped desktop target is Linux (see shellTarget in
+            // uiStore.ts), so Windows' `cd`-with-no-`pwd` shell isn't
+            // specifically handled here; a plain `cd` on Windows still runs
+            // fine via shell_run_sync, it just won't update shellCwd.
+            const result = await invokeTauri<{ stdout: string; stderr: string; code: number | null }>('shell_run_sync', {
+              cmd: `cd "${target}" && pwd`,
+              cwd: shellCwdRef.current || undefined,
+            });
+            if (result.code === 0 && result.stdout.trim()) {
+              const resolved = result.stdout.trim();
+              setShellCwd(resolved);
+              return { stdout: `${resolved}\n`, stderr: '' };
+            }
+            return { stdout: '', stderr: result.stderr || `cd: no such directory: ${target}\n` };
+          } catch (e) {
+            return { stdout: '', stderr: `${e instanceof Error ? e.message : String(e)}\n` };
+          }
+        }
+        const result = await invokeTauri<{ stdout: string; stderr: string; code: number | null }>('shell_run_sync', {
+          cmd: code,
+          cwd: shellCwdRef.current || undefined,
+        });
+        const stdout = result.code !== null && result.code !== 0 ? `${result.stdout}[exit ${result.code}]\n` : result.stdout;
+        return { stdout, stderr: result.stderr };
+      },
+    });
+    pushToast('Terminal: real OS shell ready', 'success');
+    playSound('notice');
+  }
+
+  async function handlePickShellCwd() {
+    try {
+      const dir = await pickDirectory();
+      if (dir) {
+        setShellCwd(dir);
+        termRef.current?.writeln(`\r\n\x1b[36mWorking directory set to ${dir}\x1b[0m`);
+      }
+    } catch (e) {
+      console.error('Pick folder failed', e);
+      pushToast(e instanceof Error ? e.message : 'Could not open the folder picker', 'warn');
+    }
+  }
+
+  // Sniffs a local dev-server URL (Vite/webpack/CRA/Next/etc. all print
+  // one of these shapes on startup) out of real stdout — best-effort, not
+  // guaranteed for every dev server's banner format, which is why the
+  // running output is also just visible in the terminal regardless.
+  const DEV_URL_RE = /https?:\/\/(?:localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1\])(?::\d+)?[^\s'"<>]*/i;
+  function scanForDevUrl(line: string) {
+    const m = line.match(DEV_URL_RE);
+    if (!m) return;
+    const found = m[0].replace(/\/$/, '').replace('0.0.0.0', 'localhost').replace('[::1]', 'localhost');
+    setDevUrl((prev) => prev ?? found);
+  }
+
+  // Real background process streaming — registered once (Tauri only), not
+  // re-registered per dev-server run, so it never misses output that
+  // arrives between "runtime switched to shell" and "dev server started."
+  // Filters by devPidRef so stray output from a previous (already
+  // killed/exited) run can't get attributed to a new one.
+  useEffect(() => {
+    if (!isTauri()) return;
+    let unlistenOutput: (() => void) | undefined;
+    let unlistenExit: (() => void) | undefined;
+    let cancelled = false;
+    void (async () => {
+      const { listen } = await import('@tauri-apps/api/event');
+      const outUn = await listen<{ pid: number; stream: 'stdout' | 'stderr'; line: string }>('shell-output', (event) => {
+        if (event.payload.pid !== devPidRef.current) return;
+        const term = termRef.current;
+        const { stream, line } = event.payload;
+        term?.writeln(stream === 'stderr' ? `\x1b[31m${line}\x1b[0m` : line);
+        scanForDevUrl(line);
+      });
+      const exitUn = await listen<{ pid: number; code: number | null }>('shell-exit', (event) => {
+        if (event.payload.pid !== devPidRef.current) return;
+        termRef.current?.writeln(`\x1b[36m▶ Dev server exited (code ${event.payload.code ?? 'unknown'}).\x1b[0m`);
+        setDevPid(null);
+        setDevBusy(false);
+      });
+      if (cancelled) {
+        outUn();
+        exitUn();
+      } else {
+        unlistenOutput = outUn;
+        unlistenExit = exitUn;
+      }
+    })();
+    return () => {
+      cancelled = true;
+      unlistenOutput?.();
+      unlistenExit?.();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  async function handleStartDevServer() {
+    if (!isTauri() || devBusy || devPid !== null) return;
+    setDevBusy(true);
+    setDevUrl(null);
+    const term = termRef.current;
+    term?.writeln(`\r\n\x1b[36m▶ Starting: ${devCmd}${shellCwdRef.current ? ` (in ${shellCwdRef.current})` : ''}\x1b[0m`);
+    try {
+      const pid = await invokeTauri<number>('shell_spawn_bg', { cmd: devCmd, cwd: shellCwdRef.current || undefined });
+      setDevPid(pid);
+      pushToast(`Dev server running (pid ${pid})`, 'success');
+      playSound('notice');
+    } catch (e) {
+      console.error('shell_spawn_bg failed', e);
+      term?.writeln(`\x1b[31m${e instanceof Error ? e.message : String(e)}\x1b[0m`);
+      pushToast('Could not start the dev server — see the terminal output', 'warn');
+      setDevBusy(false);
+    }
+  }
+
+  async function handleStopDevServer() {
+    if (devPid === null) return;
+    try {
+      await invokeTauri('shell_kill_bg', { pid: devPid });
+    } catch (e) {
+      console.error('shell_kill_bg failed', e);
+    } finally {
+      termRef.current?.writeln('\x1b[36m▶ Dev server stopped.\x1b[0m');
+      setDevPid(null);
+      setDevBusy(false);
+    }
+  }
+
+  function openDevServerInBrowserRoom() {
+    if (!devUrl) return;
+    useBrowserNavStore.getState().requestNavigate(devUrl);
+    useUiStore.getState().go('browser');
+    pushToast(`Opening ${devUrl} in the Browser room`, 'info');
+  }
+
   async function handleOpenPyFile() {
     try {
       const f = await openTextFile(['py'], 'Python');
@@ -594,6 +810,10 @@ export default function TerminalRoom({ active }: { active: boolean }) {
   }
 
   function pick(r: Runtime) {
+    if (r === 'shell' && !isTauri()) {
+      pushToast('Full shell access requires the desktop app — a browser tab cannot spawn OS processes.', 'warn');
+      return;
+    }
     if (r === runtime && status === 'ready') return;
     setRuntime(r);
     playSound('nav');
@@ -601,6 +821,7 @@ export default function TerminalRoom({ active }: { active: boolean }) {
     else if (r === 'python') void startPython();
     else if (r === 'ruby') void startRuby();
     else if (r === 'php') void startPHP();
+    else if (r === 'shell') void startShell();
     else void startGo();
   }
 
@@ -630,6 +851,13 @@ export default function TerminalRoom({ active }: { active: boolean }) {
             GO
           </span>
           <span
+            className={`chip ${runtime === 'shell' ? 'on' : ''} ${!isTauri() ? 'shellChipWeb' : ''}`}
+            onClick={() => pick('shell')}
+            title={isTauri() ? 'A genuine OS shell — real child processes, your real filesystem, not a sandbox' : 'Full shell access requires the desktop app — browsers cannot spawn OS processes (a hard platform limit)'}
+          >
+            <Icon name={isTauri() ? 'terminal' : 'warning'} size={12} /> SHELL {isTauri() ? '(REAL OS)' : '(DESKTOP ONLY)'}
+          </span>
+          <span
             className="chip disabled"
             title="Two separate reasons: (1) no E2B account configured — Captain's call, no key yet. (2) No maintained self-hosted C/C++-to-WASM compiler exists as a real dependency today (the one community demo was pulled from npm in 2021)."
           >
@@ -652,6 +880,53 @@ export default function TerminalRoom({ active }: { active: boolean }) {
             <Icon name="folderOpen" size={12} /> OPEN .py FILE
           </span>
         </div>
+
+        {runtime === 'shell' && isTauri() && (
+          <div className="fileEditorPanel devServerPanel">
+            <div className="fileEditorToolbar">
+              <span className="fileEditorName">
+                <Icon name="folderOpen" size={12} /> CWD: {shellCwd || '(app default)'}
+              </span>
+              <span className="fileEditorBtn" onClick={() => void handlePickShellCwd()} title="Pick your project folder">
+                PICK FOLDER
+              </span>
+            </div>
+            <div className="fileEditorToolbar">
+              <span className="fileEditorName">
+                <Icon name="server" size={12} /> RUN DEV SERVER
+              </span>
+              <input
+                className="browserAddress devCmdInput"
+                value={devCmd}
+                disabled={devPid !== null}
+                placeholder="npm run dev"
+                onChange={(e) => setDevCmd(e.target.value)}
+              />
+              {devPid === null ? (
+                <span className={`fileEditorBtn ${devBusy ? 'disabled' : ''}`} onClick={() => void handleStartDevServer()} title="Spawn a real background process">
+                  <Icon name="play" size={12} /> START
+                </span>
+              ) : (
+                <span className="fileEditorBtn" onClick={() => void handleStopDevServer()} title={`Kill pid ${devPid}`}>
+                  <Icon name="stop" size={12} /> STOP (pid {devPid})
+                </span>
+              )}
+              {devUrl && (
+                <>
+                  <span className="fileEditorBtn" onClick={openDevServerInBrowserRoom} title="Navigate the Browser room here">
+                    <Icon name="browser" size={12} /> OPEN IN BROWSER ROOM
+                  </span>
+                  <span className="fileEditorBtn" onClick={() => void openExternally(devUrl)} title="Open in your system's default browser">
+                    <Icon name="externalLink" size={12} /> OPEN EXTERNALLY
+                  </span>
+                </>
+              )}
+            </div>
+            {devPid !== null && !devUrl && (
+              <div className="browserPanelHint">Running — watching real stdout below for a localhost URL to open…</div>
+            )}
+          </div>
+        )}
 
         {openFile && (
           <div className="fileEditorPanel">
