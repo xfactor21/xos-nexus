@@ -4,16 +4,13 @@ import { nodeToBug } from '../../core/mappers';
 import type { BugSeverity, BugStatus } from '../../core/types';
 import Icon from '../../design-system/icons/Icon';
 import AmbientField from '../../design-system/background/AmbientField';
+import ShipAmbience from '../../design-system/background/ShipAmbience';
 
 type StatusFilter = 'all' | 'open' | 'fixed';
 type SavedView = 'none' | 'critical' | 'unassigned' | 'mine';
 
 const SEVERITY_ORDER: BugSeverity[] = ['critical', 'high', 'medium', 'low', 'trivial'];
 
-/** Aging — real client-side calc off created_at (no separate "age" column
- * exists), same pattern coreGraph already uses for ProjectRecord.idleDays.
- * Bands loosely mirror the severity palette so an old-and-untouched bug
- * reads as visually "hot" the same way a critical one does. */
 function ageDays(createdAt: string): number {
   return Math.max(0, Math.floor((Date.now() - new Date(createdAt).getTime()) / 86400000));
 }
@@ -33,16 +30,7 @@ const RELATION_VERB: Record<string, string> = {
   affects: 'affects',
 };
 
-/** BUG TRACKER — Step 5: ported 1:1 from xos-prototype.html (status-cycle
- * chips, ALL/OPEN/FIXED filter) and extended per the Feature Uplift notes:
- * severity levels beyond HIGH/MED/LOW with color coding, an assignee field,
- * a linked-commit placeholder field, duplicate-detection as a real UI
- * affordance (not just a caption), full-text search, and saved filter
- * views. */
 export default function Bugs({ active }: { active: boolean }) {
-  // See Projects room for why this derives locally via useMemo instead of
-  // a `(s) => s.bugs()`-style store selector (unstable snapshot → risk of
-  // "Maximum update depth exceeded").
   const nodes = useCoreGraph((s) => s.nodes);
   const edges = useCoreGraph((s) => s.edges);
   const bugs = useMemo(() => nodes.filter((n) => n.kind === 'bug').map(nodeToBug), [nodes]);
@@ -66,9 +54,6 @@ export default function Bugs({ active }: { active: boolean }) {
     return m;
   }, [nodes]);
 
-  // "Life of a bug" — built from real data only (creation date, current
-  // status, and graph edges touching this node), never fabricated
-  // intermediate history, since the schema has no persisted change-log.
   function bugEdges(bugId: string) {
     return edges.filter((e) => e.from_node === bugId || e.to_node === bugId);
   }
@@ -105,9 +90,8 @@ export default function Bugs({ active }: { active: boolean }) {
 
   return (
     <section className={`room ambient ${active ? 'on' : ''}`} id="r-bugs">
-      {/* Amendment v0.6 step 3: Bug Tracker gets the "slightly warmer" mood
-          variation the amendment names explicitly. */}
       <AmbientField mood="warm" density={26} active={active} parallax />
+      <ShipAmbience kind="lights" corner="tl" active={active} />
       <div className="roomInner">
       <h2 className="rh">
         <Icon name="bugTracker" size={18} /> BUG TRACKER
@@ -124,7 +108,6 @@ export default function Bugs({ active }: { active: boolean }) {
         ))}
       </div>
 
-      {/* Feature uplift: saved filter views */}
       <div className="optrow" style={{ marginTop: -6 }}>
         <span className={`savedview ${savedView === 'none' ? 'on' : ''}`} onClick={() => setSavedView('none')}>
           <Icon name="star" size={11} /> MY DEFAULT VIEW
@@ -221,7 +204,6 @@ export default function Bugs({ active }: { active: boolean }) {
                 ))}
               </div>
             )}
-            {/* Feature uplift: duplicate-detection surfaced as a real, actionable affordance */}
             {b.duplicateOf && b.similarity && (
               <div className="dup-banner" onClick={() => updateBug(b.id, { duplicateOf: null, similarity: null })}>
                 <span>

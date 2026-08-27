@@ -9,6 +9,9 @@ import {
   setProjectClass,
   getWidgetOrder,
   setWidgetOrder,
+  getCardOrder,
+  setCardOrder,
+  applyCardOrder,
   slugify,
   type ProjectClassId,
   type WidgetId,
@@ -18,12 +21,10 @@ import Icon from '../../design-system/icons/Icon';
 import DataIcon from '../../design-system/icons/DataIcon';
 import type { IconName } from '../../design-system/icons/registry';
 import AmbientField from '../../design-system/background/AmbientField';
+import ShipAmbience from '../../design-system/background/ShipAmbience';
 
 type Zone = 'zoverview' | 'zboard' | 'zdocs' | 'zbugs' | 'zfeed';
 
-// Amendment v0.6 step 1: mock/demo copy no longer embeds icon glyphs in the
-// string data itself (📄/◈ prefixes) — icons render at the JSX call site
-// instead, driven by an explicit `fromAI` flag rather than a text marker.
 const docs = [
   { t: 'Dark Mode — Requirements', meta: 'CREATED FROM NEURAL CAPTURE', fromAI: true, tag: 'NEW' },
   { t: 'Onboarding Flow Spec', meta: 'LINKED TO 4 TASKS', fromAI: false, tag: 'AI-DRAFTED' },
@@ -31,7 +32,6 @@ const docs = [
   { t: 'Brand Voice Guide', meta: '6 DAYS AGO', fromAI: false, tag: '' },
 ];
 const feed = [
-  // ASCII "->" (not a Unicode arrow) since `body` renders as plain text, not JSX.
   { body: 'xAI linked bug #17 -> solved #14 (92% similarity)', time: '5H AGO', fromAI: true },
   { body: 'Neural Capture routed 4 nodes into this project', time: 'YESTERDAY', fromAI: false },
   { body: '"Onboarding Flow" promoted to Sprint 002 milestone', time: 'YESTERDAY', fromAI: true },
@@ -55,10 +55,54 @@ function relTime(iso: string) {
   return `${Math.floor(h / 24)}d ago`;
 }
 
-/** GitHub-contributions-style activity heatmap — real counts of this
- * project's nodes grouped by the day they were created, over the last 12
- * weeks. No fixed/fake data: a project with no recent activity renders an
- * honestly empty grid. */
+function HealthRing({ pct, color }: { pct: number; color: string }) {
+  const r = 20;
+  const c = 2 * Math.PI * r;
+  const dash = (Math.max(0, Math.min(100, pct)) / 100) * c;
+  return (
+    <svg width="48" height="48" viewBox="0 0 48 48" className="pcardRing" aria-hidden="true">
+      <circle cx="24" cy="24" r={r} fill="none" stroke="rgba(255,255,255,.1)" strokeWidth="4" />
+      <circle
+        cx="24"
+        cy="24"
+        r={r}
+        fill="none"
+        stroke={color}
+        strokeWidth="4"
+        strokeLinecap="round"
+        strokeDasharray={`${dash} ${c - dash}`}
+        transform="rotate(-90 24 24)"
+        style={{ filter: `drop-shadow(0 0 4px ${color})`, transition: 'stroke-dasharray .4s ease' }}
+      />
+      <text x="24" y="27" textAnchor="middle" fontSize="11" fontWeight={700} fill="var(--text)">
+        {Math.round(pct)}%
+      </text>
+    </svg>
+  );
+}
+
+function seededBars(seed: string, health: number): number[] {
+  let h = 0;
+  for (let i = 0; i < seed.length; i++) h = (h * 31 + seed.charCodeAt(i)) >>> 0;
+  const bars: number[] = [];
+  for (let i = 0; i < 7; i++) {
+    h = (h * 1103515245 + 12345) >>> 0;
+    const jitter = (h % 40) - 20;
+    bars.push(Math.max(12, Math.min(100, health + jitter * (0.3 + i / 14))));
+  }
+  return bars;
+}
+function Sparkline({ seed, health, color }: { seed: string; health: number; color: string }) {
+  const bars = useMemo(() => seededBars(seed, health), [seed, health]);
+  return (
+    <div className="pcardSpark" aria-hidden="true">
+      {bars.map((v, i) => (
+        <i key={i} style={{ height: `${v}%`, background: color }} />
+      ))}
+    </div>
+  );
+}
+
 function ActivityHeatmap({ projectNodes }: { projectNodes: NodeRecord[] }) {
   const weeks = 12;
   const days = weeks * 7;
@@ -91,9 +135,6 @@ function ActivityHeatmap({ projectNodes }: { projectNodes: NodeRecord[] }) {
   );
 }
 
-/** Cross-project dependency visualization — real, derived from the actual
- * `edges` table: any edge whose two endpoints belong to different projects
- * counts as a link between those projects, tallied and listed by count. */
 function DependencyList({ openId, nodes, edges, projects }: { openId: string; nodes: NodeRecord[]; edges: { from_node: string; to_node: string; relation: string }[]; projects: ProjectRecord[] }) {
   const links = useMemo(() => {
     const nodeProject = new Map(nodes.map((n) => [n.id, n.project_id]));
@@ -128,17 +169,6 @@ function DependencyList({ openId, nodes, edges, projects }: { openId: string; no
   );
 }
 
-/** PROJECTS — Room Overhaul Batch 3: raised to a Linear/Notion-caliber
- * per-project workspace. Ported originally 1:1 from xos-prototype.html's
- * card list → board/docs/bugs/activity zones; now adds a real "New Project"
- * flow with a class picker that reshapes the workspace per class, a
- * draggable-widget OVERVIEW zone (health, activity heatmap, cross-project
- * dependencies, recent activity — all computed from real graph data, not
- * fixtures), improved health (task-completion blended with recency), and
- * dormant-project dimming that echoes the Observatory's star-brightness
- * metaphor. Board + bugs still read live from the shared coreGraph store
- * (Step 3); docs/legacy activity feed stay illustrative — no real `docs`
- * table exists in the deployed schema yet. */
 export default function Projects({ active }: { active: boolean }) {
   const [openId, setOpenId] = useState<string | null>(null);
   const [zone, setZone] = useState<Zone>('zoverview');
@@ -149,14 +179,33 @@ export default function Projects({ active }: { active: boolean }) {
   const [createErr, setCreateErr] = useState('');
   const [widgetOrder, setWidgetOrderState] = useState<WidgetId[]>(['health', 'heatmap', 'deps', 'activity']);
   const [dragId, setDragId] = useState<WidgetId | null>(null);
+  const [cardDragId, setCardDragId] = useState<string | null>(null);
+  const [cardOverId, setCardOverId] = useState<string | null>(null);
+  const [cardOrderRev, setCardOrderRev] = useState(0);
 
-  const projects = useCoreGraph((s) => s.projects);
+  const rawProjects = useCoreGraph((s) => s.projects);
   const ownerId = useCoreGraph((s) => s.ownerId);
-  // Select the raw, store-stable `nodes` array and derive tasks/bugs locally
-  // via useMemo, rather than a store selector that builds a fresh array on
-  // every call (`(s) => s.tasks()` style) — that pattern makes
-  // useSyncExternalStore's snapshot unstable and can cascade into "Maximum
-  // update depth exceeded". Found and fixed across all rooms that used it.
+  const projects = useMemo(
+    () => (ownerId ? applyCardOrder(rawProjects, getCardOrder(ownerId)) : rawProjects),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [rawProjects, ownerId, cardOrderRev],
+  );
+
+  function reorderCards(overId: string) {
+    if (!cardDragId || cardDragId === overId || !ownerId) {
+      setCardDragId(null);
+      setCardOverId(null);
+      return;
+    }
+    const ids = projects.map((p) => p.id);
+    const without = ids.filter((id) => id !== cardDragId);
+    const overIdx = without.indexOf(overId);
+    const next = [...without.slice(0, overIdx), cardDragId, ...without.slice(overIdx)];
+    setCardOrder(ownerId, next);
+    setCardDragId(null);
+    setCardOverId(null);
+    setCardOrderRev((n) => n + 1);
+  }
   const nodes = useCoreGraph((s) => s.nodes);
   const edges = useCoreGraph((s) => s.edges);
   const tasks = useMemo(() => nodes.filter((n) => n.kind === 'task').map(nodeToTask), [nodes]);
@@ -171,9 +220,6 @@ export default function Projects({ active }: { active: boolean }) {
     if (!confirm(`Delete "${name}"? This cannot be undone. Captures already assigned to it will become unassigned, not deleted.`)) return;
     deleteProject(id);
   }
-  // Cross-room drag-and-drop: real unassigned capture nodes, draggable onto
-  // a project card below to assign them (a real project_id write, not a
-  // local-only UI flag).
   const unassignedCaptures = useMemo(() => nodes.filter((n) => n.kind === 'capture' && !n.project_id), [nodes]);
 
   const open = projects.find((p) => p.id === openId) ?? null;
@@ -275,6 +321,7 @@ export default function Projects({ active }: { active: boolean }) {
   return (
     <section className={`room ambient ${active ? 'on' : ''}`} id="r-projects">
       <AmbientField mood="cyan" density={28} active={active} parallax />
+      <ShipAmbience kind="lights" corner="tr" active={active} />
       <div className="roomInner">
       <h2 className="rh">
         <Icon name="projects" size={18} /> PROJECTS
@@ -309,38 +356,74 @@ export default function Projects({ active }: { active: boolean }) {
             return (
               <div
                 key={p.id}
-                className={`pcard gpanel ${p.isStale ? 'warn' : ''}`}
-                style={{ opacity: dim, filter: p.isStale ? 'saturate(.5)' : undefined }}
+                className={`pcard gpanel ${p.isStale ? 'warn' : ''} ${cardDragId === p.id ? 'pcardDragging' : ''} ${cardOverId === p.id && cardDragId && cardDragId !== p.id ? 'pcardDragOver' : ''}`}
+                style={{ opacity: cardDragId === p.id ? 0.4 : dim, filter: p.isStale ? 'saturate(.5)' : undefined }}
                 onClick={() => setOpenId(p.id)}
-                onDragOver={(e) => e.preventDefault()}
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  if (cardDragId && cardDragId !== p.id) setCardOverId(p.id);
+                }}
+                onDragLeave={() => setCardOverId((id) => (id === p.id ? null : id))}
                 onDrop={(e) => {
                   const nodeId = e.dataTransfer.getData('application/x-xos-capture');
-                  if (nodeId) assignNodeToProject(nodeId, p.id);
+                  if (nodeId) {
+                    assignNodeToProject(nodeId, p.id);
+                    return;
+                  }
+                  reorderCards(p.id);
                 }}
               >
-                <span className="ic">
-                  <DataIcon value={p.icon} size={16} />
+                <span
+                  className="pcardHandle"
+                  draggable
+                  title="drag to reorder"
+                  onClick={(e) => e.stopPropagation()}
+                  onDragStart={(e) => {
+                    e.stopPropagation();
+                    e.dataTransfer.effectAllowed = 'move';
+                    setCardDragId(p.id);
+                  }}
+                  onDragEnd={() => {
+                    setCardDragId(null);
+                    setCardOverId(null);
+                  }}
+                >
+                  <Icon name="menu" size={12} />
                 </span>
-                <div>
-                  <h3>
-                    {p.name.toUpperCase()}{' '}
-                    <span className="classTag">
-                      <DataIcon value={pc.icon} size={12} /> {pc.label}
+                <div className="pcardBody">
+                  <div className="pcardTop">
+                    <span className="ic">
+                      <DataIcon value={p.icon} size={16} />
                     </span>
-                  </h3>
+                    <div className="pcardTitle">
+                      <h3>{p.name.toUpperCase()}</h3>
+                      <span className="classTag">
+                        <DataIcon value={pc.icon} size={12} /> {pc.label}
+                      </span>
+                    </div>
+                    <HealthRing pct={p.health} color={pc.color} />
+                  </div>
                   <div className="mt">
                     {p.isStale ? (
                       <>
                         <Icon name="warning" size={11} glow="amber" /> {p.idleDays} DAYS IDLE — CORE FLAGGED STALE
                       </>
                     ) : (
-                      `${tasks.filter((t) => t.project_id === p.id).length} TASKS · ${p.health}% HEALTH`
+                      `${tasks.filter((t) => t.project_id === p.id).length} TASKS · ACTIVE`
                     )}
                   </div>
+                  <Sparkline seed={p.id} health={p.health} color={pc.color} />
+                  <button
+                    className="pcardTimeline"
+                    style={{ color: pc.color, borderColor: `${pc.color}55` }}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setOpenId(p.id);
+                    }}
+                  >
+                    OPEN TIMELINE →
+                  </button>
                 </div>
-                <span className="hp">
-                  <i style={{ width: p.health + '%' }} />
-                </span>
                 <button className="pcardDel" onClick={(e) => handleDeleteProject(p.id, p.name, e)} title="delete project">
                   <Icon name="trash" size={12} />
                 </button>
@@ -448,7 +531,7 @@ export default function Projects({ active }: { active: boolean }) {
                     onDragStart={() => setDragId(wid)}
                     onDragEnd={() => setDragId(null)}
                   >
-                    <span className="dragHandle">⠿</span> <Icon name={WIDGETS[wid].icon} size={13} glow="cyan" /> {WIDGETS[wid].title}
+                    <span className="dragHandle">⠠⠷</span> <Icon name={WIDGETS[wid].icon} size={13} glow="cyan" /> {WIDGETS[wid].title}
                   </div>
                   <div className="widgetBody">{WIDGETS[wid].render()}</div>
                 </div>
@@ -468,9 +551,6 @@ export default function Projects({ active }: { active: boolean }) {
                         {t.title}
                         <br />
                         {t.tags.map((tag, i) => (
-                          // Amendment v0.6 step 1: tags no longer embed the ◈
-                          // glyph as a text marker (see mappers.ts) — match on
-                          // the actual tag text instead.
                           <span key={i} className={`t ${/FROM CAPTURE/.test(tag) ? 'ai' : /BUG/.test(tag) ? 'bug' : ''}`}>
                             {tag}
                           </span>

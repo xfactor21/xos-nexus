@@ -3,6 +3,7 @@ import { useCoreGraph } from '../../stores/coreGraph';
 import type { EdgeRecord, KnowledgeSnapshotMeta, NodeRecord } from '../../core/types';
 import Icon from '../../design-system/icons/Icon';
 import AmbientField from '../../design-system/background/AmbientField';
+import ShipAmbience from '../../design-system/background/ShipAmbience';
 
 function metaOf(n: NodeRecord): KnowledgeSnapshotMeta {
   const m = (n.metadata ?? {}) as Partial<KnowledgeSnapshotMeta>;
@@ -17,13 +18,6 @@ function hostOf(url: string): string {
   }
 }
 
-/** ROOM B — KNOWLEDGE MATRIX (Step 7). A searchable, browsable list of
- * pages saved from the Browser room's ADD TO MATRIX button — same
- * nodes/edges tables as every other capture (kind: 'knowledge_snapshot'),
- * same auto-tagging/edge-linking pipeline. No AI summarization by design
- * (explicitly out of scope per the brief) — title/description come
- * straight off the page's own metadata. Clicking a snapshot opens the
- * saved OFFLINE text, never a live re-fetch of the source URL. */
 export default function Knowledge({ active }: { active: boolean }) {
   const nodes = useCoreGraph((s) => s.nodes);
   const edges = useCoreGraph((s) => s.edges);
@@ -57,9 +51,6 @@ export default function Knowledge({ active }: { active: boolean }) {
   const selectedNode = snapshots.find((n) => n.id === selected) ?? null;
   const selectedMeta = selectedNode ? metaOf(selectedNode) : null;
 
-  // Auto-tagging/edge-linking pipeline's output, surfaced: every node this
-  // snapshot got connected to (either direction), by the same edges table
-  // Comms/Vault/Roadmaps already read from — not a bespoke tagging system.
   const linkedNodes = useMemo(() => {
     if (!selectedNode) return [];
     return edges
@@ -75,6 +66,7 @@ export default function Knowledge({ active }: { active: boolean }) {
   return (
     <section className={`room ambient ${active ? 'on' : ''}`} id="r-knowledge">
       <AmbientField mood="purple" density={16} active={active} parallax />
+      <ShipAmbience kind="terminal" corner="tr" active={active} />
       <div className="roomInner">
         <h2 className="rh">
           <Icon name="knowledgeMatrix" size={16} glow="purple" /> KNOWLEDGE MATRIX

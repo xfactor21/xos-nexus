@@ -15,10 +15,6 @@
   transition: filter 0.2s ease, color 0.2s ease, transform 0.2s ease;
 }
 
-/* The bespoke xAI presence glyph gets a slow perpetual rotation — a cheap
-   hint at the "gyroscope-orb" hologram concept without needing the full
-   3D build (that's Amendment v0.4 item 4's dedicated pass). Respects
-   prefers-reduced-motion per the blueprint's own universal directive. */
 .xIcon.xai {
   animation: xaiSpin 12s linear infinite;
 }
@@ -36,10 +32,6 @@
   }
 }
 
-/* Wireframe mode's "PROGRESS ●○○" mockup dots (splash/onboarding frame
-   templates) — a 3-dot progress indicator that's part of the fake UI
-   content a Captain is designing, not a functional icon, so it gets a
-   lightweight CSS treatment rather than the Icon component. */
 .wfDot {
   width: 5px;
   height: 5px;
@@ -52,54 +44,26 @@
   background: var(--cyan);
 }
 
-/* ============ Step 2 — sidebar as "neural spine" ============
- * Root-cause fix per the amendment: "Sidebar = settings menu — generic
- * icon+label rows disconnected from the node/graph metaphor." Icons now sit
- * on a glowing vertical line instead of a flat list. Collapsed (default)
- * shows icon-dots only; expanded (body.sb, toggled via #menuBtn) widens to
- * show labels beside them. A pulse travels along the line to whichever icon
- * is hovered (real, JS-measured position — see Shell.tsx's `trackSpine`),
- * and the active room's icon breathes brighter than the rest. */
+/* ============ Step 2 — sidebar as "neural spine" ============ */
 
 #sb {
-  /* override legacy.css's off-canvas drawer (translateX(-100%) when closed,
-     full-width-or-nothing when open) — the spine is always at least
-     visible as a collapsed dot-rail, never fully hidden. Offset below #hud
-     (44px) via `top`, not padding, so the rail's own bounding box (z-index
-     95, above #hud's 90) doesn't overlap and steal clicks from #menuBtn. */
   width: 56px;
   top: 44px;
   padding-top: 8px;
   transform: none;
   transition: width 0.28s cubic-bezier(0.22, 1, 0.36, 1);
-  /* Bug fix: this `overflow: visible` was silently overriding legacy.css's
-     `#sb { overflow-y: auto }` (same specificity, later in cascade order) —
-     with 14 rooms across FLOW/SYSTEMS plus section headers, the sidebar's
-     fixed top:44px/bottom:0 box can exceed a short viewport's height, and
-     with no scroll, SETTINGS (last item) and anything below the fold was
-     genuinely unreachable. Vertical scroll restored; horizontal stays
-     visible so nothing about the spine-dot glow effects gets clipped. */
   overflow-y: auto;
   overflow-x: visible;
 }
 body.sb #sb {
   width: 218px;
 }
-/* the collapsed rail is now ALWAYS on screen (unlike the old fully-hidden
-   drawer), so every room needs permanent left clearance or its own content
-   sits under the rail — real bug, caught via screenshot: Bug Tracker's
-   heading/search box were rendering partially behind the spine. Expanded
-   width (218px) is intentionally NOT reserved here — that state is a
-   transient overlay (dismiss-shade included), matching the original
-   drawer's overlay-not-reflow behavior. */
 .room {
   padding-left: 68px;
 }
 .fullroom {
   padding-left: 56px !important;
 }
-/* the dismiss-shade only makes sense while expanded (it lets a narrow
-   viewport tap outside to collapse back down) — collapsed never shows it. */
 #sbShade {
   transition: opacity 0.25s;
 }
@@ -107,12 +71,6 @@ body:not(.sb) #sbShade {
   opacity: 0 !important;
   pointer-events: none !important;
 }
-/* pre-existing quirk fix: legacy.css's #sbShade (z-index 94) sits above
-   #hud (z-index 90) — since #hud establishes its own stacking context (a
-   fixed-position element with a z-index), #menuBtn's own z-index can only
-   compete with its HUD siblings, not escape to beat the shade. #hud itself
-   needs the higher z-index so its one interactive control (the sidebar
-   toggle) is never trapped under the very shade it's meant to dismiss. */
 #hud {
   z-index: 96;
 }
@@ -124,10 +82,6 @@ body:not(.sb) #sbShade {
   position: relative;
   padding: 2px 0;
 }
-/* the glowing vertical line itself — centered under the icon column (28px
-   from the rail's left edge, i.e. the icon dot's center at 56px collapsed
-   width) so it reads as "icons sit on a line" in both collapsed/expanded
-   states. */
 .spineLine {
   position: absolute;
   top: 0;
@@ -194,7 +148,6 @@ body:not(.sb) #sbShade {
   }
 }
 
-/* nav rows: icon dot centered on the spine, label only visible expanded */
 .nav {
   position: relative;
   display: flex;
@@ -202,7 +155,7 @@ body:not(.sb) #sbShade {
   gap: 11px;
   padding: 9px 0;
   cursor: pointer;
-  border-left: none !important; /* replaces legacy.css's flat left-border "active" treatment */
+  border-left: none !important;
 }
 .nav .ic {
   position: relative;
@@ -217,11 +170,17 @@ body:not(.sb) #sbShade {
 .nav:hover .ic {
   transform: scale(1.12);
 }
-/* Active room — heavier glow than the plain breathe animation gives it,
-   per the cockpit glow-system pass: a real magenta active-border glow, not
-   just a brighter icon. */
 .nav.on {
   box-shadow: inset 2px 0 0 0 var(--mg), 0 0 20px rgba(255, 45, 120, 0.6);
+}
+.nav.on::before {
+  content: '';
+  position: absolute;
+  inset: 0 -14px;
+  background: linear-gradient(90deg, rgba(255, 45, 120, 0.22), rgba(0, 245, 255, 0.08));
+  border-left: 3px solid var(--mg);
+  pointer-events: none;
+  z-index: 0;
 }
 .nav .ic.breathe {
   animation: iconBreathe 2.6s ease-in-out infinite;
@@ -259,19 +218,7 @@ body.sb .navLabel {
   color: var(--text);
 }
 
-/* ============ Step 3 — ambient living background, every room ============
- * Root-cause per the amendment: "Only 2 rooms feel alive — ambient
- * background confined to Observatory/Neural Core." AmbientField.tsx (see
- * design-system/background/) renders a full-bleed drifting particle field
- * behind the room; `.room.ambient` + `.roomInner` is the position/z-index
- * contract every opted-in room follows so its real content still paints on
- * top, same as Focus Time's pre-existing #focusWarp/#focusContent pattern. */
 .ambientField {
-  /* <canvas> is a *replaced element* — position:fixed + inset:0 alone does
-     NOT stretch replaced elements to fill (a CSS-spec gotcha: replaced
-     elements fall back to their intrinsic size, the canvas's default
-     300×150 attribute dimensions, unless width/height are explicitly
-     100%). Caught via screenshot: the field was rendering into a 0×0 box. */
   position: fixed;
   inset: 0;
   width: 100%;
@@ -279,30 +226,19 @@ body.sb .navLabel {
   z-index: 0;
   pointer-events: none;
 }
-.room.ambient {
-  position: relative;
-}
+/* .room.ambient no longer needs its own `position: relative` — legacy.css's
+   `.room` rule now sets `position: fixed` unconditionally (the animated
+   room-change crossfade), and `position: fixed` establishes its own
+   stacking context on its own, same as `position: relative` did before.
+   A leftover `position: relative` here would have HIGHER specificity
+   (.room.ambient, two classes) than legacy.css's plain `.room` rule and
+   would silently win the cascade, undoing the fixed positioning the
+   crossfade depends on — so this is deleted, not just redundant. */
 .roomInner {
   position: relative;
   z-index: 1;
 }
 
-/* ============ Step 4 — real depth: light-source glow + parallax ============
- * Root-cause per the amendment: "Flat/template panels — no real depth,
- * parallax, or glow falloff." Two independent pieces:
- *  1. AmbientField now runs with parallax (see the `parallax` prop flipped
- *     on across all 9 rooms) so the drifting field responds to mouse
- *     movement with a soft multi-layer offset, not a static print.
- *  2. Every card-like surface (.gpanel/.card/.cap/.mem/.rel) gets a
- *     cursor-tracked radial-gradient spotlight (--mx/--my written by the
- *     single delegated listener in Shell.tsx) plus an asymmetric shadow
- *     that reads as light falling from above and the surface lifting
- *     toward the viewer on hover — not a flat uniform-opacity border-glow.
- * `.rel`'s own ::before is already spoken for (the timeline dot), so the
- * spotlight here uses ::after everywhere for consistency. Only top/right/
- * bottom border sides brighten on hover, never left — .card/.mem/.pcard
- * use their left border as a meaningful type/status accent (bug vs ai,
- * warn vs normal) that must survive hovering. */
 .gpanel,
 .card,
 .cap,
@@ -317,6 +253,37 @@ body.sb .navLabel {
     box-shadow 0.3s cubic-bezier(0.34, 1.56, 0.64, 1),
     border-color 0.25s ease,
     transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.gpanel::before,
+.card::before,
+.cap::before,
+.mem::before,
+.rel::before,
+.bug::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-repeat: no-repeat;
+  background-image:
+    linear-gradient(90deg, rgba(0, 245, 255, 0.65), rgba(0, 245, 255, 0.65)),
+    linear-gradient(180deg, rgba(0, 245, 255, 0.65), rgba(0, 245, 255, 0.65)),
+    linear-gradient(270deg, rgba(255, 45, 120, 0.65), rgba(255, 45, 120, 0.65)),
+    linear-gradient(180deg, rgba(255, 45, 120, 0.65), rgba(255, 45, 120, 0.65)),
+    linear-gradient(90deg, rgba(255, 45, 120, 0.65), rgba(255, 45, 120, 0.65)),
+    linear-gradient(0deg, rgba(255, 45, 120, 0.65), rgba(255, 45, 120, 0.65)),
+    linear-gradient(270deg, rgba(0, 245, 255, 0.65), rgba(0, 245, 255, 0.65)),
+    linear-gradient(0deg, rgba(0, 245, 255, 0.65), rgba(0, 245, 255, 0.65));
+  background-size:
+    12px 1.5px, 1.5px 12px,
+    12px 1.5px, 1.5px 12px,
+    12px 1.5px, 1.5px 12px,
+    12px 1.5px, 1.5px 12px;
+  background-position:
+    top left, top left,
+    top right, top right,
+    bottom left, bottom left,
+    bottom right, bottom right;
 }
 .gpanel::after,
 .card::after,
@@ -375,8 +342,6 @@ body.sb .navLabel {
     transform: none;
   }
 }
-/* press feedback for the surfaces above — the hover lift eases in, a click
-   should read as a real press: a quick settle back toward the surface. */
 .gpanel:active,
 .card:active,
 .cap:active,
@@ -387,15 +352,6 @@ body.sb .navLabel {
   transition-duration: 0.08s;
 }
 
-/* ============ Step 5 — universal micro-interaction pass ============
- * Root-cause per the amendment: hover/press response existed only in the
- * "showcase" rooms (Design Studio's board cards, mode cards, preset chips,
- * etc. — all bespoke per-component CSS already in legacy.css). Every other
- * button/chip/pill/slider in the app had zero considered response — a
- * `cursor:pointer` and nothing else. This section is the DRY, app-wide
- * fix: native <button>, .chip, .savedview/.assignee-pill, and range
- * sliders all get a real hover + press response from one shared rule each,
- * so it applies consistently rather than being re-authored per room. */
 button {
   cursor: pointer;
   transition: filter 0.15s ease, transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.15s ease;
@@ -441,10 +397,6 @@ button:disabled {
   transition-duration: 0.05s;
 }
 
-/* native range sliders (Settings' NEON INTENSITY, Observatory's scrub bar,
-   various tool panels) only had accent-color set — no thumb feedback at
-   all. WebKit/Firefox require separate pseudo-elements; both are styled
-   to the same glow-on-hover, grow-on-press treatment. */
 input[type='range'] {
   cursor: pointer;
 }
@@ -469,8 +421,6 @@ input[type='range']:active::-moz-range-thumb {
   box-shadow: 0 0 0 9px rgba(0, 245, 255, 0.22);
 }
 
-/* nav rows (the spine itself) get the same press settle as cards/buttons —
-   step 2 already covers hover (scale + pulse), this rounds it out. */
 .nav:active .ic {
   transform: scale(1.0);
 }
@@ -491,42 +441,48 @@ input[type='range']:active::-moz-range-thumb {
   }
 }
 
-/* ============ Step 6 — typography hierarchy pass ============
- * Root-cause per the amendment: hierarchy was built entirely out of
- * font-size + letter-spacing — a genuine weight ladder existed nowhere
- * (every h1/h2/h3 rendered at the same 500). index.css now carries the
- * real ladder for semantic headings (h1:700 / h2:600 / h3:500 — see the
- * comment there); the handful of display-face elements below bypass an
- * h-tag (styled directly via font-family:var(--font-disp), e.g. Focus
- * Time's giant countdown) and so need explicit placement on that same
- * ladder rather than silently defaulting to browser-normal (400) despite
- * being the most visually dominant text in their room. Per the amendment:
- * "confirm mono stays for data" — Share Tech Mono (labels, meta, body,
- * numeric data throughout the app) is untouched by this pass; only the
- * Orbitron display face gets deliberate weight use. */
 #clock,
 .fs-line.big,
 .wStatN {
-  font-weight: 700; /* primary numeric focal points — h1 tier */
+  font-weight: 700;
 }
 #fsQinput {
-  font-weight: 600; /* editable focus-intent input — h2 tier */
+  font-weight: 600;
 }
 .vital .n {
   font-weight: 600;
 }
 #fsLabel,
 .mood {
-  font-weight: 500; /* small display-face accent labels — h3 tier */
+  font-weight: 500;
 }
 
-/* ============================================================
-   COCKPIT REDESIGN — "inside a living command ship", not a web app.
-   Structural frame (brackets/canopy/floor), global particle field, wing
-   perspective skew, heavier glow. Mounted once in Shell.tsx / here — a
-   shared layer, not a per-room patch. See CockpitFrame.tsx,
-   GlobalParticles.tsx, XaiCharacter.tsx.
-   ============================================================ */
+.nebulaBackdrop {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+.nebulaBackdropImg {
+  display: block;
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center;
+  opacity: 0.85;
+  filter: saturate(1.35) brightness(1.05) contrast(1.05);
+}
+.nebulaBackdropVignette {
+  position: absolute;
+  inset: 0;
+  background: rgba(5, 8, 13, 0.22);
+}
+
 .globalParticles {
   position: fixed;
   inset: 0;
@@ -539,9 +495,6 @@ input[type='range']:active::-moz-range-thumb {
   position: fixed;
   inset: 0;
   pointer-events: none;
-  /* Brackets must paint above the wings (#sb/#dock, z-index 95) — they're
-     the outermost, closest-to-camera frame element and must never be
-     visually eaten by a panel sitting at the same screen edge. */
   z-index: 97;
 }
 .canopyArc {
@@ -596,7 +549,6 @@ input[type='range']:active::-moz-range-thumb {
 }
 .floorGrid svg { width: 100%; height: 100%; }
 
-/* HUD / status bar light-source glow — "emitting light downward/upward" */
 #hud {
   box-shadow: 0 2px 30px rgba(255, 45, 120, 0.2);
   border-bottom: 1px solid var(--eg-hot);
@@ -630,9 +582,6 @@ input[type='range']:active::-moz-range-thumb {
   #status .dot { animation: none; }
 }
 
-/* Side wings — the sidebar spine (left) and xAI dock (right) get real
-   perspective skew instead of sitting as flat panels, per the brief:
-   "appear to curve toward the user — not flat sidebars." */
 #sb {
   transform: perspective(800px) rotateY(4deg);
   transform-origin: left center;
@@ -640,52 +589,31 @@ input[type='range']:active::-moz-range-thumb {
   border-left: 2px solid var(--mg);
   box-shadow: inset -20px 0 40px rgba(255, 45, 120, 0.08), 4px 0 30px rgba(0, 0, 0, 0.5);
 }
-/* #dock (the old "xAI tips" right-wing panel) removed entirely — it
-   shared the xAI character's bottom-right corner, and being open by
-   default its text rendered behind the character. See Shell.tsx's
-   removal note for the DOM-verified investigation. */
 
-/* Spine gradient now runs the full brand gradient, not a single hue. */
 .spineLine {
   background: linear-gradient(180deg, var(--mg), var(--pu), var(--cy));
 }
 
-/* ============================================================
-   xAI CHARACTER — persistent, autonomous presence, every room.
-   Fixed bottom-right. Amendment v1.0: replaces the old gyroscope-orb
-   hologram AND its floating caption popup (both removed) with the real
-   face-expressive xAI character (react-three-fiber Canvas) — see
-   XaiCharacter.tsx.
-   Container is ~2.9x the old orb's 58x68 footprint (Captain's explicit
-   "2-3x bigger" direction, verified against before/after screenshots).
-   Bug-fix pass #2: 250x250 was sized against a camera distance that didn't
-   actually match the scale={1.6} XaiCharacter renders at in production
-   (verification had drifted from what shipped) -- grown to 320x320 and
-   paired with a scale-derived camera distance (XaiCharacter.tsx) so the
-   full character, including ring sweep during rotation, has real margin
-   instead of being sized to a hair's-width fit.
-   ============================================================ */
 .xaiChar {
+  /* Sized ~65% of the original 320px box per Captain feedback ("way too
+     big") — XaiCharacter.tsx's scale prop is derived proportionally below
+     so the character keeps filling its container without clipping. */
   position: fixed;
   right: 4px;
   bottom: 4px;
   z-index: 110;
-  width: 320px;
-  height: 320px;
+  width: 210px;
+  height: 210px;
   pointer-events: none;
 }
 .xaiChar canvas {
   pointer-events: none;
 }
 
-/* Item #3 — short status-tied caption bubble, transient (only rendered
-   while STATUS_LINES has an entry for the current status; XaiCharacter.tsx
-   hides it entirely once status reverts to idle). Positioned above the
-   character so it never competes with the ring/face for space. */
 .xaiCaption {
   position: absolute;
   right: 8px;
-  bottom: 250px;
+  bottom: 165px;
   max-width: 220px;
   padding: 8px 12px;
   border-radius: 12px;
@@ -712,12 +640,10 @@ input[type='range']:active::-moz-range-thumb {
   to { opacity: 1; transform: translateY(0); }
 }
 
-/* Item #4 — direct chat window, opened by clicking/tapping the character.
-   Sits just left of the character's corner so both remain visible at once. */
 .xaiChatWindow {
   position: fixed;
   right: 20px;
-  bottom: 300px;
+  bottom: 210px; /* tuned to the shrunk .xaiChar (was 300px for the 320px box) */
   z-index: 111;
   width: 300px;
   max-height: 380px;
@@ -769,6 +695,13 @@ input[type='range']:active::-moz-range-thumb {
   border-radius: 10px;
   max-width: 88%;
 }
+.xaiChatFiledNote {
+  margin-top: 4px;
+  font-size: 9px;
+  letter-spacing: 0.04em;
+  opacity: 0.55;
+  text-transform: uppercase;
+}
 .xaiChatMsg-you {
   align-self: flex-end;
   background: rgba(122, 92, 255, 0.18);
@@ -781,6 +714,69 @@ input[type='range']:active::-moz-range-thumb {
 }
 .xaiChatMsg-pending {
   opacity: 0.6;
+  font-style: italic;
+}
+/* Confirm-before-filing prompt (Captain feedback: xAI should ask before
+   logging, not file silently — a Yes/No pair attached under the reply that
+   proposed a node, with a countdown bar; no reply = timeout = No, nothing
+   ever gets written). */
+.xaiChatConfirm {
+  align-self: flex-start;
+  max-width: 88%;
+  margin-top: -2px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  background: rgba(255, 0, 168, 0.07);
+  border: 1px solid rgba(255, 0, 168, 0.25);
+  border-radius: 10px;
+  padding: 8px 10px;
+  font-size: 11px;
+}
+.xaiChatConfirmRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.xaiChatConfirmBtns {
+  display: flex;
+  gap: 6px;
+}
+.xaiChatConfirmBtns button {
+  font-size: 10.5px;
+  padding: 4px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  background: transparent;
+  color: inherit;
+}
+.xaiChatConfirmYes {
+  border: 1px solid rgba(0, 245, 255, 0.4);
+  color: var(--cy);
+}
+.xaiChatConfirmYes:hover {
+  background: rgba(0, 245, 255, 0.15);
+}
+.xaiChatConfirmNo {
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  opacity: 0.75;
+}
+.xaiChatConfirmNo:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+.xaiChatConfirmBar {
+  height: 2px;
+  border-radius: 2px;
+  background: rgba(255, 0, 168, 0.6);
+  transform-origin: left;
+  animation: xaiChatConfirmShrink linear forwards;
+}
+@keyframes xaiChatConfirmShrink {
+  from { transform: scaleX(1); }
+  to { transform: scaleX(0); }
+}
+.xaiChatConfirmDone {
+  opacity: 0.55;
   font-style: italic;
 }
 .xaiChatInputRow {
@@ -811,9 +807,6 @@ input[type='range']:active::-moz-range-thumb {
   cursor: default;
 }
 
-/* ============================================================
-   OS-GRADE UNIVERSAL DIRECTIVES — toasts, command palette, shortcuts.
-   ============================================================ */
 .toastHost {
   position: fixed;
   left: 18px;
@@ -932,13 +925,10 @@ input[type='range']:active::-moz-range-thumb {
 .shortcutsClose { margin-top: 16px; text-align: center; font-size: 9px; letter-spacing: 1.5px; color: var(--text-dim); cursor: pointer; padding-top: 12px; border-top: 1px solid var(--edge); }
 .shortcutsClose:hover { color: var(--text); }
 
-/* Projects uplift: unassigned-capture drag chips */
 .unassignedCaptures { border: 1px dashed rgba(0, 245, 255, 0.3); padding: 10px 12px; margin-bottom: 12px; }
 .unassignedCapChip { display: flex; align-items: center; gap: 6px; font-size: 10.5px; color: var(--text-dim); padding: 5px 0; cursor: grab; }
 .unassignedCapChip:hover { color: var(--text); }
 
-/* Settings uplift: accessibility overrides — Reduce Motion (manual override
-   independent of OS prefers-reduced-motion) and UI Scale. */
 #root {
   zoom: var(--ui-scale, 1);
 }
@@ -950,12 +940,6 @@ input[type='range']:active::-moz-range-thumb {
   transition-duration: 0.001ms !important;
 }
 
-/* ============================================================
-   Poppable Quick Capture widget — standalone Tauri window content
-   (widget.html / CaptureWidget.tsx). Small, self-contained page, not a
-   room — no cockpit frame/particles/hologram here, just the capture
-   surface itself, since the window chrome is already tiny.
-   ============================================================ */
 body.widget-body {
   margin: 0;
   background: var(--void);
@@ -1038,7 +1022,6 @@ body.widget-body {
 .widgetResult-queued { color: var(--pu); background: rgba(139, 92, 246, 0.08); }
 .widgetResult-error { color: var(--mg); background: rgba(255, 45, 120, 0.08); }
 
-/* Capture room: pop-out-to-widget affordance (Tauri only). */
 .popOutBtn {
   display: inline-flex;
   align-items: center;
@@ -1057,9 +1040,6 @@ body.widget-body {
   background: rgba(0, 245, 255, 0.08);
 }
 
-/* ============================================================
-   Step 7 — Room A: Browser
-   ============================================================ */
 .browserBanner {
   display: flex;
   align-items: center;
@@ -1168,6 +1148,123 @@ body.widget-body {
   color: var(--text-dim);
   background: var(--hull);
 }
+.bookmarkStarBtn.on {
+  color: var(--amber, #ffb800);
+  border-color: rgba(255, 184, 0, 0.4);
+}
+.browserIframeFallback {
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  bottom: 8px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 10px;
+  letter-spacing: 0.3px;
+  color: var(--text-dim);
+  background: rgba(5, 8, 13, 0.85);
+  border: 1px solid var(--edge);
+  border-radius: 6px;
+  padding: 6px 10px;
+  backdrop-filter: blur(6px);
+}
+.browserFallbackLink {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+  color: var(--cy);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.browserFallbackLink:hover {
+  text-decoration: underline;
+}
+.browserPanel {
+  width: min(560px, 92vw);
+}
+.browserPanelHint {
+  font-size: 10px;
+  color: var(--text-dim);
+  line-height: 1.5;
+  margin: -4px 0 12px;
+}
+.browserPanelHint code {
+  font-family: 'JetBrains Mono', monospace;
+  background: var(--glass);
+  padding: 1px 4px;
+  border-radius: 3px;
+}
+.browserPanelEmpty {
+  padding: 30px 0;
+  text-align: center;
+  color: var(--text-dim);
+  font-size: 12px;
+}
+.browserPanelList {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 46vh;
+  overflow-y: auto;
+}
+.browserPanelItem {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--edge);
+  border-radius: 6px;
+  background: var(--glass);
+}
+.browserPanelItemMain {
+  flex: 1;
+  min-width: 0;
+  cursor: pointer;
+}
+.browserPanelItemTitle {
+  font-size: 12px;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.browserPanelItemUrl {
+  font-size: 10px;
+  color: var(--text-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.browserPanelItemActions {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+}
+.browserRenameInput {
+  width: 100%;
+  background: var(--hull);
+  border: 1px solid var(--cy);
+  color: var(--text);
+  font-size: 12px;
+  padding: 4px 6px;
+  border-radius: 4px;
+  outline: none;
+}
+.browserSettingsRow {
+  border-top: 1px solid var(--edge);
+  padding: 14px 0;
+}
+.browserSettingsRow:first-of-type {
+  border-top: none;
+  padding-top: 0;
+}
+.browserSettingsLabel {
+  font-size: 11px;
+  letter-spacing: 0.5px;
+  color: var(--text-dim);
+}
 .spin {
   animation: spin 1s linear infinite;
 }
@@ -1176,9 +1273,6 @@ body.widget-body {
   to { transform: rotate(360deg); }
 }
 
-/* ============================================================
-   Step 7 — Room B: Knowledge Matrix
-   ============================================================ */
 .knowledgeEmpty {
   display: flex;
   flex-direction: column;
@@ -1296,9 +1390,6 @@ body.widget-body {
   padding-top: 14px;
 }
 
-/* ============================================================
-   Step 7 — Room C: Terminal
-   ============================================================ */
 .terminalShell {
   width: 100%;
   height: min(60vh, 560px);
@@ -1325,11 +1416,23 @@ body.widget-body {
   pointer-events: none;
 }
 
-/* ============================================================
-   Step 9 — Local file editing (Terminal .py / Browser .html)
-   ============================================================ */
 .fileEditorPanel {
   margin-bottom: 12px;
+}
+.devServerPanel {
+  border: 1px solid var(--edge);
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: var(--glass);
+}
+.devCmdInput {
+  flex: 1;
+  min-width: 160px;
+  max-width: 320px;
+}
+.shellChipWeb {
+  border-color: rgba(255, 184, 0, 0.35);
+  color: var(--amber, #ffb800);
 }
 .fileEditorToolbar {
   display: flex;
@@ -1424,4 +1527,212 @@ body.widget-body {
   .htmlPreviewFrame {
     height: 260px;
   }
+}
+
+/* ============================================================
+   SHIP AMBIENCE — Captain's ask, done last on purpose: subtle per-room
+   decoration (comet passes, blinking console lights, a small decorative
+   "still running" terminal readout) layered behind real content. See
+   design-system/background/ShipAmbience.tsx's doc comment for the full
+   rationale and the two ways to back this out (Settings toggle, or a
+   plain git revert of this isolated addition).
+
+   Same z-index:0 fixed-inset layer AmbientField already uses (behind
+   .roomInner's z-index:1) — never on top of, never intercepting clicks on,
+   real UI. `.force-reduce-motion` (Settings > Reduce Motion) already
+   neuters every animation-duration below to ~0 globally; ShipAmbience.tsx
+   additionally skips mounting entirely under reduced motion so no
+   scheduling loop runs in the background for a motion-sensitive Captain.
+   ============================================================ */
+.shipAmbience {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.shipComet {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 130px;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, rgba(0, 245, 255, 0.9));
+  border-radius: 2px;
+  box-shadow: 0 0 10px rgba(0, 245, 255, 0.6);
+  animation-duration: 1.6s;
+  animation-timing-function: ease-in-out;
+  animation-fill-mode: forwards;
+}
+.shipComet-tl { animation-name: shipCometTL; }
+.shipComet-tr { animation-name: shipCometTR; }
+.shipComet-bl { animation-name: shipCometBL; }
+.shipComet-br { animation-name: shipCometBR; }
+@keyframes shipCometTL {
+  0% { transform: translate(-10vw, -10vh) rotate(35deg); opacity: 0; }
+  10% { opacity: 0.9; }
+  90% { opacity: 0.9; }
+  100% { transform: translate(110vw, 70vh) rotate(35deg); opacity: 0; }
+}
+@keyframes shipCometTR {
+  0% { transform: translate(110vw, -10vh) rotate(145deg); opacity: 0; }
+  10% { opacity: 0.9; }
+  90% { opacity: 0.9; }
+  100% { transform: translate(-10vw, 70vh) rotate(145deg); opacity: 0; }
+}
+@keyframes shipCometBL {
+  0% { transform: translate(-10vw, 110vh) rotate(-35deg); opacity: 0; }
+  10% { opacity: 0.9; }
+  90% { opacity: 0.9; }
+  100% { transform: translate(110vw, 30vh) rotate(-35deg); opacity: 0; }
+}
+@keyframes shipCometBR {
+  0% { transform: translate(110vw, 110vh) rotate(-145deg); opacity: 0; }
+  10% { opacity: 0.9; }
+  90% { opacity: 0.9; }
+  100% { transform: translate(-10vw, 30vh) rotate(-145deg); opacity: 0; }
+}
+
+.shipLights {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 6px;
+}
+.shipLights-tl { top: 52px; left: 8px; }
+.shipLights-tr { top: 52px; right: 8px; }
+.shipLights-bl { bottom: 14px; left: 8px; }
+.shipLights-br { bottom: 14px; right: 8px; }
+.shipLight {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  opacity: 0.2;
+  animation-name: shipLightBlink;
+  animation-iteration-count: infinite;
+  animation-timing-function: ease-in-out;
+}
+.shipLight-cyan { background: #00F5FF; box-shadow: 0 0 6px rgba(0, 245, 255, 0.8); }
+.shipLight-magenta { background: #FF2D78; box-shadow: 0 0 6px rgba(255, 45, 120, 0.8); }
+.shipLight-purple { background: #8B5CF6; box-shadow: 0 0 6px rgba(139, 92, 246, 0.8); }
+.shipLight-amber { background: #FFB800; box-shadow: 0 0 6px rgba(255, 184, 0, 0.8); }
+@keyframes shipLightBlink {
+  0%, 100% { opacity: 0.18; }
+  50% { opacity: 0.85; }
+}
+
+.shipTerminal {
+  position: absolute;
+  max-width: 180px;
+  padding: 5px 8px;
+  font-family: var(--font-mono, monospace);
+  font-size: 8.5px;
+  letter-spacing: 0.5px;
+  color: rgba(0, 245, 255, 0.35);
+  background: rgba(5, 8, 13, 0.3);
+  border: 1px solid rgba(0, 245, 255, 0.12);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.shipTerminal-tl { top: 52px; left: 8px; }
+.shipTerminal-tr { top: 52px; right: 8px; }
+.shipTerminal-bl { bottom: 14px; left: 8px; }
+.shipTerminal-br { bottom: 14px; right: 8px; }
+.shipTerminalLine {
+  display: inline-block;
+  animation: shipTermFade 0.5s ease;
+}
+@keyframes shipTermFade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+.shipTerminalCursor {
+  display: inline-block;
+  width: 5px;
+  height: 9px;
+  margin-left: 3px;
+  background: rgba(0, 245, 255, 0.5);
+  animation: shipTermBlink 1s steps(2) infinite;
+  vertical-align: middle;
+}
+@keyframes shipTermBlink {
+  50% { opacity: 0; }
+}
+
+/* ===== CUSTOM COMMANDS (Settings > CUSTOM COMMANDS) ===================
+ * The "user-defined command-palette actions / webhook triggers" upgrade —
+ * form + list styling for src/modules/settings/CustomCommandsPanel.tsx.
+ * Field styling mirrors .toolField's input/textarea/select treatment
+ * elsewhere in this file for visual consistency; the list row mirrors the
+ * Bug Tracker's hover-reveal delete affordance (see .lyDel in legacy.css).
+ * ===================================================================== */
+.cmdCustomForm {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 10px;
+}
+.cmdCustomForm input,
+.cmdCustomForm textarea,
+.cmdCustomForm select {
+  width: 100%;
+  background: var(--glass);
+  border: 1px solid var(--edge);
+  color: var(--text);
+  padding: 8px 10px;
+  font-size: 11px;
+  font-family: inherit;
+}
+.cmdCustomForm textarea {
+  resize: vertical;
+  min-height: 40px;
+}
+
+.cmdCustomList {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 10px;
+}
+.cmdCustomRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--edge);
+  background: rgba(10, 14, 20, 0.4);
+}
+.cmdCustomMain {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.cmdCustomLabel {
+  font-size: 12px;
+  color: var(--text);
+}
+.cmdCustomMeta {
+  font-size: 9.5px;
+  letter-spacing: 0.4px;
+  color: var(--text-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cmdCustomDel {
+  opacity: 0.4;
+  cursor: pointer;
+  transition: opacity 0.15s, color 0.15s;
+}
+.cmdCustomRow:hover .cmdCustomDel {
+  opacity: 0.7;
+}
+.cmdCustomDel:hover {
+  opacity: 1;
+  color: var(--mg);
 }

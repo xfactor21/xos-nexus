@@ -7,6 +7,7 @@ import RoomOutlet from './RoomOutlet';
 import Icon from '../design-system/icons/Icon';
 import CockpitFrame from '../design-system/cockpit/CockpitFrame';
 import GlobalParticles from '../design-system/cockpit/GlobalParticles';
+import NebulaBackdrop from '../design-system/cockpit/NebulaBackdrop';
 import XaiCharacter from '../design-system/cockpit/XaiCharacter';
 import { XAIProvider } from '../design-system/cockpit/xai/xAIController-FINAL';
 import ToastHost from '../design-system/cockpit/ToastHost';
@@ -166,6 +167,7 @@ export default function Shell() {
     // room) in XAIProvider so any descendant can call useXAI()/setAiStatus()
     // — XaiCharacter's trigger bridge is the first consumer, below.
     <XAIProvider>
+      <NebulaBackdrop />
       <GlobalParticles />
       <CockpitFrame />
 

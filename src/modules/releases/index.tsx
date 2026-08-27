@@ -3,9 +3,8 @@ import { useCoreGraph } from '../../stores/coreGraph';
 import Icon from '../../design-system/icons/Icon';
 import type { IconName } from '../../design-system/icons/registry';
 import AmbientField from '../../design-system/background/AmbientField';
+import ShipAmbience from '../../design-system/background/ShipAmbience';
 
-// Amendment v0.6 step 1: status is now an { icon, text } pair instead of a
-// glyph-prefixed string — the icon renders at the JSX call site.
 const releases: { v: string; color: string; date: string; statusIcon: IconName; statusText: string; statusColor: string; notes: string }[] = [
   {
     v: 'v0.5.0 — ROOMS ONLINE',
@@ -36,11 +35,6 @@ const releases: { v: string; color: string; date: string; statusIcon: IconName; 
   },
 ];
 
-/** RELEASES — cockpit redesign: reframed as a Captain's ship's-log rather
- * than a changelog list, plus a live "unlogged work" entry that xAI drafts
- * itself from real completed nodes (status === 'done') that haven't been
- * folded into a tagged release yet — built from actual coreGraph data, not
- * fabricated entries, so it goes empty honestly when nothing's shipped. */
 export default function Releases({ active }: { active: boolean }) {
   const nodes = useCoreGraph((s) => s.nodes);
 
@@ -54,6 +48,7 @@ export default function Releases({ active }: { active: boolean }) {
   return (
     <section className={`room ambient ${active ? 'on' : ''}`} id="r-releases">
       <AmbientField mood="amber" density={24} active={active} parallax />
+      <ShipAmbience kind="terminal" corner="br" active={active} />
       <div className="roomInner">
       <h2 className="rh"><Icon name="releases" size={18} /> SHIP'S LOG</h2>
       <div className="rsub">EVERY RELEASE BECOMES PART OF HISTORY. THE CORE REMEMBERS WHAT SHIPPED.</div>

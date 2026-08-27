@@ -7,23 +7,14 @@ import { isTauri } from '../../lib/localDb';
 import Icon from '../../design-system/icons/Icon';
 import type { IconName } from '../../design-system/icons/registry';
 import AmbientField from '../../design-system/background/AmbientField';
+import ShipAmbience from '../../design-system/background/ShipAmbience';
 import { useCoreGraph } from '../../stores/coreGraph';
 
-/** Poppable Quick Capture widget — real Tauri command (see
- * src-tauri/src/lib.rs's `open_capture_widget`), invoked lazily via a
- * dynamic import so the web/Netlify build (which has no @tauri-apps/api
- * runtime behind it) never even parses this call path — only reachable at
- * all when isTauri() is true. */
 async function openCaptureWidget() {
   const { invoke } = await import('@tauri-apps/api/core');
   await invoke('open_capture_widget');
 }
 
-// Amendment v0.6 step 1: "kind" strings used as both lookup keys and
-// displayed labels no longer embed a glyph in the string itself — the
-// glyph becomes an explicit `icon: IconName` looked up alongside the plain
-// label, and renders via the shared Icon component at the JSX call site.
-// Same fix pattern as core/mappers.ts and modules/projects/index.tsx.
 type CapKind = 'IDEA' | 'BUG' | 'WRITING';
 
 const capDest: Record<CapKind, string> = {
@@ -34,33 +25,15 @@ const capDest: Record<CapKind, string> = {
 
 interface CapEntry {
   text: string;
-  /** Category key for the capDest lookup — null for transient system/status
-   * rows (e.g. the "just dissected" entry written by commitCap) that were
-   * never meant to match a destination. */
   kind: CapKind | null;
-  /** Headline icon: the category icon for seeded entries, or `xai` for
-   * AI/system-generated status rows. */
   icon: IconName;
-  /** Headline label text (plain, no glyph). */
   meta: string;
-  /** Optional trailing "→ N NODES" count rendered after meta. */
   metaCount?: number;
-  /** Status text (plain, no glyph). */
   time: string;
-  /** Icon shown before `time`; defaults to `check`. */
   timeIcon?: IconName;
-  /** AI-detected relationship note (e.g. "LINKED TO SOLVED #14"), rendered
-   * with the xai glyph when present. */
   linked?: string;
 }
 
-// Amendment: "Recent Captures" used to be seeded from this permanent
-// hardcoded 3-entry array (Bee mascot / login redirect / chapter 3), shown
-// identically for every account and never wired to real data — a brand-new
-// account would see these 3 fake rows forever, with real captures merely
-// prepended in front of them each session (and lost on refresh, since they
-// only ever lived in local useState). Fixed below: Recent Captures is now
-// derived from real `coreGraph.nodes` (RLS-scoped, per-account, persisted).
 const NODE_KIND_TO_CAP_ICON: Partial<Record<NodeKind, IconName>> = {
   idea: 'idea',
   bug: 'bugTracker',
@@ -86,37 +59,25 @@ function relTime(iso: string): string {
   return days === 1 ? 'YESTERDAY' : `${days}D AGO`;
 }
 
-// dissect() heuristic piece kinds — plain labels now; icon looked up
-// separately at render time so the "kind" string never carries a glyph.
 const PIECE_ICON: Record<string, IconName> = {
   TASK: 'checkCircle',
   DESIGN: 'designStudio',
   BUG: 'bugTracker',
   IDEA: 'idea',
   NOTE: 'note',
-  EDGE: 'link', // graph-relationship edge — not AI-branding, so `link` not `xai`
+  EDGE: 'link',
 };
 
-/** NEURAL CAPTURE — ported 1:1 from xos-prototype.html: textarea + simulated
- * voice waveform, dissect() keyword-based splitter, commitCap() logging. */
 export default function Capture({ active }: { active: boolean }) {
   const [raw, setRaw] = useState('');
   const [rec, setRec] = useState(false);
   const [bars, setBars] = useState<number[]>(Array(26).fill(20));
   const [pieces, setPieces] = useState<DissectedPiece[] | null>(null);
-  // `caps` now holds ONLY transient, in-flight/optimistic rows (a capture
-  // that's mid-classify, queued offline, or that failed to save) — never
-  // seeded demo content. Once a capture genuinely lands as a node, it's
-  // removed from here and picked up by `realCaps` below instead.
   const [caps, setCaps] = useState<CapEntry[]>([]);
   const wavT = useRef<ReturnType<typeof setInterval> | undefined>(undefined);
   const [changed, setChanged] = useState<Set<number>>(new Set());
 
   const nodes = useCoreGraph((s) => s.nodes);
-  // Real, per-account, RLS-scoped "Recent Captures" — derived straight from
-  // the live nodes table (source === 'capture_text' marks nodes that came
-  // through Neural Capture specifically, vs. e.g. Design Studio or Roadmaps
-  // writing nodes directly). Newest first, capped at 10.
   const realCaps: CapEntry[] = useMemo(
     () =>
       nodes
@@ -134,7 +95,10 @@ export default function Capture({ active }: { active: boolean }) {
         })),
     [nodes],
   );
-  const visibleCaps = useMemo(() => [...caps, ...realCaps], [caps, realCaps]);
+  const visibleCaps = useMemo(() => {
+    const realTexts = new Set(realCaps.map((r) => r.text));
+    return [...caps.filter((c) => c.time === 'SENDING…' || !realTexts.has(c.text)), ...realCaps];
+  }, [caps, realCaps]);
 
   function toggleVoice() {
     setRec((r) => {
@@ -177,14 +141,6 @@ export default function Capture({ active }: { active: boolean }) {
     setChanged(new Set());
   }
 
-  /** COMMIT — the dissect() preview above stays exactly as ported (same
-   * keyword heuristic, same instant feedback — the interaction model isn't
-   * being touched). Step 3 adds a real side effect underneath it: commit
-   * now actually calls the classify-capture pipeline via liveClassify(), so
-   * the thought becomes a real node the Captain's Realtime subscription
-   * will pick up — satisfying the handoff's literal acceptance test
-   * ("capture a thought in Neural Capture, watch it appear live in
-   * Projects and the Observatory without a refresh"). */
   async function commitCap() {
     const v = raw.trim();
     if (!pieces) return;
@@ -192,21 +148,27 @@ export default function Capture({ active }: { active: boolean }) {
     setPieces(null);
     setRaw('');
     try {
-      await liveClassify(v);
+      const result = await liveClassify(v);
       playSound('capture');
-      // Real node now exists (RLS-scoped, will flow into `nodes` via the
-      // Realtime subscription or the next hydrate) — drop the optimistic
-      // placeholder row so it's replaced by the genuine entry in
-      // `realCaps`, not left duplicated forever.
-      setCaps((c) => c.filter((entry) => entry.time !== 'SENDING…'));
+      const first = result.nodes?.[0];
+      setCaps((c) =>
+        c.map((entry, i) =>
+          i === 0 && entry.time === 'SENDING…'
+            ? first
+              ? {
+                  ...entry,
+                  meta: first.kind.toUpperCase().replace('_', ' '),
+                  time: 'JUST NOW',
+                  timeIcon: 'check' as IconName,
+                  linked: first.relationships?.length ? `LINKED TO ${first.relationships.length} NODE${first.relationships.length > 1 ? 'S' : ''}` : undefined,
+                }
+              : { ...entry, time: 'JUST NOW', timeIcon: 'check' as IconName }
+            : entry,
+        ),
+      );
     } catch (err) {
       console.error('commitCap: liveClassify failed, writing via offline fallback', err);
       try {
-        // Step 8: commitOrQueue is offlineCommit with one extra path — if
-        // Supabase itself is unreachable (genuinely offline, not just "AI
-        // unavailable") and we're running inside the packaged Tauri shell,
-        // the capture is queued to local SQLite instead of failing, and
-        // syncEngine drains it back to Supabase once the network returns.
         const { queued } = await commitOrQueue(v);
         playSound(queued ? 'notice' : 'capture');
         setCaps((c) =>
@@ -227,6 +189,7 @@ export default function Capture({ active }: { active: boolean }) {
   return (
     <section className={`room ambient ${active ? 'on' : ''}`} id="r-capture">
       <AmbientField mood="cyan" density={30} active={active} parallax />
+      <ShipAmbience kind="comet" active={active} />
       <div className="roomInner">
       <h2 className="rh">
         <Icon name="neuralCapture" size={16} /> NEURAL CAPTURE

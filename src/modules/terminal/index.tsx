@@ -5,61 +5,21 @@ import '@xterm/xterm/css/xterm.css';
 import { pushToast } from '../../stores/toastStore';
 import { playSound } from '../../lib/sound';
 import { isTauri } from '../../lib/localDb';
-import { openTextFile, writeTextFileAt, saveTextFileAs, type OpenedFile } from '../../lib/fileIO';
+import { openTextFile, writeTextFileAt, saveTextFileAs, pickDirectory, type OpenedFile } from '../../lib/fileIO';
+import { openExternally } from '../../lib/opener';
+import { useUiStore } from '../../stores/uiStore';
+import { useBrowserNavStore } from '../../stores/browserNavStore';
 import Icon from '../../design-system/icons/Icon';
 import AmbientField from '../../design-system/background/AmbientField';
+import ShipAmbience from '../../design-system/background/ShipAmbience';
 import CodeEditor from '../../design-system/CodeEditor';
 
-type Runtime = 'node' | 'python' | 'ruby' | 'php' | 'go';
+type Runtime = 'node' | 'python' | 'ruby' | 'php' | 'go' | 'shell';
 
-/**
- * ROOM C — TERMINAL (Step 7). Hybrid, zero-hosted-infra execution, exactly
- * per the brief, now covering five real runtimes:
- *   - Node/JS: StackBlitz WebContainers — a real Node.js runtime compiled to
- *     WASM, runs entirely client-side (genuine npm install/file
- *     system/process execution, not a simulation). Interactive shell.
- *   - Python: Pyodide (CPython/WASM), MPL-2.0/Apache-mixed. Line-buffered
- *     REPL, state persists across lines (one interpreter instance).
- *   - Ruby: ruby.wasm (`@ruby/3.3-wasm-wasi`, MIT), CRuby 3.3 compiled to
- *     WASI/WASM. Same persistence model as Python.
- *   - PHP: WordPress Playground's php-wasm (`@php-wasm/universal` +
- *     `@php-wasm/web-8-3`'s runtime, GPL-2.0-or-later — see
- *     `public/php/LICENSE.txt`, shipped verbatim per the license's terms).
- *     Each snippet runs as its own isolated PHP "request" (no cross-line
- *     variable persistence — a real constraint of how php-wasm's run()
- *     works, not a bug).
- *   - Go: no maintained, self-hostable Go *compiler*-to-WASM exists today
- *     (TinyGo doesn't target itself; Go's own toolchain isn't built for
- *     browser use). Instead this ships `gowasm/` — a ~39MB WASM build of
- *     yaegi (github.com/traefik/yaegi, Apache-2.0), a pure-Go interpreter,
- *     built by this repo itself (see gowasm/README.md to rebuild). Real Go
- *     semantics and stdlib, not a subset re-implementation — but a fresh
- *     interpreter per eval, so (like PHP) no cross-line state.
- *   - "OTHER" (C/C++, and anything needing E2B) stays a disabled chip, not
- *     a silently missing one. Two independent reasons, both explained in
- *     the tooltip: (1) E2B was never wired in — no account/API key,
- *     Captain's call; (2) no maintained self-hosted C/C++-to-WASM compiler
- *     exists as a consumable package the way Pyodide/ruby.wasm/php-wasm do
- *     (the one community demo, wasm-clang, was unpublished from npm in
- *     2021 and isn't a realistic dependency for a shipping app).
- *
- * All five wasm/wasi runtime payloads are self-hosted under public/ — same
- * reasoning as Pyodide originally: works offline, no CDN dependency, and
- * sidesteps needing custom response headers for anything except
- * WebContainers (which genuinely can't be self-hosted).
- *
- * SAFETY GUARDRAIL: `runCommand(cmd, { source })` (used by every REPL
- * runtime below) is the single choke point anything types text into the
- * shell through. When `source: 'xai'` (a future xAI-suggested command —
- * nothing in xOS generates one yet, so this path is unexercised today, but
- * the gate is real and load-bearing, not decorative) it requires an
- * explicit Captain confirmation before the command reaches the runtime.
- * Never auto-runs.
- */
-
-// ---------------------------------------------------------------------------
-// Node.js (WebContainers) — unchanged from the original single-language pass.
-// ---------------------------------------------------------------------------
+async function invokeTauri<T = unknown>(cmd: string, args?: Record<string, unknown>): Promise<T> {
+  const { invoke } = await import('@tauri-apps/api/core');
+  return invoke<T>(cmd, args);
+}
 
 let webcontainerBoot: Promise<import('@webcontainer/api').WebContainer> | null = null;
 async function bootWebContainer() {
@@ -69,10 +29,6 @@ async function bootWebContainer() {
   }
   return webcontainerBoot;
 }
-
-// ---------------------------------------------------------------------------
-// Python (Pyodide) — self-hosted at public/pyodide/.
-// ---------------------------------------------------------------------------
 
 let pyodideBoot: Promise<Awaited<ReturnType<typeof import('pyodide').loadPyodide>>> | null = null;
 async function bootPyodide(onOut: (s: string) => void, onErr: (s: string) => void) {
@@ -86,14 +42,6 @@ async function bootPyodide(onOut: (s: string) => void, onErr: (s: string) => voi
   }
   return pyodideBoot;
 }
-
-// ---------------------------------------------------------------------------
-// Ruby (ruby.wasm) — self-hosted at public/ruby/ruby+stdlib.wasm. The npm
-// package (`@ruby/3.3-wasm-wasi`) only ships that binary plus a thin
-// re-export of `@ruby/wasm-wasi`'s pure-JS VM bindings, which bundle fine
-// normally — only the 36MB wasm binary needs the manual self-host, same as
-// Pyodide.
-// ---------------------------------------------------------------------------
 
 let rubyBoot: Promise<{ vm: import('@ruby/wasm-wasi/dist/vm').RubyVM }> | null = null;
 async function bootRuby(onOut: (s: string) => void, onErr: (s: string) => void) {
@@ -125,30 +73,6 @@ async function bootRuby(onOut: (s: string) => void, onErr: (s: string) => void) 
   return rubyBoot;
 }
 
-// ---------------------------------------------------------------------------
-// PHP (php-wasm) — the npm package (`@php-wasm/web-8-3`) ships its wasm
-// binary via a bundler-only `import x from './file.wasm'` asset import that
-// this project's build tool (rolldown-vite) doesn't support (confirmed via
-// a real build attempt — MISSING_EXPORT "default"). So instead of depending
-// on that package at all, `public/php/php_8_3.js` is a hand-patched copy of
-// its Emscripten glue (only the broken import line changed to a plain
-// string — see the comment in that file) served as a static asset and
-// dynamically imported at runtime, exactly like Pyodide/Ruby's wasm
-// binaries. `@php-wasm/universal` (pure JS, bundles fine) supplies
-// `loadPHPRuntime`/`PHP`, which only ever calls `.init(...)` on what we
-// hand it — never touches the broken export — so this is a legitimate
-// integration, not a hack around a broken one.
-// ---------------------------------------------------------------------------
-
-/** Dynamically import a JS module served as a plain static file (public/,
- * not part of the Vite module graph). A direct `import(path)` against a
- * public/ path is refused by Vite's DEV server ("should not be imported
- * from source code... can only be referenced via HTML tags") even with
- * `@vite-ignore` — that comment only stops Vite's build-time bundling
- * analysis, not the dev server's runtime request guard. Fetching the text
- * ourselves and importing it as a blob: URL sidesteps that guard entirely
- * (blob: URLs never touch the dev server) and behaves identically in the
- * production build, where this restriction doesn't exist anyway. */
 async function importPublicModule<T>(path: string): Promise<T> {
   const source = await (await fetch(path)).text();
   const blobUrl = URL.createObjectURL(new Blob([source], { type: 'text/javascript' }));
@@ -164,8 +88,6 @@ async function bootPHP() {
   if (!phpBoot) {
     phpBoot = (async () => {
       const { loadPHPRuntime, PHP } = await import('@php-wasm/universal');
-      // A self-hosted static asset (see the section comment above), not an
-      // npm module — TS has no declarations for it and never will.
       const mod = await importPublicModule<{ init: (runtime: string, overrides: Record<string, unknown>) => unknown }>(
         '/php/php_8_3.js',
       );
@@ -180,13 +102,6 @@ async function bootPHP() {
   }
   return phpBoot;
 }
-
-// ---------------------------------------------------------------------------
-// Go (yaegi compiled to WASM by this repo — see gowasm/README.md) —
-// self-hosted at public/gowasm/. wasm_exec.js is a classic (non-module)
-// script per Go's own convention, so it's loaded via a real <script> tag
-// rather than dynamic import.
-// ---------------------------------------------------------------------------
 
 interface GoWasmExit {
   importObject: WebAssembly.Imports;
@@ -224,7 +139,7 @@ async function bootGo() {
       const goInstance = new window.Go();
       const bytes = await (await fetch('/gowasm/xos-go.wasm')).arrayBuffer();
       const { instance } = await WebAssembly.instantiate(bytes, goInstance.importObject);
-      void goInstance.run(instance); // never resolves — the wasm program blocks on select{} forever
+      void goInstance.run(instance);
       await new Promise<void>((resolve) => {
         const check = () => (window.yaegiReady ? resolve() : setTimeout(check, 20));
         check();
@@ -238,8 +153,6 @@ function crossOriginIsolated(): boolean {
   return typeof window !== 'undefined' && 'crossOriginIsolated' in window && window.crossOriginIsolated === true;
 }
 
-// A REPL runtime is anything driven by our own line-buffered prompt rather
-// than a real interactive shell (only Node/WebContainers gets the latter).
 interface ReplEvaluator {
   evaluate(code: string): Promise<{ stdout: string; stderr: string }>;
 }
@@ -249,22 +162,29 @@ export default function TerminalRoom({ active }: { active: boolean }) {
   const termRef = useRef<XTerm | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
   const replBufferRef = useRef('');
-  // Whichever runtime currently owns term.onData/onResize — cleared and
-  // re-registered on every switch so keystrokes never double-fire (an easy
-  // bug once there are 5 runtimes to swap between, not just 2).
   const activeListenersRef = useRef<Array<{ dispose(): void }>>([]);
   const [runtime, setRuntime] = useState<Runtime | null>(null);
   const [status, setStatus] = useState<'idle' | 'booting' | 'ready' | 'unsupported' | 'error'>('idle');
 
-  // Local .py file editing — open a real file, edit it in a real editor,
-  // run the whole thing through the same Pyodide instance the REPL uses
-  // (so a script's top-level defs/vars are available in the REPL
-  // afterward too), save back to disk. Desktop-only (see fileIO.ts).
   const [openFile, setOpenFile] = useState<OpenedFile | null>(null);
   const [fileContent, setFileContent] = useState('');
   const [fileDirty, setFileDirty] = useState(false);
   const [fileResetKey, setFileResetKey] = useState(0);
   const [fileBusy, setFileBusy] = useState<'idle' | 'running' | 'saving'>('idle');
+
+  const [shellCwd, setShellCwd] = useState('');
+  const shellCwdRef = useRef(shellCwd);
+  useEffect(() => {
+    shellCwdRef.current = shellCwd;
+  }, [shellCwd]);
+  const [devCmd, setDevCmd] = useState('npm run dev');
+  const [devPid, setDevPid] = useState<number | null>(null);
+  const devPidRef = useRef<number | null>(null);
+  useEffect(() => {
+    devPidRef.current = devPid;
+  }, [devPid]);
+  const [devBusy, setDevBusy] = useState(false);
+  const [devUrl, setDevUrl] = useState<string | null>(null);
 
   useEffect(() => {
     if (!containerRef.current || termRef.current) return;
@@ -306,8 +226,6 @@ export default function TerminalRoom({ active }: { active: boolean }) {
     term.write(`\r\n${prompt}`);
   }
 
-  /** Shared line-buffered REPL loop for Python/Ruby/PHP/Go — one runtime's
-   * worth of state (buffer, prompt, evaluator) wired to term.onData. */
   function attachRepl(term: XTerm, prompt: string, evaluator: ReplEvaluator) {
     clearActiveListeners();
     replBufferRef.current = '';
@@ -344,8 +262,6 @@ export default function TerminalRoom({ active }: { active: boolean }) {
     activeListenersRef.current.push(disposable);
   }
 
-  /** The safety choke point described in the module doc comment — every
-   * REPL runtime's Enter-key handler routes through here. */
   async function runCommand(
     code: string,
     evaluator: ReplEvaluator,
@@ -491,11 +407,6 @@ export default function TerminalRoom({ active }: { active: boolean }) {
         async evaluate(code) {
           if (!window.yaegiEval) throw new Error('Go runtime not ready.');
           const r = window.yaegiEval(code);
-          // Only echo the last expression's value when nothing was already
-          // printed — otherwise e.g. `fmt.Println(x)` shows both "x" (real
-          // output) AND its own (n int, err error) return value ("3", the
-          // byte count), which reads as a second bogus line. This matches
-          // how a real Go REPL (gore) resolves the same ambiguity.
           const out = r.stdout || (r.result ? `${r.result}\n` : '');
           return { stdout: out, stderr: r.stderr };
         },
@@ -508,6 +419,148 @@ export default function TerminalRoom({ active }: { active: boolean }) {
       term.writeln(`\r\n\x1b[31mBoot failed: ${e instanceof Error ? e.message : String(e)}\x1b[0m`);
       pushToast('Terminal: Go runtime failed to boot', 'warn');
     }
+  }
+
+  async function startShell() {
+    const term = termRef.current;
+    if (!term) return;
+    if (!isTauri()) {
+      pushToast('Full shell access requires the desktop app — a browser tab cannot spawn OS processes.', 'warn');
+      setStatus('unsupported');
+      term.writeln('\r\n\x1b[31mSHELL needs the packaged desktop app.\x1b[0m Browsers have no OS process-spawning API — this is a hard platform limit, not something the web preview can work around.');
+      return;
+    }
+    clearActiveListeners();
+    setStatus('ready');
+    term.writeln('\r\nReal OS shell (genuine child processes via src-tauri, NOT a simulation). Each line runs to completion as its own process — no persistent env/exports across lines, but `cd` is tracked and applied to the next command.');
+    term.writeln(`Working directory: ${shellCwdRef.current || '(app default — use PICK FOLDER below to point this at your project)'}`);
+    attachRepl(term, 'sh> ', {
+      async evaluate(code) {
+        const trimmed = code.trim();
+        const cdMatch = trimmed.match(/^cd\s+(.+)$/);
+        if (cdMatch) {
+          const target = cdMatch[1].trim();
+          try {
+            const result = await invokeTauri<{ stdout: string; stderr: string; code: number | null }>('shell_run_sync', {
+              cmd: `cd "${target}" && pwd`,
+              cwd: shellCwdRef.current || undefined,
+            });
+            if (result.code === 0 && result.stdout.trim()) {
+              const resolved = result.stdout.trim();
+              setShellCwd(resolved);
+              return { stdout: `${resolved}\n`, stderr: '' };
+            }
+            return { stdout: '', stderr: result.stderr || `cd: no such directory: ${target}\n` };
+          } catch (e) {
+            return { stdout: '', stderr: `${e instanceof Error ? e.message : String(e)}\n` };
+          }
+        }
+        const result = await invokeTauri<{ stdout: string; stderr: string; code: number | null }>('shell_run_sync', {
+          cmd: code,
+          cwd: shellCwdRef.current || undefined,
+        });
+        const stdout = result.code !== null && result.code !== 0 ? `${result.stdout}[exit ${result.code}]\n` : result.stdout;
+        return { stdout, stderr: result.stderr };
+      },
+    });
+    pushToast('Terminal: real OS shell ready', 'success');
+    playSound('notice');
+  }
+
+  async function handlePickShellCwd() {
+    try {
+      const dir = await pickDirectory();
+      if (dir) {
+        setShellCwd(dir);
+        termRef.current?.writeln(`\r\n\x1b[36mWorking directory set to ${dir}\x1b[0m`);
+      }
+    } catch (e) {
+      console.error('Pick folder failed', e);
+      pushToast(e instanceof Error ? e.message : 'Could not open the folder picker', 'warn');
+    }
+  }
+
+  const DEV_URL_RE = /https?:\/\/(?:localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1\])(?::\d+)?[^\s'"<>]*/i;
+  function scanForDevUrl(line: string) {
+    const m = line.match(DEV_URL_RE);
+    if (!m) return;
+    const found = m[0].replace(/\/$/, '').replace('0.0.0.0', 'localhost').replace('[::1]', 'localhost');
+    setDevUrl((prev) => prev ?? found);
+  }
+
+  useEffect(() => {
+    if (!isTauri()) return;
+    let unlistenOutput: (() => void) | undefined;
+    let unlistenExit: (() => void) | undefined;
+    let cancelled = false;
+    void (async () => {
+      const { listen } = await import('@tauri-apps/api/event');
+      const outUn = await listen<{ pid: number; stream: 'stdout' | 'stderr'; line: string }>('shell-output', (event) => {
+        if (event.payload.pid !== devPidRef.current) return;
+        const term = termRef.current;
+        const { stream, line } = event.payload;
+        term?.writeln(stream === 'stderr' ? `\x1b[31m${line}\x1b[0m` : line);
+        scanForDevUrl(line);
+      });
+      const exitUn = await listen<{ pid: number; code: number | null }>('shell-exit', (event) => {
+        if (event.payload.pid !== devPidRef.current) return;
+        termRef.current?.writeln(`\x1b[36m▶ Dev server exited (code ${event.payload.code ?? 'unknown'}).\x1b[0m`);
+        setDevPid(null);
+        setDevBusy(false);
+      });
+      if (cancelled) {
+        outUn();
+        exitUn();
+      } else {
+        unlistenOutput = outUn;
+        unlistenExit = exitUn;
+      }
+    })();
+    return () => {
+      cancelled = true;
+      unlistenOutput?.();
+      unlistenExit?.();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  async function handleStartDevServer() {
+    if (!isTauri() || devBusy || devPid !== null) return;
+    setDevBusy(true);
+    setDevUrl(null);
+    const term = termRef.current;
+    term?.writeln(`\r\n\x1b[36m▶ Starting: ${devCmd}${shellCwdRef.current ? ` (in ${shellCwdRef.current})` : ''}\x1b[0m`);
+    try {
+      const pid = await invokeTauri<number>('shell_spawn_bg', { cmd: devCmd, cwd: shellCwdRef.current || undefined });
+      setDevPid(pid);
+      pushToast(`Dev server running (pid ${pid})`, 'success');
+      playSound('notice');
+    } catch (e) {
+      console.error('shell_spawn_bg failed', e);
+      term?.writeln(`\x1b[31m${e instanceof Error ? e.message : String(e)}\x1b[0m`);
+      pushToast('Could not start the dev server — see the terminal output', 'warn');
+      setDevBusy(false);
+    }
+  }
+
+  async function handleStopDevServer() {
+    if (devPid === null) return;
+    try {
+      await invokeTauri('shell_kill_bg', { pid: devPid });
+    } catch (e) {
+      console.error('shell_kill_bg failed', e);
+    } finally {
+      termRef.current?.writeln('\x1b[36m▶ Dev server stopped.\x1b[0m');
+      setDevPid(null);
+      setDevBusy(false);
+    }
+  }
+
+  function openDevServerInBrowserRoom() {
+    if (!devUrl) return;
+    useBrowserNavStore.getState().requestNavigate(devUrl);
+    useUiStore.getState().go('browser');
+    pushToast(`Opening ${devUrl} in the Browser room`, 'info');
   }
 
   async function handleOpenPyFile() {
@@ -536,10 +589,6 @@ export default function TerminalRoom({ active }: { active: boolean }) {
     setFileBusy('running');
     term.writeln(`\r\n\x1b[36m▶ Running ${openFile.name}…\x1b[0m`);
     try {
-      // Same memoized Pyodide instance the REPL uses — if it's already
-      // booted this resolves instantly; if not, this boots it (status
-      // will still say "idle"/"booting", which is fine, this call awaits
-      // the real thing either way).
       const py = await bootPyodide(
         (s) => term.writeln(s),
         (s) => term.writeln(`\x1b[31m${s}\x1b[0m`),
@@ -594,6 +643,10 @@ export default function TerminalRoom({ active }: { active: boolean }) {
   }
 
   function pick(r: Runtime) {
+    if (r === 'shell' && !isTauri()) {
+      pushToast('Full shell access requires the desktop app — a browser tab cannot spawn OS processes.', 'warn');
+      return;
+    }
     if (r === runtime && status === 'ready') return;
     setRuntime(r);
     playSound('nav');
@@ -601,12 +654,14 @@ export default function TerminalRoom({ active }: { active: boolean }) {
     else if (r === 'python') void startPython();
     else if (r === 'ruby') void startRuby();
     else if (r === 'php') void startPHP();
+    else if (r === 'shell') void startShell();
     else void startGo();
   }
 
   return (
     <section className={`room ambient ${active ? 'on' : ''}`} id="r-terminal">
       <AmbientField mood="cyan" density={14} active={active} parallax />
+      <ShipAmbience kind="lights" corner="bl" active={active} />
       <div className="roomInner">
         <h2 className="rh">
           <Icon name="terminal" size={16} glow="cyan" /> TERMINAL
@@ -628,6 +683,13 @@ export default function TerminalRoom({ active }: { active: boolean }) {
           </span>
           <span className={`chip ${runtime === 'go' ? 'on' : ''}`} onClick={() => pick('go')}>
             GO
+          </span>
+          <span
+            className={`chip ${runtime === 'shell' ? 'on' : ''} ${!isTauri() ? 'shellChipWeb' : ''}`}
+            onClick={() => pick('shell')}
+            title={isTauri() ? 'A genuine OS shell — real child processes, your real filesystem, not a sandbox' : 'Full shell access requires the desktop app — browsers cannot spawn OS processes (a hard platform limit)'}
+          >
+            <Icon name={isTauri() ? 'terminal' : 'warning'} size={12} /> SHELL {isTauri() ? '(REAL OS)' : '(DESKTOP ONLY)'}
           </span>
           <span
             className="chip disabled"
@@ -652,6 +714,53 @@ export default function TerminalRoom({ active }: { active: boolean }) {
             <Icon name="folderOpen" size={12} /> OPEN .py FILE
           </span>
         </div>
+
+        {runtime === 'shell' && isTauri() && (
+          <div className="fileEditorPanel devServerPanel">
+            <div className="fileEditorToolbar">
+              <span className="fileEditorName">
+                <Icon name="folderOpen" size={12} /> CWD: {shellCwd || '(app default)'}
+              </span>
+              <span className="fileEditorBtn" onClick={() => void handlePickShellCwd()} title="Pick your project folder">
+                PICK FOLDER
+              </span>
+            </div>
+            <div className="fileEditorToolbar">
+              <span className="fileEditorName">
+                <Icon name="server" size={12} /> RUN DEV SERVER
+              </span>
+              <input
+                className="browserAddress devCmdInput"
+                value={devCmd}
+                disabled={devPid !== null}
+                placeholder="npm run dev"
+                onChange={(e) => setDevCmd(e.target.value)}
+              />
+              {devPid === null ? (
+                <span className={`fileEditorBtn ${devBusy ? 'disabled' : ''}`} onClick={() => void handleStartDevServer()} title="Spawn a real background process">
+                  <Icon name="play" size={12} /> START
+                </span>
+              ) : (
+                <span className="fileEditorBtn" onClick={() => void handleStopDevServer()} title={`Kill pid ${devPid}`}>
+                  <Icon name="stop" size={12} /> STOP (pid {devPid})
+                </span>
+              )}
+              {devUrl && (
+                <>
+                  <span className="fileEditorBtn" onClick={openDevServerInBrowserRoom} title="Navigate the Browser room here">
+                    <Icon name="browser" size={12} /> OPEN IN BROWSER ROOM
+                  </span>
+                  <span className="fileEditorBtn" onClick={() => void openExternally(devUrl)} title="Open in your system's default browser">
+                    <Icon name="externalLink" size={12} /> OPEN EXTERNALLY
+                  </span>
+                </>
+              )}
+            </div>
+            {devPid !== null && !devUrl && (
+              <div className="browserPanelHint">Running — watching real stdout below for a localhost URL to open…</div>
+            )}
+          </div>
+        )}
 
         {openFile && (
           <div className="fileEditorPanel">

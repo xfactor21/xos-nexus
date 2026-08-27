@@ -2,6 +2,7 @@ import { useRef, useState, type DragEvent } from 'react';
 import { useCoreGraph } from '../../stores/coreGraph';
 import Icon from '../../design-system/icons/Icon';
 import AmbientField from '../../design-system/background/AmbientField';
+import ShipAmbience from '../../design-system/background/ShipAmbience';
 
 /** ROADMAPS — Step 5: ported 1:1 from xos-prototype.html (.track vertical
  * timeline) and extended per the Feature Uplift notes: drag-to-reorder
@@ -29,10 +30,6 @@ export default function Roadmaps({ active }: { active: boolean }) {
   }
 
   function onDrop(targetId: string, e?: DragEvent) {
-    // Cross-room drag-and-drop: a bug dragged in from Bug Tracker carries a
-    // distinct dataTransfer type, so it's checked first and handled
-    // separately from the milestone-reorder drag (which uses the local
-    // dragId ref, not dataTransfer, since it never leaves this component).
     const bugId = e?.dataTransfer.getData('application/x-xos-bug');
     if (bugId) {
       promoteBugToMilestone(bugId, targetId);
@@ -47,7 +44,6 @@ export default function Roadmaps({ active }: { active: boolean }) {
     dragId.current = null;
   }
 
-  // rough date bounds for the gantt-lite scale
   const dated = ordered.filter((m) => m.releaseDate);
   const minT = dated.length ? Math.min(...dated.map((m) => new Date(m.releaseDate!).getTime())) : Date.now();
   const maxT = dated.length ? Math.max(...dated.map((m) => new Date(m.releaseDate!).getTime())) : Date.now() + 1;
@@ -56,6 +52,7 @@ export default function Roadmaps({ active }: { active: boolean }) {
   return (
     <section className={`room ambient ${active ? 'on' : ''}`} id="r-roadmaps">
       <AmbientField mood="purple" density={26} active={active} parallax />
+      <ShipAmbience kind="comet" active={active} />
       <div className="roomInner">
       <h2 className="rh"><Icon name="roadmaps" size={18} /> ROADMAPS</h2>
       <div className="rsub">PROJECTS ANSWER "WHAT ARE WE BUILDING?" — THIS ANSWERS "WHERE ARE WE GOING?"</div>
@@ -82,7 +79,7 @@ export default function Roadmaps({ active }: { active: boolean }) {
             >
               <h3>
                 <span>
-                  <span className="drag-handle">⠿</span>
+                  <span className="drag-handle">⠠⠠⠠⠠⠠⠠</span>
                   {m.version} — {m.title}
                 </span>
                 <span className="st">

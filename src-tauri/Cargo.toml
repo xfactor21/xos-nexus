@@ -36,6 +36,13 @@ tauri-plugin-sql = { version = "2.4.0", features = ["sqlite"] }
 # IPC permissions at all.
 tauri-plugin-dialog = "2"
 tauri-plugin-fs = "2"
+# "Open externally" — the Browser room's fallback for a site whose
+# X-Frame-Options/CSP genuinely blocks embedding even in the native child
+# webview, plus the Terminal room's "open my dev server in the real system
+# browser" affordance. A real OS-level "open this URL/path with the default
+# handler" call, not window.open() (which Tauri's webview intercepts as an
+# in-app navigation rather than launching the OS browser).
+tauri-plugin-opener = "2"
 # Knowledge Matrix "ADD TO MATRIX": a server-side (Rust-process) HTTP fetch
 # of the current page for offline snapshotting — deliberately NOT scraped
 # out of the live embedded browser-view webview, since that would require

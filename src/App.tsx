@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import Shell from './components/Shell';
 import AuthGate from './modules/auth/AuthGate';
 import Onboarding from './modules/onboarding/Onboarding';
+import FeatureTour from './modules/onboarding/FeatureTour';
 import { useAuthStore } from './stores/authStore';
 import { startSyncEngine } from './lib/offlineSync';
 
@@ -21,7 +22,9 @@ function App() {
   const status = useAuthStore((s) => s.status);
   const user = useAuthStore((s) => s.user);
   const markOnboardingComplete = useAuthStore((s) => s.markOnboardingComplete);
+  const markFeatureTourComplete = useAuthStore((s) => s.markFeatureTourComplete);
   const [onboardingDone, setOnboardingDone] = useState(false);
+  const [tourDone, setTourDone] = useState(false);
 
   useEffect(() => {
     init();
@@ -34,6 +37,7 @@ function App() {
   // rather than reuse the previous Captain's "seen it this session" state.
   useEffect(() => {
     setOnboardingDone(false);
+    setTourDone(false);
   }, [user?.id]);
 
   if (status === 'loading') {
@@ -58,6 +62,21 @@ function App() {
         onComplete={() => {
           setOnboardingDone(true);
           if (isFirstEver) void markOnboardingComplete();
+        }}
+      />
+    );
+  }
+
+  // Feature tour: shown once, after Onboarding (cinematic or returning),
+  // to both brand-new Captains and existing ones who signed in before this
+  // tour existed — same `has_seen_feature_tour` flag either way, mirroring
+  // markOnboardingComplete's pattern (see authStore.ts).
+  if (!tourDone && user?.user_metadata?.has_seen_feature_tour !== true) {
+    return (
+      <FeatureTour
+        onComplete={() => {
+          setTourDone(true);
+          void markFeatureTourComplete();
         }}
       />
     );

@@ -5,11 +5,53 @@ import type { Root } from 'react-dom/client';
 import { liveClassify, offlineClassify } from '../../lib/copilotClient';
 import { commitOrQueue } from '../../lib/offlineSync';
 import { useCoreGraph } from '../../stores/coreGraph';
+import { useAuthStore } from '../../stores/authStore';
+import { supabase } from '../../lib/supabase';
 import { ROOMS } from '../../core/rooms';
 import { pendingCaptureCount } from '../../lib/localDb';
 import Icon from '../../design-system/icons/Icon';
 import DataIcon from '../../design-system/icons/DataIcon';
 import type { IconName } from '../../design-system/icons/registry';
+import AiReviewPanel from './AiReviewPanel';
+
+/** A node's persisted position + optional group, keyed by node id (same ids
+ * used in nodePos.current: module ids, project ids). Persisted to
+ * localStorage per-owner (part A.3) so a Captain's manual layout survives a
+ * reload — the radial layout in layoutCore() is only ever the fallback for
+ * an id with no saved entry. */
+type SavedLayout = Record<string, { x: number; y: number; groupId?: string }>;
+const GROUP_DIST = 40; // px — part A.4's "within ~40px" grouping threshold
+const DRAG_THRESHOLD = 4; // px — part A.1's "genuine drag" vs click cutoff
+
+function layoutKey(ownerId: string | null) {
+  return `xos-corepos-${ownerId ?? 'anon'}`;
+}
+function loadLayout(ownerId: string | null): SavedLayout {
+  try {
+    const raw = localStorage.getItem(layoutKey(ownerId));
+    return raw ? (JSON.parse(raw) as SavedLayout) : {};
+  } catch {
+    return {};
+  }
+}
+function saveLayout(ownerId: string | null, layout: SavedLayout) {
+  try {
+    localStorage.setItem(layoutKey(ownerId), JSON.stringify(layout));
+  } catch {
+    /* best-effort — a full/blocked localStorage shouldn't break dragging */
+  }
+}
+/** Settings' "RESET NEURAL CORE LAYOUT" row calls this directly — a Captain
+ * who drags everything into an unreadable pile needs a real way back to the
+ * default radial layout without wiping any actual data (nodes/edges/tags
+ * are untouched; this only clears the persisted x/y/groupId positions). */
+export function resetCoreLayout(ownerId: string | null) {
+  try {
+    localStorage.removeItem(layoutKey(ownerId));
+  } catch {
+    /* best-effort */
+  }
+}
 
 const modules: { id: string; ic: IconName; nm: string }[] = [
   { id: 'capture', ic: 'neuralCapture', nm: 'CAPTURE' },
@@ -81,6 +123,18 @@ export default function NeuralCore({ active }: { active: boolean }) {
   // DOM nodes are torn down on re-layout (resize, active toggle, real
   // project data arriving) — otherwise every re-layout would leak roots.
   const bubRoots = useRef<Map<string, Root>>(new Map());
+  // Part A — drag interactivity. `lineEl` maps a module/project node id to
+  // its SVG <line> element (core -> that node): since the core anchor never
+  // moves, redrawing a dragged node's line only ever needs updating that
+  // one line's x2/y2, no full re-layout. `groupOf` maps a node id to its
+  // groupId (part A.4's proximity grouping) and is kept in sync with what's
+  // persisted to localStorage. `savedLayout` mirrors the same localStorage
+  // blob so drag handlers (registered once per mkNode call, not
+  // re-registered on every render) always read/write the latest state.
+  const lineEl = useRef<Map<string, SVGLineElement>>(new Map());
+  const groupOf = useRef<Record<string, string>>({});
+  const savedLayout = useRef<SavedLayout>({});
+  const [panelId, setPanelId] = useState<string | null>(null);
   /** Real project-health + 24h node-creation "workload" — read every frame
    * by the draw loop to grade the blob's color/energy, refreshed whenever
    * live graph data changes (kept in a ref so the RAF loop, set up once,
@@ -99,6 +153,17 @@ export default function NeuralCore({ active }: { active: boolean }) {
   const projects = useCoreGraph((s) => s.projects);
   const nodes = useCoreGraph((s) => s.nodes);
   const edges = useCoreGraph((s) => s.edges);
+  const graphOwnerId = useCoreGraph((s) => s.ownerId);
+  const authUserId = useAuthStore((s) => s.user?.id);
+  const ownerId = graphOwnerId ?? authUserId ?? null;
+  const updateNodeTitle = useCoreGraph((s) => s.updateNodeTitle);
+  const updateNodeTags = useCoreGraph((s) => s.updateNodeTags);
+  const createEdge = useCoreGraph((s) => s.createEdge);
+  const deleteEdge = useCoreGraph((s) => s.deleteEdge);
+  const confirmEdge = useCoreGraph((s) => s.confirmEdge);
+  const correctEdge = useCoreGraph((s) => s.correctEdge);
+  const confirmNodeTags = useCoreGraph((s) => s.confirmNodeTags);
+  const [showAiReview, setShowAiReview] = useState(false);
 
   // Real project ring data (replaces the old hardcoded StudyHive/Music/
   // Website/Novel demo array) — a brand-new account with zero real projects
@@ -252,26 +317,153 @@ export default function NeuralCore({ active }: { active: boolean }) {
       cy = H / 2;
     const rIn = Math.min(W, H) * 0.31,
       rOut = Math.min(W, H) * 0.465;
+    // Part A.3: read any persisted position for this owner first — the
+    // computed radial position below is only ever the fallback for a
+    // module/project id with no saved entry (a brand-new node, or a
+    // Captain who's never dragged anything).
+    const saved = loadLayout(ownerId);
+    savedLayout.current = saved;
+    groupOf.current = {};
+    Object.entries(saved).forEach(([id, v]) => {
+      if (v.groupId) groupOf.current[id] = v.groupId;
+    });
     const pos: Record<string, [number, number]> = { core: [cx, cy] };
     modules.forEach((m, i) => {
       const a = (i / modules.length) * 6.29 - Math.PI / 2;
-      pos[m.id] = [cx + Math.cos(a) * rIn, cy + Math.sin(a) * rIn];
+      const fallback: [number, number] = [cx + Math.cos(a) * rIn, cy + Math.sin(a) * rIn];
+      pos[m.id] = saved[m.id] ? [saved[m.id].x, saved[m.id].y] : fallback;
     });
     projs.forEach((p, i) => {
       const a = (i / projs.length) * 6.29 - Math.PI / 4;
-      pos[p.id] = [cx + Math.cos(a) * rOut, cy + Math.sin(a) * rOut];
+      const fallback: [number, number] = [cx + Math.cos(a) * rOut, cy + Math.sin(a) * rOut];
+      pos[p.id] = saved[p.id] ? [saved[p.id].x, saved[p.id].y] : fallback;
     });
     nodePos.current = pos;
+    lineEl.current.clear();
 
-    const mkNode = (d: { id: string; ic: IconName; nm: string }, cls: string, onClick: () => void) => {
+    /** Redraws just the one line touching a dragged node (core -> node) —
+     * called on every pointermove while dragging, never a full re-layout. */
+    const redrawLine = (id: string) => {
+      const line = lineEl.current.get(id);
+      const p = nodePos.current[id];
+      if (!line || !p) return;
+      line.setAttribute('x2', String(p[0]));
+      line.setAttribute('y2', String(p[1]));
+    };
+
+    /** Part A.4 — proximity grouping. Persisted alongside position; halo
+     * class toggled on both members. Regenerates a fresh groupId the first
+     * time two ungrouped nodes meet so distinct pairs don't collide. */
+    const checkGrouping = (id: string, x: number, y: number) => {
+      let nearestId: string | null = null;
+      let nearestDist = GROUP_DIST;
+      Object.entries(nodePos.current).forEach(([otherId, [ox, oy]]) => {
+        if (otherId === id || otherId === 'core') return;
+        const d = Math.hypot(x - ox, y - oy);
+        if (d < nearestDist) {
+          nearestDist = d;
+          nearestId = otherId;
+        }
+      });
+      const el = document.getElementById('n-' + id);
+      if (nearestId) {
+        const nid: string = nearestId;
+        const gid = groupOf.current[nid] || groupOf.current[id] || `grp-${id}-${nid}`;
+        groupOf.current[id] = gid;
+        groupOf.current[nid] = gid;
+        el?.classList.add('grouped');
+        document.getElementById('n-' + nid)?.classList.add('grouped');
+      } else {
+        delete groupOf.current[id];
+        el?.classList.remove('grouped');
+        // Only ungroup the halo visually if no OTHER node still shares this
+        // node's former group.
+      }
+    };
+
+    /** Builds the full persisted layout object from current in-memory
+     * positions + groups and writes it to localStorage — called once per
+     * drag gesture (pointerup), not on every pointermove. */
+    const persist = () => {
+      const layout: SavedLayout = {};
+      [...modules, ...projs].forEach((d) => {
+        const p = nodePos.current[d.id];
+        if (!p) return;
+        layout[d.id] = { x: p[0], y: p[1], groupId: groupOf.current[d.id] };
+      });
+      savedLayout.current = layout;
+      saveLayout(ownerId, layout);
+    };
+
+    const mkNode = (d: { id: string; ic: IconName; nm: string }, cls: string, onClick: () => void, onDoubleClick: () => void) => {
       const [x, y] = pos[d.id];
       const el = document.createElement('div');
-      el.className = 'cnode ' + cls;
+      el.className = 'cnode ' + cls + (groupOf.current[d.id] ? ' grouped' : '');
       el.id = 'n-' + d.id;
       el.style.left = x + 'px';
       el.style.top = y + 'px';
       el.innerHTML = `<span class="bub"></span><span class="nm">${d.nm}</span>`;
-      el.onclick = onClick;
+      el.ondblclick = (e) => {
+        e.stopPropagation();
+        onDoubleClick();
+      };
+      // Part A.1/A.2 — real pointer-driven drag. A genuine drag (moved past
+      // DRAG_THRESHOLD) updates position + redraws only this node's line and
+      // suppresses the click (no dockAndGo); a near-zero-movement
+      // pointerdown/up is treated as a real click and opens the details
+      // panel instead of navigating immediately (dockAndGo/onDoubleClick
+      // remain available as the panel's explicit "Go to room" action, or a
+      // literal double-click on the node itself).
+      let startX = 0,
+        startY = 0,
+        startPosX = 0,
+        startPosY = 0,
+        dragging = false;
+      el.addEventListener('pointerdown', (e: PointerEvent) => {
+        e.stopPropagation();
+        startX = e.clientX;
+        startY = e.clientY;
+        const cur = nodePos.current[d.id];
+        startPosX = cur[0];
+        startPosY = cur[1];
+        dragging = false;
+        el.setPointerCapture(e.pointerId);
+
+        const onMove = (e2: PointerEvent) => {
+          const dx = e2.clientX - startX,
+            dy = e2.clientY - startY;
+          if (!dragging && Math.hypot(dx, dy) > DRAG_THRESHOLD) {
+            dragging = true;
+            el.classList.add('dragging');
+          }
+          if (dragging) {
+            const nx = startPosX + dx,
+              ny = startPosY + dy;
+            nodePos.current[d.id] = [nx, ny];
+            el.style.left = nx + 'px';
+            el.style.top = ny + 'px';
+            redrawLine(d.id);
+            checkGrouping(d.id, nx, ny);
+          }
+        };
+        const onUp = (e2: PointerEvent) => {
+          try {
+            el.releasePointerCapture(e2.pointerId);
+          } catch {
+            /* already released */
+          }
+          el.removeEventListener('pointermove', onMove);
+          el.removeEventListener('pointerup', onUp);
+          el.classList.remove('dragging');
+          if (dragging) {
+            persist();
+          } else {
+            onClick();
+          }
+        };
+        el.addEventListener('pointermove', onMove);
+        el.addEventListener('pointerup', onUp);
+      });
       stage.appendChild(el);
       // Mount the exact same DataIcon component Projects room renders its
       // project/classification glyphs with (see projects/index.tsx) into
@@ -283,12 +475,12 @@ export default function NeuralCore({ active }: { active: boolean }) {
         root.render(<DataIcon value={d.ic} size={cls === 'proj' ? 15 : 14} glow={cls === 'proj' ? 'purple' : 'cyan'} />);
       }
     };
-    modules.forEach((m) => mkNode(m, 'mod', () => dockAndGo(m.id, m.id)));
-    projs.forEach((p) => mkNode(p, 'proj', () => dockAndGo('projects', p.id)));
+    modules.forEach((m) => mkNode(m, 'mod', () => { setShowAiReview(false); setPanelId(m.id); }, () => dockAndGo(m.id, m.id)));
+    projs.forEach((p) => mkNode(p, 'proj', () => { setShowAiReview(false); setPanelId(p.id); }, () => dockAndGo('projects', p.id)));
 
     svg.innerHTML = '';
     svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
-    const faint = (a: [number, number], b: [number, number], c = 'rgba(0,245,255,.09)') => {
+    const faint = (id: string, a: [number, number], b: [number, number], c = 'rgba(0,245,255,.09)') => {
       const l = document.createElementNS('http://www.w3.org/2000/svg', 'line');
       l.setAttribute('x1', String(a[0]));
       l.setAttribute('y1', String(a[1]));
@@ -297,9 +489,10 @@ export default function NeuralCore({ active }: { active: boolean }) {
       l.setAttribute('stroke', c);
       l.setAttribute('stroke-width', '1');
       svg.appendChild(l);
+      lineEl.current.set(id, l);
     };
-    modules.forEach((m) => faint(pos.core, pos[m.id]));
-    projs.forEach((p) => faint(pos.core, pos[p.id], 'rgba(139,92,246,.12)'));
+    modules.forEach((m) => faint(m.id, pos.core, pos[m.id]));
+    projs.forEach((p) => faint(p.id, pos.core, pos[p.id], 'rgba(139,92,246,.12)'));
   }
 
   useEffect(() => {
@@ -447,7 +640,7 @@ export default function NeuralCore({ active }: { active: boolean }) {
   useEffect(() => {
     if (active) layoutCore();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [projs, active]);
+  }, [projs, active, ownerId]);
 
   // Command palette (Cmd/Ctrl+K) — scoped to fire only while the Core room
   // is active, per the Amendment's own placement of this directive under
@@ -642,6 +835,13 @@ export default function NeuralCore({ active }: { active: boolean }) {
       <canvas ref={cvRef} id="coreCv" />
       <div id="coreStage" ref={stageRef}>
         <svg id="lines" ref={svgRef} />
+        <button
+          id="coreAiReviewBtn"
+          title="Review xAI's tags & associations — accept, correct, or reject what it's done on its own"
+          onClick={() => { setPanelId(null); setShowAiReview(true); }}
+        >
+          <Icon name="tag" size={13} glow="cyan" /> REVIEW xAI
+        </button>
         <div id="coreGreet">
           <h1>{greeting}</h1>
           <p id="coreStats">{displayStats}</p>
@@ -710,6 +910,262 @@ export default function NeuralCore({ active }: { active: boolean }) {
           </div>
         </div>
       )}
+      {panelId && (
+        <NodePanel
+          isProject={projs.some((p) => p.id === panelId)}
+          name={allMeta.find((m) => m.id === panelId)?.nm ?? panelId}
+          groupId={groupOf.current[panelId]}
+          groupMembers={
+            groupOf.current[panelId]
+              ? allMeta.filter((m) => m.id !== panelId && groupOf.current[m.id] === groupOf.current[panelId]).map((m) => m.nm)
+              : []
+          }
+          nodes={nodes.filter((n) => n.project_id === panelId)}
+          edges={edges}
+          onClose={() => setPanelId(null)}
+          onGoToRoom={() => {
+            const isMod = modules.some((m) => m.id === panelId);
+            dockAndGo(isMod ? panelId : 'projects', panelId);
+            setPanelId(null);
+          }}
+          onRenameProject={async (name) => {
+            const { error } = await supabase.from('projects').update({ name }).eq('id', panelId);
+            if (error) console.error('rename project failed', error);
+          }}
+          updateNodeTitle={updateNodeTitle}
+          updateNodeTags={updateNodeTags}
+          createEdge={createEdge}
+          deleteEdge={deleteEdge}
+        />
+      )}
+      {showAiReview && (
+        <AiReviewPanel
+          nodes={nodes}
+          edges={edges}
+          onClose={() => setShowAiReview(false)}
+          confirmEdge={confirmEdge}
+          correctEdge={correctEdge}
+          deleteEdge={deleteEdge}
+          confirmNodeTags={confirmNodeTags}
+          updateNodeTags={updateNodeTags}
+        />
+      )}
     </section>
+  );
+}
+
+/** Part A.2/B — the slide-in details panel opened by clicking (not
+ * dragging) a ring node. `dockAndGo`/room navigation stays available as an
+ * explicit "Go to room" action here (or a literal double-click on the node
+ * itself) rather than firing immediately on click, per the brief.
+ *
+ * Editing (rename/tags/associations) only applies to real graph nodes:
+ * module ring icons are app routes, not database rows, so a module's panel
+ * is read-only info + navigation. A project ring icon's panel lists the
+ * real captured nodes filed under that project (from coreGraph.nodes) —
+ * each independently editable via the coreGraph methods from part B — plus
+ * an associations editor between them (createEdge/deleteEdge), which is
+ * also the real signal fed back into future AI classification (part C). */
+function NodePanel({
+  isProject,
+  name,
+  groupId,
+  groupMembers,
+  nodes,
+  edges,
+  onClose,
+  onGoToRoom,
+  onRenameProject,
+  updateNodeTitle,
+  updateNodeTags,
+  createEdge,
+  deleteEdge,
+}: {
+  isProject: boolean;
+  name: string;
+  groupId?: string;
+  groupMembers: string[];
+  nodes: import('../../core/types').NodeRecord[];
+  edges: import('../../core/types').EdgeRecord[];
+  onClose: () => void;
+  onGoToRoom: () => void;
+  onRenameProject: (name: string) => void;
+  updateNodeTitle: (id: string, title: string) => Promise<void>;
+  updateNodeTags: (id: string, tags: string[]) => Promise<void>;
+  createEdge: (from: string, to: string, relation?: import('../../core/types').EdgeRecord['relation']) => Promise<void>;
+  deleteEdge: (id: string) => Promise<void>;
+}) {
+  const [projectName, setProjectName] = useState(name);
+  const [addFrom, setAddFrom] = useState(nodes[0]?.id ?? '');
+  const [addTo, setAddTo] = useState(nodes[1]?.id ?? '');
+
+  const nodeIds = new Set(nodes.map((n) => n.id));
+  const nodeName = (id: string) => nodes.find((n) => n.id === id)?.title || id;
+
+  return (
+    <div id="corePanelOverlay" onClick={onClose}>
+      <aside id="corePanel" onClick={(e) => e.stopPropagation()}>
+        <div id="corePanelHead">
+          {isProject ? (
+            <input
+              id="corePanelName"
+              value={projectName}
+              onChange={(e) => setProjectName(e.target.value)}
+              onBlur={() => projectName.trim() && projectName !== name && onRenameProject(projectName.trim())}
+              onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
+            />
+          ) : (
+            <h3>{name}</h3>
+          )}
+          <button id="corePanelClose" onClick={onClose}>
+            <Icon name="close" size={14} />
+          </button>
+        </div>
+
+        {groupId && groupMembers.length > 0 && (
+          <div className="corePanelSection">
+            <div className="corePanelLabel">GROUPED WITH</div>
+            <div className="corePanelChips">
+              {groupMembers.map((gm) => (
+                <span key={gm} className="corePanelChip">{gm}</span>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {isProject ? (
+          <>
+            <div className="corePanelSection">
+              <div className="corePanelLabel">NODES IN THIS PROJECT ({nodes.length})</div>
+              {nodes.length === 0 && <div className="corePanelEmpty">Nothing captured here yet.</div>}
+              <div className="corePanelNodeList">
+                {nodes.map((n) => (
+                  <PanelNodeRow
+                    key={n.id}
+                    node={n}
+                    edges={edges}
+                    nodeName={nodeName}
+                    updateNodeTitle={updateNodeTitle}
+                    updateNodeTags={updateNodeTags}
+                    deleteEdge={deleteEdge}
+                  />
+                ))}
+              </div>
+            </div>
+            {nodes.length > 1 && (
+              <div className="corePanelSection">
+                <div className="corePanelLabel">ADD ASSOCIATION</div>
+                <div className="corePanelAddRow">
+                  <select value={addFrom} onChange={(e) => setAddFrom(e.target.value)}>
+                    {nodes.map((n) => (
+                      <option key={n.id} value={n.id}>{n.title || n.kind}</option>
+                    ))}
+                  </select>
+                  <Icon name="link" size={12} />
+                  <select value={addTo} onChange={(e) => setAddTo(e.target.value)}>
+                    {nodes.map((n) => (
+                      <option key={n.id} value={n.id}>{n.title || n.kind}</option>
+                    ))}
+                  </select>
+                  <button
+                    disabled={!addFrom || !addTo || addFrom === addTo}
+                    onClick={() => createEdge(addFrom, addTo, 'relates_to')}
+                  >
+                    <Icon name="plus" size={12} />
+                  </button>
+                </div>
+              </div>
+            )}
+          </>
+        ) : (
+          <div className="corePanelSection">
+            <div className="corePanelEmpty">
+              System module — not a data record, so there&apos;s nothing here to rename or tag. {nodeIds.size} node{nodeIds.size === 1 ? '' : 's'} route through it.
+            </div>
+          </div>
+        )}
+
+        <div className="corePanelFoot">
+          <button id="corePanelGo" onClick={onGoToRoom}>
+            GO TO ROOM <Icon name="chevronRight" size={12} />
+          </button>
+        </div>
+      </aside>
+    </div>
+  );
+}
+
+/** One editable row inside a project's node list — title (blur-to-save),
+ * tags (chip input), and its own associations (edges touching it) with
+ * remove buttons. Kept as its own component so each row owns its local
+ * edit-buffer state independently. */
+function PanelNodeRow({
+  node,
+  edges,
+  nodeName,
+  updateNodeTitle,
+  updateNodeTags,
+  deleteEdge,
+}: {
+  node: import('../../core/types').NodeRecord;
+  edges: import('../../core/types').EdgeRecord[];
+  nodeName: (id: string) => string;
+  updateNodeTitle: (id: string, title: string) => Promise<void>;
+  updateNodeTags: (id: string, tags: string[]) => Promise<void>;
+  deleteEdge: (id: string) => Promise<void>;
+}) {
+  const [title, setTitle] = useState(node.title);
+  const [tagInput, setTagInput] = useState('');
+  const tags = ((node.metadata as Record<string, unknown> | undefined)?.tags as string[] | undefined) ?? [];
+  const touching = edges.filter((e) => e.from_node === node.id || e.to_node === node.id);
+
+  function addTag() {
+    const t = tagInput.trim();
+    if (!t || tags.includes(t)) return;
+    updateNodeTags(node.id, [...tags, t]);
+    setTagInput('');
+  }
+  function removeTag(t: string) {
+    updateNodeTags(node.id, tags.filter((x) => x !== t));
+  }
+
+  return (
+    <div className="corePanelNodeRow">
+      <input
+        className="corePanelNodeTitle"
+        value={title}
+        onChange={(e) => setTitle(e.target.value)}
+        onBlur={() => title.trim() && title !== node.title && updateNodeTitle(node.id, title.trim())}
+        onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
+      />
+      <div className="corePanelChips">
+        {tags.map((t) => (
+          <span key={t} className="corePanelChip">
+            {t} <span className="corePanelChipX" onClick={() => removeTag(t)}>×</span>
+          </span>
+        ))}
+        <input
+          className="corePanelTagInput"
+          placeholder="+ tag"
+          value={tagInput}
+          onChange={(e) => setTagInput(e.target.value)}
+          onKeyDown={(e) => e.key === 'Enter' && addTag()}
+          onBlur={addTag}
+        />
+      </div>
+      {touching.length > 0 && (
+        <div className="corePanelAssoc">
+          {touching.map((e) => {
+            const otherId = e.from_node === node.id ? e.to_node : e.from_node;
+            return (
+              <span key={e.id} className="corePanelAssocRow">
+                <Icon name="link" size={10} /> {nodeName(otherId)}
+                <span className="corePanelChipX" onClick={() => deleteEdge(e.id)}>×</span>
+              </span>
+            );
+          })}
+        </div>
+      )}
+    </div>
   );
 }

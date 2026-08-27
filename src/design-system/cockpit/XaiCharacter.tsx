@@ -166,7 +166,11 @@ export default function XaiCharacter() {
         }}
       >
         {line && !chatOpen && <div className={`xaiCaption xaiCaption-${status}`}>{line}</div>}
-        <XaiCharacterCanvas scale={1.6} />
+        {/* Captain feedback: character read as way too large. Container
+            shrunk to ~65% (design-system.css .xaiChar 320px -> 210px);
+            scale is derived the same proportion so the fitted framing
+            (see cameraZ math above) stays correct instead of clipping. */}
+        <XaiCharacterCanvas scale={1.6 * 0.656} />
       </div>
       <XaiChatWindow open={chatOpen} onClose={() => setChatOpen(false)} />
     </>

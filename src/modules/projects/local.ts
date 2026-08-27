@@ -82,6 +82,39 @@ export function setWidgetOrder(projectId: string, order: WidgetId[]) {
   writeJson(WIDGET_KEY, map);
 }
 
+// Redesign checkpoint 3 — modular draggable project cards. Same pattern as
+// the OVERVIEW widget reorder above (per-owner local order, forward-compat
+// with newly-created projects that aren't in the saved order yet), applied
+// to the top-level project-card grid itself instead of just the widgets
+// inside an opened project.
+const CARD_ORDER_KEY = 'xos-project-card-order-v1';
+
+export function getCardOrder(ownerId: string): string[] {
+  const map = readJson<Record<string, string[]>>(CARD_ORDER_KEY, {});
+  return map[ownerId] ?? [];
+}
+export function setCardOrder(ownerId: string, order: string[]) {
+  const map = readJson<Record<string, string[]>>(CARD_ORDER_KEY, {});
+  map[ownerId] = order;
+  writeJson(CARD_ORDER_KEY, map);
+}
+/** Applies a saved order (project ids) to the live project list, appending
+ * any project not yet in the saved order (new project, or first run) at
+ * the end in its natural order — never silently drops a project. */
+export function applyCardOrder<T extends { id: string }>(items: T[], order: string[]): T[] {
+  if (!order.length) return items;
+  const byId = new Map(items.map((p) => [p.id, p]));
+  const ordered: T[] = [];
+  order.forEach((id) => {
+    const item = byId.get(id);
+    if (item) {
+      ordered.push(item);
+      byId.delete(id);
+    }
+  });
+  return [...ordered, ...byId.values()];
+}
+
 export function slugify(name: string): string {
   const base = name
     .toLowerCase()

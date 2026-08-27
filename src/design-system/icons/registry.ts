@@ -151,6 +151,8 @@ import {
   ArrowLeft,
   BookmarkPlus,
   Tag,
+  History,
+  Server,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import XaiGlyph from './XaiGlyph';
@@ -289,6 +291,8 @@ export const ICONS = {
   back: ArrowLeft,
   addToMatrix: BookmarkPlus,
   tag: Tag,
+  history: History,
+  server: Server,
 
   // ---- bespoke xOS brand glyph (not from lucide) ----
   xai: XaiGlyph,
