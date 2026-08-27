@@ -10,6 +10,7 @@ import { useAuthStore } from '../../stores/authStore';
 import { useBrowserNavStore } from '../../stores/browserNavStore';
 import Icon from '../../design-system/icons/Icon';
 import AmbientField from '../../design-system/background/AmbientField';
+import ShipAmbience from '../../design-system/background/ShipAmbience';
 import CodeEditor from '../../design-system/CodeEditor';
 import {
   type BookmarkEntry,
@@ -30,10 +31,6 @@ import {
   parseBookmarksFile,
 } from './storage';
 
-/** Small dynamic-import wrapper — same "isTauri() gate + dynamic import"
- * pattern used everywhere else in xOS (uiStore's tray sync, the Capture
- * room's POP OUT button) so the web/Netlify bundle never eagerly loads
- * @tauri-apps/api for a command that only exists on desktop. */
 async function invokeTauri<T = unknown>(cmd: string, args?: Record<string, unknown>): Promise<T> {
   const { invoke } = await import('@tauri-apps/api/core');
   return invoke<T>(cmd, args);
@@ -57,33 +54,12 @@ function normalizeUrl(raw: string): string | null {
   const trimmed = raw.trim();
   if (!trimmed) return null;
   if (/^https?:\/\//i.test(trimmed)) return trimmed;
-  // A bare domain-looking string ("github.com", "docs.rs/tokio") gets a
-  // scheme; anything else is treated as a search query, mirroring how every
-  // real address bar behaves.
   if (/^[\w-]+(\.[\w-]+)+([/:?#].*)?$/.test(trimmed)) return `https://${trimmed}`;
   return `https://www.google.com/search?q=${encodeURIComponent(trimmed)}`;
 }
 
 type Panel = 'none' | 'bookmarks' | 'history' | 'settings';
 
-/** ROOM A — WEB BROWSER (Step 7). Tauri build: the viewport is a genuine
- * native child webview (Window::add_child, src-tauri/src/lib.rs) positioned
- * exactly over this room's content area — not an <iframe>. Most real sites
- * send X-Frame-Options/CSP frame-ancestors headers that block same-page
- * iframe embedding outright (banks, social media, most news); a real
- * embedded webview navigating directly to the URL is a top-level load from
- * that site's own perspective, so it never hits that wall. Web-preview
- * build (xos-nexus.surge.sh): falls back to a plain <iframe>, clearly
- * labeled — most real sites WILL fail to load there, and that's expected,
- * not a bug to chase (an "OPEN IN NEW TAB" link is always offered alongside
- * it instead of pretending the preview works).
- *
- * Real back/forward: `on_navigation` (src-tauri) fires for every navigation
- * the native webview makes, including a link the Captain clicks *inside*
- * the loaded page — not just ones this room's address bar/back/forward
- * buttons initiated. The "browser-nav" listener effect below folds those
- * into the same history stack, so BACK actually undoes in-page navigation
- * too, matching how a real browser's back button has always worked. */
 export default function Browser({ active }: { active: boolean }) {
   const graphOwnerId = useCoreGraph((s) => s.ownerId);
   const authUserId = useAuthStore((s) => s.user?.id ?? null);
@@ -96,10 +72,6 @@ export default function Browser({ active }: { active: boolean }) {
   const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const viewportRef = useRef<HTMLDivElement>(null);
 
-  // Local .html file editing — a second mode this room can be in, entirely
-  // separate from URL browsing. While in 'edit' mode the native webview is
-  // treated the same as "room inactive" (hidden/not positioned) so it
-  // can't float on top of the editor.
   const [mode, setMode] = useState<'browse' | 'edit'>('browse');
   const [openFile, setOpenFile] = useState<OpenedFile | null>(null);
   const [fileContent, setFileContent] = useState('');
@@ -108,10 +80,6 @@ export default function Browser({ active }: { active: boolean }) {
   const [fileResetKey, setFileResetKey] = useState(0);
   const [fileBusy, setFileBusy] = useState<'idle' | 'saving'>('idle');
 
-  // Bookmarks / History / Settings — persisted per-owner in localStorage
-  // (see ./storage.ts); loaded fresh whenever ownerId resolves/changes so a
-  // sign-in mid-session picks up that Captain's own saved data instead of
-  // whatever the anonymous scope had.
   const [bookmarks, setBookmarks] = useState<BookmarkEntry[]>([]);
   const [historyLog, setHistoryLog] = useState<HistoryEntry[]>([]);
   const [settings, setSettings] = useState<BrowserSettings>({ homepage: '', openExternally: false });
@@ -130,8 +98,6 @@ export default function Browser({ active }: { active: boolean }) {
     setHomepageDraft(s.homepage);
   }, [ownerId]);
 
-  // Debounced live preview — an iframe re-rendering its full srcDoc on
-  // every keystroke would flicker/lag on larger files.
   useEffect(() => {
     const t = setTimeout(() => setPreviewDoc(fileContent), 250);
     return () => clearTimeout(t);
@@ -141,9 +107,6 @@ export default function Browser({ active }: { active: boolean }) {
   const canGoBack = historyIndex > 0;
   const canGoForward = historyIndex < history.length - 1;
 
-  // Refs so the mount-once Tauri event listener (below) always sees the
-  // latest navigation state without needing to be torn down/rebuilt on
-  // every history change.
   const currentUrlRef = useRef<string | null>(currentUrl);
   const historyIndexRef = useRef(historyIndex);
   useEffect(() => {
@@ -184,17 +147,6 @@ export default function Browser({ active }: { active: boolean }) {
     playSound('nav');
   }
 
-  // Real Chrome-like back/forward, the actual fix: the native child
-  // webview's own in-page navigation (the Captain clicking a link on the
-  // loaded page) happens entirely inside that separate webview process —
-  // this room only finds out about it via the "browser-nav" event
-  // (on_navigation, src-tauri/src/lib.rs), which fires for EVERY navigation
-  // that webview makes, ours and organic ones alike. When the incoming URL
-  // matches what we already believe is current, it's just confirming a
-  // navigation this room itself initiated (address bar, back/forward) — no
-  // action needed. Otherwise it's a real, previously-untracked navigation,
-  // so it gets folded into the same history stack a typed URL would,
-  // truncating any stale forward entries exactly like a real browser does.
   useEffect(() => {
     if (!isTauri()) return;
     let unlisten: (() => void) | undefined;
@@ -221,10 +173,6 @@ export default function Browser({ active }: { active: boolean }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Terminal room's "RUN DEV SERVER" (Part 2) hands off a URL to open here
-  // via useBrowserNavStore instead of the two rooms importing each other —
-  // consumed once this room becomes the active one, then cleared so it's
-  // never replayed on a later visit.
   const pendingNavUrl = useBrowserNavStore((s) => s.pendingUrl);
   const clearPendingNav = useBrowserNavStore((s) => s.clearPending);
   useEffect(() => {
@@ -234,8 +182,6 @@ export default function Browser({ active }: { active: boolean }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active, pendingNavUrl]);
 
-  // Tauri: create/navigate the native child webview whenever the target URL
-  // changes (or the room becomes active again with one already loaded).
   useEffect(() => {
     if (!isTauri() || !active || mode !== 'browse' || !currentUrl) return;
     const el = viewportRef.current;
@@ -251,11 +197,6 @@ export default function Browser({ active }: { active: boolean }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentUrl, active, mode]);
 
-  // Keep the native webview's bounds glued to the viewport div (window
-  // resize, sidebar collapse, etc.), and shrink it to nothing while the
-  // Browser room isn't the active one — RoomOutlet keeps every room
-  // mounted, so without this the embedded webview would float on top of
-  // whichever room the Captain navigates to next.
   useEffect(() => {
     if (!isTauri()) return;
     if (!active || mode !== 'browse') {
@@ -355,8 +296,6 @@ export default function Browser({ active }: { active: boolean }) {
     }
   }
 
-  // ---- Bookmarks -----------------------------------------------------
-
   const currentIsBookmarked = currentUrl ? isBookmarked(bookmarks, currentUrl) : false;
 
   function toggleBookmark() {
@@ -405,7 +344,7 @@ export default function Browser({ active }: { active: boolean }) {
 
   async function handleImportFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
-    e.target.value = ''; // allow re-picking the same file next time
+    e.target.value = '';
     if (!file) return;
     try {
       const content = await file.text();
@@ -425,8 +364,6 @@ export default function Browser({ active }: { active: boolean }) {
     }
   }
 
-  // ---- History ---------------------------------------------------------
-
   const filteredHistory = historyFilter.trim()
     ? historyLog.filter((h) => h.url.toLowerCase().includes(historyFilter.toLowerCase()) || h.title.toLowerCase().includes(historyFilter.toLowerCase()))
     : historyLog;
@@ -436,8 +373,6 @@ export default function Browser({ active }: { active: boolean }) {
     setHistoryLog(clearHistory(ownerId));
     pushToast('History cleared', 'info');
   }
-
-  // ---- Settings ----------------------------------------------------------
 
   function commitHomepage() {
     const next = { ...settings, homepage: homepageDraft.trim() };
@@ -459,6 +394,7 @@ export default function Browser({ active }: { active: boolean }) {
   return (
     <section className={`room ambient ${active ? 'on' : ''}`} id="r-browser">
       <AmbientField mood="cyan" density={16} active={active} parallax />
+      <ShipAmbience kind="lights" corner="tl" active={active} />
       <div className="roomInner">
         <h2 className="rh">
           <Icon name="browser" size={16} glow="cyan" /> BROWSER
@@ -576,10 +512,6 @@ export default function Browser({ active }: { active: boolean }) {
                   <Icon name="spinner" size={20} className="spin" /> Loading…
                 </div>
               )}
-              {/* Tauri: the actual page renders in the native child webview
-                  positioned over this element by the effects above — nothing
-                  to render here in that case, this div is purely a bounds
-                  reference. */}
             </div>
           </>
         )}
@@ -612,16 +544,11 @@ export default function Browser({ active }: { active: boolean }) {
                   setFileDirty(true);
                 }}
               />
-              {/* sandboxed, no same-origin — arbitrary local HTML can contain
-                  arbitrary <script>; this keeps it from reaching xOS's own
-                  window/localStorage/Tauri IPC (same isolation posture as
-                  the Terminal room's Node/Python/etc. sandboxes). */}
               <iframe className="htmlPreviewFrame" srcDoc={previewDoc} sandbox="allow-scripts" title="Live HTML preview" />
             </div>
           </>
         )}
 
-        {/* ---- Bookmarks panel ------------------------------------------ */}
         {panel === 'bookmarks' && (
           <div className="knowledgeOverlay" onClick={() => setPanel('none')}>
             <div className="knowledgePanel browserPanel" onClick={(e) => e.stopPropagation()}>
@@ -709,7 +636,6 @@ export default function Browser({ active }: { active: boolean }) {
           </div>
         )}
 
-        {/* ---- History panel ---------------------------------------------- */}
         {panel === 'history' && (
           <div className="knowledgeOverlay" onClick={() => setPanel('none')}>
             <div className="knowledgePanel browserPanel" onClick={(e) => e.stopPropagation()}>
@@ -753,7 +679,6 @@ export default function Browser({ active }: { active: boolean }) {
           </div>
         )}
 
-        {/* ---- Options panel (Browser-room-scoped, not global Settings) --- */}
         {panel === 'settings' && (
           <div className="knowledgeOverlay" onClick={() => setPanel('none')}>
             <div className="knowledgePanel browserPanel" onClick={(e) => e.stopPropagation()}>
