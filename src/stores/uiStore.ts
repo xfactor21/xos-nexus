@@ -25,6 +25,36 @@ export type RoomId =
 export type Autonomy = 'OBSERVE ONLY' | 'SUGGEST' | 'ROUTE AUTOMATICALLY' | 'FULL COPILOT';
 export type ShellTarget = 'ELECTRON' | 'TAURI' | 'UNDECIDED';
 
+/** Settings > CUSTOM COMMANDS — the Captain's ask made concrete: "user-
+ * defined command-palette actions or webhook triggers... make this a core
+ * function of the OS." A custom command is either a rename+rebind of an
+ * existing internal capability (`kind: 'action'`, resolved against
+ * core/actionRegistry.ts's registry by `actionId`) or an outbound HTTP call
+ * to somewhere outside xOS entirely (`kind: 'webhook'` — Zapier, n8n,
+ * Discord, a home-grown endpoint). Both run from the same Cmd/Ctrl+K
+ * palette as every built-in action, not a separate second UI. */
+export type CustomCommandKind = 'action' | 'webhook';
+export type WebhookMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
+
+export interface CustomCommand {
+  id: string;
+  label: string;
+  kind: CustomCommandKind;
+  /** kind === 'action': id of an entry in core/actionRegistry.ts's registry. */
+  actionId?: string;
+  /** kind === 'webhook': the outbound request to fire. */
+  webhook?: {
+    url: string;
+    method: WebhookMethod;
+    headers?: Record<string, string>;
+    body?: string;
+  };
+  /** Extra "are you sure?" prompt before running — off by default for
+   * internal actions (they're all reversible/idempotent), worth defaulting
+   * a wary Captain toward for webhooks that hit the outside world. */
+  confirmBeforeRun: boolean;
+}
+
 interface UiState {
   room: RoomId;
   sidebarOpen: boolean;
@@ -53,6 +83,9 @@ interface UiState {
    * back out — flip it off and every room's decoration disappears
    * instantly, no code change needed. Defaults on. */
   shipAmbience: boolean;
+  /** Settings > CUSTOM COMMANDS, persisted like every other Settings pick
+   * here. See the CustomCommand doc comment above. */
+  customCommands: CustomCommand[];
   go: (r: RoomId) => void;
   toggleSidebar: () => void;
   closeSidebar: () => void;
@@ -67,6 +100,9 @@ interface UiState {
   setSoundVolume: (v: number) => void;
   setPinkAccents: (v: boolean) => void;
   setShipAmbience: (v: boolean) => void;
+  addCustomCommand: (c: Omit<CustomCommand, 'id'>) => void;
+  updateCustomCommand: (id: string, patch: Partial<Omit<CustomCommand, 'id'>>) => void;
+  removeCustomCommand: (id: string) => void;
 }
 
 function applyReduceMotion(v: boolean) {
@@ -114,6 +150,7 @@ export const useUiStore = create<UiState>()(
       soundVolume: 0.6,
       pinkAccents: true,
       shipAmbience: true,
+      customCommands: [],
       // Amendment v0.6 step 2: the sidebar is now a persistent "neural spine"
       // (always at least visible as a collapsed dot-rail, never fully hidden —
       // see Shell.tsx), so selecting a room no longer force-collapses it the
@@ -147,6 +184,13 @@ export const useUiStore = create<UiState>()(
         set({ pinkAccents: v });
       },
       setShipAmbience: (v) => set({ shipAmbience: v }),
+      addCustomCommand: (c) =>
+        set((s) => ({
+          customCommands: [...s.customCommands, { ...c, id: `cmd-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}` }],
+        })),
+      updateCustomCommand: (id, patch) =>
+        set((s) => ({ customCommands: s.customCommands.map((c) => (c.id === id ? { ...c, ...patch } : c)) })),
+      removeCustomCommand: (id) => set((s) => ({ customCommands: s.customCommands.filter((c) => c.id !== id) })),
     }),
     {
       name: 'xos-ui-settings',
@@ -160,6 +204,7 @@ export const useUiStore = create<UiState>()(
         soundVolume: s.soundVolume,
         pinkAccents: s.pinkAccents,
         shipAmbience: s.shipAmbience,
+        customCommands: s.customCommands,
       }),
       // The --glow/--accent/--ui-scale CSS custom properties and the
       // force-reduce-motion class all live outside React (read by canvas

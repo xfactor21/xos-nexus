@@ -3,6 +3,9 @@ import { useUiStore } from '../../stores/uiStore';
 import type { RoomId } from '../../stores/uiStore';
 import { useCoreGraph } from '../../stores/coreGraph';
 import { ROOMS } from '../../core/rooms';
+import { useActionRegistry } from '../../core/actionRegistry';
+import { fireWebhook } from '../../lib/webhook';
+import { pushToast } from '../../stores/toastStore';
 import { playSound } from '../../lib/sound';
 import Icon from '../icons/Icon';
 
@@ -14,15 +17,19 @@ interface Action {
 }
 
 /** Cmd/Ctrl+K command palette — the brief's explicit "most OS-like
- * interaction missing" alongside cross-room drag-and-drop. Three real
- * modes in one input: navigate (jump to any room), capture (jump straight
- * to Neural Capture), search (full-text over real node titles, routes to
- * the owning room). */
+ * interaction missing" alongside cross-room drag-and-drop. Four modes in
+ * one input: navigate (jump to any room), capture (jump straight to Neural
+ * Capture), search (full-text over real node titles, routes to the owning
+ * room), and Custom Commands (Settings > CUSTOM COMMANDS) — either a bound
+ * internal action (core/actionRegistry.ts) or an outbound webhook
+ * (lib/webhook.ts), both defined by the Captain, not hardcoded here. */
 export default function CommandPalette() {
   const open = useUiStore((s) => s.commandPaletteOpen);
   const setOpen = useUiStore((s) => s.setCommandPaletteOpen);
   const go = useUiStore((s) => s.go);
+  const customCommands = useUiStore((s) => s.customCommands);
   const nodes = useCoreGraph((s) => s.nodes);
+  const registry = useActionRegistry();
   const [q, setQ] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -72,11 +79,48 @@ export default function CommandPalette() {
             run: () => go(kindToRoom[n.kind] ?? 'obs'),
           }))
       : [];
-    const all = [capture, ...nav, ...search];
+    // Custom Commands (Settings > CUSTOM COMMANDS): action-kind resolves
+    // against the live registry by id (skipped if its target ever
+    // disappears rather than crashing the palette); webhook-kind fires a
+    // real outbound request and reports back via toast, since a webhook's
+    // result isn't visible in the UI the way a room-jump is.
+    const custom: Action[] = customCommands.flatMap((c): Action[] => {
+      if (c.kind === 'action') {
+        const target = registry.find((r) => r.id === c.actionId);
+        if (!target) return [];
+        return [
+          {
+            id: `custom-${c.id}`,
+            label: c.label,
+            hint: 'CUSTOM',
+            run: () => {
+              if (c.confirmBeforeRun && !confirm(`Run "${c.label}"?`)) return;
+              target.run();
+            },
+          },
+        ];
+      }
+      if (c.kind === 'webhook' && c.webhook) {
+        const webhook = c.webhook;
+        return [
+          {
+            id: `custom-${c.id}`,
+            label: c.label,
+            hint: 'CUSTOM · WEBHOOK',
+            run: () => {
+              if (c.confirmBeforeRun && !confirm(`Fire webhook "${c.label}" → ${webhook.url}?`)) return;
+              void fireWebhook(webhook).then((res) => pushToast(`${c.label}: ${res.message}`, res.ok ? 'success' : 'warn'));
+            },
+          },
+        ];
+      }
+      return [];
+    });
+    const all = [capture, ...custom, ...nav, ...search];
     if (!q.trim()) return all.slice(0, 8);
     const ql = q.toLowerCase();
     return all.filter((a) => a.label.toLowerCase().includes(ql) || a.hint.toLowerCase().includes(ql));
-  }, [q, nodes, go]);
+  }, [q, nodes, go, customCommands, registry]);
 
   if (!open) return null;
   return (
