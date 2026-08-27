@@ -31,8 +31,46 @@ body.sb #sbShade{opacity:1;pointer-events:auto}
    behind the character, reading as leftover caption text. See Shell.tsx's
    removal note. */
 
-.room{display:none;padding:56px 12px 120px;max-width:1100px;margin:0 auto;min-height:100vh}
-.room.on{display:block}
+/* Animated room change (Captain's ask). Every room stays permanently
+   mounted (RoomOutlet.tsx) so switching used to be a hard display:none/block
+   cut with zero transition — display can't be CSS-transitioned at all.
+   Fix: every room is always `position:fixed;inset:0` (still overlaps
+   nothing when inactive — opacity:0 + pointer-events:none + a delayed
+   visibility:hidden keep it fully inert and unclickable), so the
+   outgoing room can fade+settle out while the incoming one fades+settles
+   in, instead of one vanishing before the other appears. `position:fixed`
+   is what makes this safe: it takes every room out of normal document
+   flow (like display:none did) so an inactive room can never inflate page
+   height or block content, but — unlike display:none — opacity/transform
+   CAN be transitioned on it. Each room already declares
+   `overflow-y:auto` here so its own content scrolls internally the same
+   way body-level scroll used to. z-index:2 on `.on` guarantees the
+   active room always paints above whichever room it's crossfading from,
+   regardless of DOM order. Respects Reduce Motion for free — the global
+   `.force-reduce-motion` rule (uiStore.ts's reduceMotion, see
+   design-system.css) already zeroes every transition-duration app-wide. */
+.room{
+  position:fixed;
+  inset:0;
+  z-index:1;
+  overflow-y:auto;
+  padding:56px 12px 120px;
+  max-width:1100px;
+  margin:0 auto;
+  opacity:0;
+  visibility:hidden;
+  pointer-events:none;
+  transform:translateY(8px) scale(0.995);
+  transition:opacity .22s ease, transform .26s cubic-bezier(0.22,1,0.36,1), visibility 0s linear .22s;
+}
+.room.on{
+  z-index:2;
+  opacity:1;
+  visibility:visible;
+  pointer-events:auto;
+  transform:none;
+  transition:opacity .22s ease, transform .26s cubic-bezier(0.22,1,0.36,1), visibility 0s linear 0s;
+}
 /* Redesign checkpoint 4 — hero room headers. The reference concept treats
    every room's title as a big bold display headline ("PROJECTS // 6
    ACTIVE", "MEMORY VAULT // 483 FRAGMENTS") rather than a small tracked
@@ -58,7 +96,16 @@ body.sb #sbShade{opacity:1;pointer-events:auto}
 .shipLogDraft ul{margin:0;padding-left:16px;font-size:11px;color:var(--text-dim);line-height:1.8}
 .bigbtn{width:100%;padding:14px;border:1px solid var(--cyan);color:var(--cyan);letter-spacing:3px;font-size:12px;cursor:pointer}
 .bigbtn:active{background:rgba(0,245,255,.12)}
-.fullroom{padding:44px 0 0!important;max-width:none!important;position:relative;height:100vh;overflow:hidden}
+/* position/height deliberately NOT set here anymore — `.room` (see above)
+   now owns both via `position:fixed;inset:0` for the animated room-change
+   crossfade, which already exactly fills the viewport. Setting `position:
+   relative;height:100vh` here used to win the cascade (same specificity,
+   defined later) and would silently undo that: an inactive fullroom
+   (Observatory/Neural Core) would stay in normal document flow at a full
+   100vh even while invisible, opening a permanent blank scroll gap. Only
+   `overflow:hidden` still needs to live here — canvas-driven rooms
+   shouldn't get `.room`'s default internal scrollbar. */
+.fullroom{padding:44px 0 0!important;max-width:none!important;overflow:hidden}
 
 /* ===== OBSERVATORY ===== */
 #uni{position:absolute;inset:0;touch-action:none}
