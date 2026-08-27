@@ -1,13 +1,14 @@
 import { useState } from 'react';
 import { useUiStore } from '../../stores/uiStore';
 import { useAuthStore } from '../../stores/authStore';
-import { useCoreGraph } from '../../stores/coreGraph';
 import { pushToast } from '../../stores/toastStore';
 import { supabase } from '../../lib/supabase';
 import { playSound } from '../../lib/sound';
 import Icon from '../../design-system/icons/Icon';
 import AmbientField from '../../design-system/background/AmbientField';
 import { resetCoreLayout } from '../copilot/NeuralCore';
+import { exportGraphData } from '../../lib/exportData';
+import CustomCommandsPanel from './CustomCommandsPanel';
 
 /** SETTINGS — ported 1:1 from xos-prototype.html: xAI autonomy, neon
  * intensity slider (wired to the same --glow var the core node glow uses),
@@ -60,9 +61,6 @@ export default function Settings({ active }: { active: boolean }) {
   const shipAmbience = useUiStore((s) => s.shipAmbience);
   const setShipAmbience = useUiStore((s) => s.setShipAmbience);
   const go = useUiStore((s) => s.go);
-  const nodes = useCoreGraph((s) => s.nodes);
-  const edges = useCoreGraph((s) => s.edges);
-  const memories = useCoreGraph((s) => s.memories);
   const [newPassword, setNewPassword] = useState('');
   const [pwBusy, setPwBusy] = useState(false);
   const [tourBusy, setTourBusy] = useState(false);
@@ -93,19 +91,6 @@ export default function Settings({ active }: { active: boolean }) {
     resetCoreLayout(user?.id ?? null);
     pushToast('Neural Core layout reset — reloading…', 'success');
     setTimeout(() => window.location.reload(), 600);
-  }
-
-  function exportData() {
-    // Real export of whatever's actually in the store — no placeholder file.
-    const payload = { exportedAt: new Date().toISOString(), nodes, edges, memories };
-    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `xos-export-${new Date().toISOString().slice(0, 10)}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
-    pushToast('Export downloaded.', 'success');
   }
 
   async function changePassword() {
@@ -187,13 +172,17 @@ export default function Settings({ active }: { active: boolean }) {
         <h3>
           <Icon name="command" size={14} /> KEYBOARD SHORTCUTS
         </h3>
-        <div className="d">Cmd/Ctrl+K opens the command palette anywhere. Press ? to see everything else.</div>
+        <div className="d">
+          Cmd/Ctrl+K opens the command palette anywhere — navigate, capture, search, and anything you add below
+          under CUSTOM COMMANDS. Press ? to see everything else.
+        </div>
         <div className="optrow" style={{ margin: 0 }}>
           <span className="chip" onClick={() => setShortcutsOpen(true)}>
             VIEW SHORTCUTS
           </span>
         </div>
       </div>
+      <CustomCommandsPanel />
       <div className="gpanel setrow">
         <h3>
           <Icon name="refresh" size={14} /> NEURAL CORE LAYOUT
@@ -281,7 +270,7 @@ export default function Settings({ active }: { active: boolean }) {
         </h3>
         <div className="d">Download every node, edge, and memory currently loaded, as JSON.</div>
         <div className="optrow" style={{ margin: 0 }}>
-          <span className="chip" onClick={exportData}>
+          <span className="chip" onClick={exportGraphData}>
             EXPORT JSON
           </span>
         </div>
