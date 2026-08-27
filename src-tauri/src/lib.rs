@@ -335,6 +335,72 @@ async fn fetch_page_snapshot(url: String) -> Result<PageSnapshot, String> {
 }
 
 // ---------------------------------------------------------------------------
+// Custom Commands (Settings > CUSTOM COMMANDS / the command palette): the
+// "webhook trigger" half of the Captain's ask, alongside action-type custom
+// commands which just rebind an existing in-app capability on the frontend
+// (see src/core/actionRegistry.ts — no Rust involvement needed for those).
+//
+// Routed through this Rust process rather than a plain frontend `fetch()`
+// for the same reason fetch_page_snapshot above is: a genuine server-side
+// request has no browser CORS restriction, so method/headers/body are
+// honored exactly as the Captain configured them regardless of whether the
+// target endpoint sends CORS headers back. Reuses the same reqwest client
+// shape as fetch_page_snapshot rather than pulling in a separate
+// @tauri-apps/plugin-http dependency, since this crate already links
+// reqwest for that command.
+// ---------------------------------------------------------------------------
+
+#[derive(serde::Deserialize)]
+struct WebhookRequest {
+  url: String,
+  method: String,
+  headers: Option<std::collections::HashMap<String, String>>,
+  body: Option<String>,
+}
+
+#[derive(serde::Serialize)]
+struct WebhookResponse {
+  status: u16,
+  body: String,
+}
+
+#[tauri::command]
+async fn fire_webhook(req: WebhookRequest) -> Result<WebhookResponse, String> {
+  let parsed = parse_target_url(&req.url)?;
+  let client = reqwest::Client::builder()
+    .user_agent("xOS-neXus/0.1 (+Custom Command webhook)")
+    .timeout(std::time::Duration::from_secs(15))
+    .build()
+    .map_err(|e| e.to_string())?;
+
+  let mut builder = match req.method.to_uppercase().as_str() {
+    "GET" => client.get(parsed),
+    "POST" => client.post(parsed),
+    "PUT" => client.put(parsed),
+    "PATCH" => client.patch(parsed),
+    "DELETE" => client.delete(parsed),
+    other => return Err(format!("unsupported webhook method: {other}")),
+  };
+  if let Some(headers) = req.headers {
+    for (k, v) in headers {
+      builder = builder.header(k, v);
+    }
+  }
+  if let Some(body) = req.body {
+    builder = builder.body(body);
+  }
+
+  let resp = builder.send().await.map_err(|e| e.to_string())?;
+  let status = resp.status().as_u16();
+  let text = resp.text().await.unwrap_or_default();
+  // Capped, same reasoning as fetch_page_snapshot's text_content — this is
+  // a "did it work" signal for a toast, not a payload the frontend needs
+  // to do anything further with.
+  let body: String = text.chars().take(4000).collect();
+  Ok(WebhookResponse { status, body })
+}
+
+// ---------------------------------------------------------------------------
 // Terminal room (Part 2): real OS shell execution.
 //
 // This is a genuine child process spawned via std::process::Command — the
@@ -555,6 +621,7 @@ pub fn run() {
       hide_browser_view,
       close_browser_view,
       fetch_page_snapshot,
+      fire_webhook,
       shell_run_sync,
       shell_spawn_bg,
       shell_kill_bg
