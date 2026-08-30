@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useCoreGraph } from '../../stores/coreGraph';
+import { useCommsStore } from '../../stores/commsStore';
 import Icon from '../../design-system/icons/Icon';
 import AmbientField from '../../design-system/background/AmbientField';
 import ShipAmbience from '../../design-system/background/ShipAmbience';
@@ -44,6 +45,15 @@ export default function Comms({ active }: { active: boolean }) {
   const [activeId, setActiveId] = useState<string>(() => threads[0].id);
   const [val, setVal] = useState('');
   const spawnedStale = useRef(false);
+  const setUnreadCount = useCommsStore((s) => s.setUnreadCount);
+
+  // Shares a real, live "unread threads" count with the rest of the app —
+  // Ship Ambience's reactive condition reads this to decide whether the
+  // ambient decoration should read calm or "something needs attention",
+  // without importing this whole room or its (simulated) thread content.
+  useEffect(() => {
+    setUnreadCount(threads.filter((t) => t.unread).length);
+  }, [threads, setUnreadCount]);
 
   useEffect(() => {
     if (spawnedStale.current) return;
