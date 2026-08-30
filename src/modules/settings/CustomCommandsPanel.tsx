@@ -26,6 +26,18 @@ function parseHeaders(raw: string): Record<string, string> | undefined {
   return Object.keys(out).length ? out : undefined;
 }
 
+/** Inverse of parseHeaders — reconstitutes the "Key: Value" per-line
+ * textarea format from a stored headers object, so opening an existing
+ * webhook command for edit shows its headers back in the same shape a
+ * Captain typed them in, instead of an empty field they'd have to
+ * re-fill from scratch. */
+function serializeHeaders(headers: Record<string, string> | undefined): string {
+  if (!headers) return '';
+  return Object.entries(headers)
+    .map(([k, v]) => `${k}: ${v}`)
+    .join('\n');
+}
+
 /** Settings > CUSTOM COMMANDS — the Captain's ask made a real feature:
  * user-defined command-palette entries, either rebinding an existing xOS
  * capability (core/actionRegistry.ts) or firing an outbound webhook
@@ -36,6 +48,7 @@ function parseHeaders(raw: string): Record<string, string> | undefined {
 export default function CustomCommandsPanel() {
   const commands = useUiStore((s) => s.customCommands);
   const addCustomCommand = useUiStore((s) => s.addCustomCommand);
+  const updateCustomCommand = useUiStore((s) => s.updateCustomCommand);
   const removeCustomCommand = useUiStore((s) => s.removeCustomCommand);
   const registry = useActionRegistry();
 
@@ -48,35 +61,65 @@ export default function CustomCommandsPanel() {
   const [body, setBody] = useState('');
   const [confirmBeforeRun, setConfirmBeforeRun] = useState(false);
   const [testingId, setTestingId] = useState<string | null>(null);
+  // Non-null while the form below is editing an existing command in place
+  // rather than drafting a new one — set by clicking a row's edit icon,
+  // cleared on save or cancel. The form itself is shared between add/edit
+  // so a Captain sees the exact same fields either way.
+  const [editingId, setEditingId] = useState<string | null>(null);
 
   const canAdd = label.trim() && (kind === 'action' ? !!actionId : url.trim());
 
   function resetForm() {
     setLabel('');
+    setKind('action');
+    setActionId(registry[0]?.id ?? '');
     setUrl('');
+    setMethod('POST');
     setHeadersRaw('');
     setBody('');
     setConfirmBeforeRun(false);
+    setEditingId(null);
   }
 
-  function handleAdd() {
+  function handleEdit(c: CustomCommand) {
+    setEditingId(c.id);
+    setLabel(c.label);
+    setKind(c.kind);
+    setConfirmBeforeRun(c.confirmBeforeRun);
+    if (c.kind === 'action') {
+      setActionId(c.actionId ?? registry[0]?.id ?? '');
+    } else if (c.webhook) {
+      setUrl(c.webhook.url);
+      setMethod(c.webhook.method);
+      setHeadersRaw(serializeHeaders(c.webhook.headers));
+      setBody(c.webhook.body ?? '');
+    }
+  }
+
+  function handleSubmit() {
     if (!canAdd) return;
     const base = { label: label.trim(), confirmBeforeRun };
-    if (kind === 'action') {
-      addCustomCommand({ ...base, kind: 'action', actionId });
+    const patch =
+      kind === 'action'
+        ? { ...base, kind: 'action' as const, actionId }
+        : {
+            ...base,
+            kind: 'webhook' as const,
+            webhook: { url: url.trim(), method, headers: parseHeaders(headersRaw), body: body.trim() || undefined },
+          };
+    if (editingId) {
+      updateCustomCommand(editingId, patch);
+      pushToast(`"${label.trim()}" updated.`, 'success');
     } else {
-      addCustomCommand({
-        ...base,
-        kind: 'webhook',
-        webhook: { url: url.trim(), method, headers: parseHeaders(headersRaw), body: body.trim() || undefined },
-      });
+      addCustomCommand(patch);
+      pushToast(`"${label.trim()}" added to the command palette.`, 'success');
     }
-    pushToast(`"${label.trim()}" added to the command palette.`, 'success');
     resetForm();
   }
 
   async function handleDelete(c: CustomCommand) {
     if (!(await askConfirm(`Delete custom command "${c.label}"?`, { tone: 'danger', confirmLabel: 'DELETE' }))) return;
+    if (editingId === c.id) resetForm();
     removeCustomCommand(c.id);
   }
 
@@ -109,7 +152,7 @@ export default function CustomCommandsPanel() {
       {commands.length > 0 && (
         <div className="cmdCustomList">
           {commands.map((c) => (
-            <div className="cmdCustomRow" key={c.id}>
+            <div className={`cmdCustomRow ${editingId === c.id ? 'editing' : ''}`} key={c.id}>
               <div className="cmdCustomMain">
                 <span className="cmdCustomLabel">{c.label}</span>
                 <span className="cmdCustomMeta">
@@ -125,6 +168,9 @@ export default function CustomCommandsPanel() {
               >
                 {testingId === c.id ? 'RUNNING…' : 'RUN'}
               </span>
+              <span className="cmdCustomEdit" onClick={() => handleEdit(c)} title="edit command">
+                <Icon name="pencil" size={12} />
+              </span>
               <span className="cmdCustomDel" onClick={() => handleDelete(c)} title="delete command">
                 <Icon name="trash" size={12} />
               </span>
@@ -133,7 +179,12 @@ export default function CustomCommandsPanel() {
         </div>
       )}
 
-      <div className="cmdCustomForm">
+      <div className={`cmdCustomForm ${editingId ? 'editing' : ''}`}>
+        {editingId && (
+          <div className="cmdCustomEditingNote">
+            <Icon name="pencil" size={11} /> EDITING — changes replace the existing command in place
+          </div>
+        )}
         <input
           placeholder="Command label — e.g. “Notify team” or “Jump to Bugs”"
           value={label}
@@ -191,12 +242,17 @@ export default function CustomCommandsPanel() {
           <span className={`chip ${confirmBeforeRun ? 'on' : ''}`} onClick={() => setConfirmBeforeRun(!confirmBeforeRun)}>
             <Icon name={confirmBeforeRun ? 'checkCircle' : 'circle'} size={12} /> CONFIRM BEFORE RUNNING
           </span>
+          {editingId && (
+            <span className="chip" style={{ marginLeft: 'auto' }} onClick={resetForm}>
+              <Icon name="close" size={12} /> CANCEL
+            </span>
+          )}
           <span
             className="chip"
-            style={{ marginLeft: 'auto', opacity: canAdd ? 1 : 0.4, pointerEvents: canAdd ? 'auto' : 'none' }}
-            onClick={handleAdd}
+            style={{ marginLeft: editingId ? 8 : 'auto', opacity: canAdd ? 1 : 0.4, pointerEvents: canAdd ? 'auto' : 'none' }}
+            onClick={handleSubmit}
           >
-            <Icon name="plus" size={12} /> ADD COMMAND
+            <Icon name={editingId ? 'save' : 'plus'} size={12} /> {editingId ? 'SAVE CHANGES' : 'ADD COMMAND'}
           </span>
         </div>
       </div>
