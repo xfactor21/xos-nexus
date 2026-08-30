@@ -3,6 +3,7 @@ import { Terminal as XTerm } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import '@xterm/xterm/css/xterm.css';
 import { pushToast } from '../../stores/toastStore';
+import { askConfirm } from '../../stores/confirmStore';
 import { playSound } from '../../lib/sound';
 import { isTauri } from '../../lib/localDb';
 import { openTextFile, writeTextFileAt, saveTextFileAs, pickDirectory, type OpenedFile } from '../../lib/fileIO';
@@ -268,7 +269,7 @@ export default function TerminalRoom({ active }: { active: boolean }) {
     opts: { source: 'user' | 'xai' },
   ): Promise<{ stdout: string; stderr: string }> {
     if (opts.source === 'xai') {
-      const ok = window.confirm(`xAI suggests running:\n\n${code}\n\nRun it?`);
+      const ok = await askConfirm(code, { title: 'xAI SUGGESTS RUNNING THIS COMMAND', confirmLabel: 'RUN' });
       if (!ok) return { stdout: '', stderr: '' };
     }
     return evaluator.evaluate(code);

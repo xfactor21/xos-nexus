@@ -4,6 +4,7 @@ import { saveKnowledgeSnapshot } from '../../lib/copilotClient';
 import { openTextFile, writeTextFileAt, saveTextFileAs, type OpenedFile } from '../../lib/fileIO';
 import { openExternally } from '../../lib/opener';
 import { pushToast } from '../../stores/toastStore';
+import { askConfirm } from '../../stores/confirmStore';
 import { playSound } from '../../lib/sound';
 import { useCoreGraph } from '../../stores/coreGraph';
 import { useAuthStore } from '../../stores/authStore';
@@ -318,8 +319,8 @@ export default function Browser({ active }: { active: boolean }) {
     });
   }
 
-  function handleClearBookmarks() {
-    if (!confirm('Delete every saved bookmark? This cannot be undone.')) return;
+  async function handleClearBookmarks() {
+    if (!(await askConfirm('Delete every saved bookmark?', { tone: 'danger', confirmLabel: 'CLEAR ALL' }))) return;
     setBookmarks(clearBookmarks(ownerId));
     pushToast('Bookmarks cleared', 'info');
   }
@@ -368,8 +369,8 @@ export default function Browser({ active }: { active: boolean }) {
     ? historyLog.filter((h) => h.url.toLowerCase().includes(historyFilter.toLowerCase()) || h.title.toLowerCase().includes(historyFilter.toLowerCase()))
     : historyLog;
 
-  function handleClearHistory() {
-    if (!confirm('Clear all browsing history? This cannot be undone.')) return;
+  async function handleClearHistory() {
+    if (!(await askConfirm('Clear all browsing history?', { tone: 'danger', confirmLabel: 'CLEAR ALL' }))) return;
     setHistoryLog(clearHistory(ownerId));
     pushToast('History cleared', 'info');
   }
