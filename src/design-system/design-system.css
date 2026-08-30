@@ -1747,6 +1747,41 @@ body.widget-body {
   opacity: 1;
   color: var(--mg);
 }
+/* Edit-in-place affordance (mirrors .cmdCustomDel's hover-reveal, cyan
+   instead of magenta since this isn't destructive) — and the row currently
+   loaded into the form below gets a persistent highlight so it's obvious
+   which command a Captain is mid-edit on, even after they've moved their
+   mouse away from that row. */
+.cmdCustomEdit {
+  opacity: 0.4;
+  cursor: pointer;
+  transition: opacity 0.15s, color 0.15s;
+}
+.cmdCustomRow:hover .cmdCustomEdit {
+  opacity: 0.7;
+}
+.cmdCustomEdit:hover {
+  opacity: 1;
+  color: var(--cy);
+}
+.cmdCustomRow.editing {
+  border-color: var(--cy);
+  background: rgba(0, 245, 255, 0.06);
+}
+.cmdCustomForm.editing {
+  border: 1px solid rgba(0, 245, 255, 0.3);
+  border-radius: 6px;
+  padding: 10px;
+  margin: 10px -10px 0;
+}
+.cmdCustomEditingNote {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 9.5px;
+  letter-spacing: 0.5px;
+  color: var(--cy);
+}
 
 /* ===== CONFIRM DIALOG (stores/confirmStore.ts + cockpit/ConfirmDialog.tsx) ==
  * Themed replacement for window.confirm() — every "delete X? cannot be
