@@ -891,6 +891,10 @@ input[type='range']:active::-moz-range-thumb {
   transition: background 0.15s ease;
 }
 .cmdkRow:hover { background: rgba(255, 45, 120, 0.1); }
+/* Keyboard-selected row (arrow-key nav) — cyan to stay visually distinct
+   from the magenta mouse-hover state above, since both can be active at
+   once (e.g. arrow to a row, then move the mouse elsewhere). */
+.cmdkRow.sel { background: rgba(0, 245, 255, 0.12); box-shadow: inset 2px 0 0 0 var(--cy); }
 .cmdkHint { font-size: 9px; letter-spacing: 1px; color: var(--text-dim); }
 .cmdkEmpty { color: var(--text-dim); cursor: default; }
 .cmdkEmpty:hover { background: none; }
