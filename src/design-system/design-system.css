@@ -1736,3 +1736,100 @@ body.widget-body {
   opacity: 1;
   color: var(--mg);
 }
+
+/* ===== CONFIRM DIALOG (stores/confirmStore.ts + cockpit/ConfirmDialog.tsx) ==
+ * Themed replacement for window.confirm() — every "delete X? cannot be
+ * undone" / "run this command?" prompt in the app used the browser's native
+ * OS dialog until now, which broke the cockpit illusion on every trigger.
+ * Same overlay/panel shape as .shortcutsOverlay/.shortcutsPanel for visual
+ * consistency; .danger reskins the accept button + border amber/magenta
+ * instead of cyan so destructive actions read as visually distinct from a
+ * routine confirmation before a Captain's cursor even reaches the buttons.
+ * =========================================================================== */
+.confirmOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 210;
+  background: rgba(5, 8, 13, 0.75);
+  backdrop-filter: blur(8px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.confirmPanel {
+  width: min(400px, 90vw);
+  background: var(--glass);
+  backdrop-filter: blur(22px);
+  border: 1px solid var(--eg-cold);
+  box-shadow: 0 0 40px rgba(0, 245, 255, 0.2), 0 20px 60px rgba(0, 0, 0, 0.6);
+  border-radius: 10px;
+  padding: 18px 20px;
+  animation: holoCapIn 0.18s cubic-bezier(0.25, 0, 0.2, 1);
+}
+.confirmPanel.danger {
+  border-color: rgba(255, 45, 120, 0.4);
+  box-shadow: 0 0 40px rgba(255, 45, 120, 0.2), 0 20px 60px rgba(0, 0, 0, 0.6);
+}
+.confirmHead {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  letter-spacing: 1.5px;
+  color: var(--cy);
+  margin-bottom: 12px;
+}
+.confirmPanel.danger .confirmHead {
+  color: var(--mg);
+}
+.confirmMsg {
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--text);
+  white-space: pre-wrap;
+  margin-bottom: 18px;
+}
+.confirmBtns {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.confirmBtn {
+  padding: 7px 16px;
+  border-radius: 6px;
+  font-size: 10px;
+  letter-spacing: 1px;
+  cursor: pointer;
+  border: 1px solid var(--edge);
+  background: transparent;
+  color: var(--text-dim);
+  transition: border-color 0.15s ease, color 0.15s ease, background 0.15s ease, transform 0.15s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.confirmBtn:hover {
+  color: var(--text);
+  border-color: var(--cyan-dim);
+}
+.confirmBtn:active {
+  transform: scale(0.95);
+}
+.confirmBtn.accept {
+  border-color: var(--cy);
+  color: var(--cy);
+  background: rgba(0, 245, 255, 0.08);
+}
+.confirmBtn.accept:hover {
+  background: rgba(0, 245, 255, 0.16);
+}
+.confirmBtn.accept.danger {
+  border-color: var(--mg);
+  color: var(--mg);
+  background: rgba(255, 45, 120, 0.08);
+}
+.confirmBtn.accept.danger:hover {
+  background: rgba(255, 45, 120, 0.18);
+}
+@media (prefers-reduced-motion: reduce) {
+  .confirmPanel {
+    animation: none;
+  }
+}
