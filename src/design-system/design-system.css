@@ -1573,6 +1573,13 @@ body.widget-body {
 .shipComet-tr { animation-name: shipCometTR; }
 .shipComet-bl { animation-name: shipCometBL; }
 .shipComet-br { animation-name: shipCometBR; }
+/* Reactive ship condition (amber/red): the comet reskins to a warning
+   color instead of its calm cyan, so a Captain glancing at any room with a
+   comet still reads "something needs attention" from ambient motion alone. */
+.shipComet.warn {
+  background: linear-gradient(90deg, transparent, rgba(255, 45, 120, 0.95));
+  box-shadow: 0 0 10px rgba(255, 45, 120, 0.65);
+}
 @keyframes shipCometTL {
   0% { transform: translate(-10vw, -10vh) rotate(35deg); opacity: 0; }
   10% { opacity: 0.9; }
