@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import type { ReactElement, MouseEvent as RMouseEvent } from 'react';
 import { useCoreGraph } from '../../stores/coreGraph';
 import { nodeToBug, nodeToTask } from '../../core/mappers';
+import { askConfirm } from '../../stores/confirmStore';
 import { supabase } from '../../lib/supabase';
 import {
   PROJECT_CLASSES,
@@ -215,9 +216,9 @@ export default function Projects({ active }: { active: boolean }) {
   const assignNodeToProject = useCoreGraph((s) => s.assignNodeToProject);
   const deleteProject = useCoreGraph((s) => s.deleteProject);
 
-  function handleDeleteProject(id: string, name: string, e: RMouseEvent) {
+  async function handleDeleteProject(id: string, name: string, e: RMouseEvent) {
     e.stopPropagation();
-    if (!confirm(`Delete "${name}"? This cannot be undone. Captures already assigned to it will become unassigned, not deleted.`)) return;
+    if (!(await askConfirm(`Delete "${name}"? Captures already assigned to it will become unassigned, not deleted.`, { tone: 'danger', confirmLabel: 'DELETE' }))) return;
     deleteProject(id);
   }
   const unassignedCaptures = useMemo(() => nodes.filter((n) => n.kind === 'capture' && !n.project_id), [nodes]);
@@ -531,7 +532,7 @@ export default function Projects({ active }: { active: boolean }) {
                     onDragStart={() => setDragId(wid)}
                     onDragEnd={() => setDragId(null)}
                   >
-                    <span className="dragHandle">⠠⠷</span> <Icon name={WIDGETS[wid].icon} size={13} glow="cyan" /> {WIDGETS[wid].title}
+                    <span className="dragHandle">⁠⠠⠷⁠</span> <Icon name={WIDGETS[wid].icon} size={13} glow="cyan" /> {WIDGETS[wid].title}
                   </div>
                   <div className="widgetBody">{WIDGETS[wid].render()}</div>
                 </div>
