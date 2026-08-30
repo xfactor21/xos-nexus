@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { isTauri } from '../../lib/localDb';
 import { saveKnowledgeSnapshot } from '../../lib/copilotClient';
 import { openTextFile, writeTextFileAt, saveTextFileAs, type OpenedFile } from '../../lib/fileIO';
@@ -61,6 +61,12 @@ function normalizeUrl(raw: string): string | null {
 
 type Panel = 'none' | 'bookmarks' | 'history' | 'settings';
 
+interface AddressSuggestion {
+  url: string;
+  title: string;
+  source: 'bookmark' | 'history';
+}
+
 export default function Browser({ active }: { active: boolean }) {
   const graphOwnerId = useCoreGraph((s) => s.ownerId);
   const authUserId = useAuthStore((s) => s.user?.id ?? null);
@@ -90,6 +96,13 @@ export default function Browser({ active }: { active: boolean }) {
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameDraft, setRenameDraft] = useState('');
   const importInputRef = useRef<HTMLInputElement>(null);
+
+  // Address bar autocomplete: matches typed text against saved bookmarks
+  // (surfaced first — a deliberate save outranks an incidental visit) then
+  // history, deduped by URL. suggestOpen/suggestIndex are separate from the
+  // input's own value so arrow-key highlighting doesn't fight typing.
+  const [suggestOpen, setSuggestOpen] = useState(false);
+  const [suggestIndex, setSuggestIndex] = useState(-1);
 
   useEffect(() => {
     setBookmarks(loadBookmarks(ownerId));
@@ -369,6 +382,47 @@ export default function Browser({ active }: { active: boolean }) {
     ? historyLog.filter((h) => h.url.toLowerCase().includes(historyFilter.toLowerCase()) || h.title.toLowerCase().includes(historyFilter.toLowerCase()))
     : historyLog;
 
+  const addressSuggestions = useMemo<AddressSuggestion[]>(() => {
+    const q = addressInput.trim().toLowerCase();
+    if (!q) return [];
+    const seen = new Set<string>();
+    const out: AddressSuggestion[] = [];
+    for (const b of bookmarks) {
+      if (seen.has(b.url)) continue;
+      if (b.url.toLowerCase().includes(q) || b.title.toLowerCase().includes(q)) {
+        out.push({ url: b.url, title: b.title, source: 'bookmark' });
+        seen.add(b.url);
+      }
+    }
+    for (const h of historyLog) {
+      if (seen.has(h.url)) continue;
+      if (h.url.toLowerCase().includes(q) || h.title.toLowerCase().includes(q)) {
+        out.push({ url: h.url, title: h.title, source: 'history' });
+        seen.add(h.url);
+      }
+    }
+    return out.slice(0, 8);
+  }, [addressInput, bookmarks, historyLog]);
+
+  function selectSuggestion(s: AddressSuggestion) {
+    setSuggestOpen(false);
+    go(s.url);
+  }
+
+  // Escape-to-close: a Captain expects Escape to back out of whatever
+  // overlay is open, same as the Command Palette and themed confirm dialog
+  // already do. Scoped to `active` so the other ~13 simultaneously-mounted
+  // rooms (see RoomOutlet.tsx) don't all fight over the same keypress.
+  useEffect(() => {
+    if (!active) return;
+    function onKey(e: KeyboardEvent) {
+      if (e.key !== 'Escape') return;
+      if (panel !== 'none') setPanel('none');
+    }
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [active, panel]);
+
   async function handleClearHistory() {
     if (!(await askConfirm('Clear all browsing history?', { tone: 'danger', confirmLabel: 'CLEAR ALL' }))) return;
     setHistoryLog(clearHistory(ownerId));
@@ -448,15 +502,67 @@ export default function Browser({ active }: { active: boolean }) {
               <span className={`browserNavBtn ${currentUrl ? '' : 'disabled'}`} onClick={reload} title="Reload">
                 <Icon name="refresh" size={14} />
               </span>
-              <input
-                className="browserAddress"
-                value={addressInput}
-                placeholder="Search or enter an address…"
-                onChange={(e) => setAddressInput(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') go(addressInput);
-                }}
-              />
+              <div className="browserAddressWrap">
+                <input
+                  className="browserAddress"
+                  value={addressInput}
+                  placeholder="Search or enter an address…"
+                  autoComplete="off"
+                  onChange={(e) => {
+                    setAddressInput(e.target.value);
+                    setSuggestIndex(-1);
+                    setSuggestOpen(true);
+                  }}
+                  onFocus={() => addressInput.trim() && setSuggestOpen(true)}
+                  onBlur={() => setSuggestOpen(false)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'ArrowDown') {
+                      if (!addressSuggestions.length) return;
+                      e.preventDefault();
+                      setSuggestOpen(true);
+                      setSuggestIndex((i) => (i + 1) % addressSuggestions.length);
+                    } else if (e.key === 'ArrowUp') {
+                      if (!addressSuggestions.length) return;
+                      e.preventDefault();
+                      setSuggestOpen(true);
+                      setSuggestIndex((i) => (i - 1 + addressSuggestions.length) % addressSuggestions.length);
+                    } else if (e.key === 'Enter') {
+                      const picked = suggestOpen ? addressSuggestions[suggestIndex] : undefined;
+                      if (picked) {
+                        e.preventDefault();
+                        selectSuggestion(picked);
+                      } else {
+                        go(addressInput);
+                        setSuggestOpen(false);
+                      }
+                    } else if (e.key === 'Escape' && suggestOpen) {
+                      e.stopPropagation();
+                      setSuggestOpen(false);
+                    }
+                  }}
+                />
+                {suggestOpen && addressSuggestions.length > 0 && (
+                  <div className="browserSuggestList">
+                    {addressSuggestions.map((s, i) => (
+                      <div
+                        key={`${s.source}-${s.url}`}
+                        className={`browserSuggestRow ${i === suggestIndex ? 'sel' : ''}`}
+                        onMouseDown={(e) => {
+                          e.preventDefault();
+                          selectSuggestion(s);
+                        }}
+                        onMouseEnter={() => setSuggestIndex(i)}
+                      >
+                        <Icon name={s.source === 'bookmark' ? 'star' : 'history'} size={11} />
+                        <div className="browserSuggestMain">
+                          <span className="browserSuggestTitle">{s.title || s.url}</span>
+                          <span className="browserSuggestUrl">{s.url}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
               <span className="browserNavBtn" onClick={() => go(addressInput)}>
                 GO
               </span>
