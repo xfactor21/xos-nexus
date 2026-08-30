@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type PointerEvent } from 'react';
 import ToolShell from './ToolShell';
+import { askConfirm } from '../../../stores/confirmStore';
 
 type Tool = 'paint' | 'eraser';
 
@@ -158,10 +159,10 @@ export default function PixelArt({ boardId, onExit }: { boardId: string; onExit:
     }
   };
 
-  const handleGridSizeChange = (size: number) => {
+  const handleGridSizeChange = async (size: number) => {
     if (size === gridSize) return;
     const hasContent = grid.some((c) => c !== null);
-    if (hasContent && !window.confirm('Changing grid size will clear the current canvas. Continue?')) {
+    if (hasContent && !(await askConfirm('Changing grid size will clear the current canvas. Continue?', { tone: 'danger', confirmLabel: 'CONTINUE' }))) {
       return;
     }
     // A resize can't cleanly preserve pixel positions across different grid
@@ -169,9 +170,9 @@ export default function PixelArt({ boardId, onExit }: { boardId: string; onExit:
     setState({ gridSize: size, grid: blankGrid(size) });
   };
 
-  const handleClear = () => {
+  const handleClear = async () => {
     if (!grid.some((c) => c !== null)) return;
-    if (!window.confirm('Clear the entire canvas?')) return;
+    if (!(await askConfirm('Clear the entire canvas?', { tone: 'danger', confirmLabel: 'CLEAR' }))) return;
     setState((s) => ({ ...s, grid: blankGrid(s.gridSize) }));
   };
 

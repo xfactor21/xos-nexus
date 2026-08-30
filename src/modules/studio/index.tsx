@@ -8,6 +8,7 @@ import AmbientField from '../../design-system/background/AmbientField';
 import ShipAmbience from '../../design-system/background/ShipAmbience';
 import { useUiStore } from '../../stores/uiStore';
 import { loadBoards, createBoard, touchBoard, renameBoard, deleteBoard } from './boards';
+import { askConfirm } from '../../stores/confirmStore';
 import DrawPaint from './draw/DrawPaint';
 import Wireframe from './Wireframe';
 import Animation from './Animation';
@@ -177,9 +178,9 @@ export default function Studio({ active }: { active: boolean }) {
     openBoardById(board.id);
   }
 
-  function handleDelete(id: string, e: RMouseEvent) {
+  async function handleDelete(id: string, e: RMouseEvent) {
     e.stopPropagation();
-    if (!confirm('Delete this board? This cannot be undone.')) return;
+    if (!(await askConfirm('Delete this board?', { tone: 'danger', confirmLabel: 'DELETE' }))) return;
     deleteBoard(id);
     refresh();
   }

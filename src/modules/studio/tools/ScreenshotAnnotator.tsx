@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import ToolShell from './ToolShell';
+import { askConfirm } from '../../../stores/confirmStore';
 
 type Point = [number, number];
 
@@ -255,9 +256,9 @@ export default function ScreenshotAnnotator({ boardId, onExit }: { boardId: stri
     setAnnotations((prev) => prev.slice(0, -1));
   }
 
-  function handleClearAll(): void {
+  async function handleClearAll(): Promise<void> {
     if (annotations.length === 0) return;
-    if (window.confirm('Clear all annotations from this screenshot?')) {
+    if (await askConfirm('Clear all annotations from this screenshot?', { tone: 'danger', confirmLabel: 'CLEAR' })) {
       setAnnotations([]);
     }
   }
