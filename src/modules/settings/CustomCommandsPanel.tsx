@@ -4,6 +4,7 @@ import type { CustomCommand, CustomCommandKind, WebhookMethod } from '../../stor
 import { useActionRegistry } from '../../core/actionRegistry';
 import { fireWebhook } from '../../lib/webhook';
 import { pushToast } from '../../stores/toastStore';
+import { askConfirm } from '../../stores/confirmStore';
 import Icon from '../../design-system/icons/Icon';
 
 const METHODS: WebhookMethod[] = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'];
@@ -74,8 +75,8 @@ export default function CustomCommandsPanel() {
     resetForm();
   }
 
-  function handleDelete(c: CustomCommand) {
-    if (!confirm(`Delete custom command "${c.label}"?`)) return;
+  async function handleDelete(c: CustomCommand) {
+    if (!(await askConfirm(`Delete custom command "${c.label}"?`, { tone: 'danger', confirmLabel: 'DELETE' }))) return;
     removeCustomCommand(c.id);
   }
 

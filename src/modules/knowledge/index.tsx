@@ -4,6 +4,7 @@ import type { EdgeRecord, KnowledgeSnapshotMeta, NodeRecord } from '../../core/t
 import Icon from '../../design-system/icons/Icon';
 import AmbientField from '../../design-system/background/AmbientField';
 import ShipAmbience from '../../design-system/background/ShipAmbience';
+import { askConfirm } from '../../stores/confirmStore';
 
 function metaOf(n: NodeRecord): KnowledgeSnapshotMeta {
   const m = (n.metadata ?? {}) as Partial<KnowledgeSnapshotMeta>;
@@ -25,8 +26,8 @@ export default function Knowledge({ active }: { active: boolean }) {
   const [q, setQ] = useState('');
   const [selected, setSelected] = useState<string | null>(null);
 
-  function handleDeleteSnapshot(id: string, title: string) {
-    if (!confirm(`Delete "${title}"? This cannot be undone.`)) return;
+  async function handleDeleteSnapshot(id: string, title: string) {
+    if (!(await askConfirm(`Delete "${title}"?`, { tone: 'danger', confirmLabel: 'DELETE' }))) return;
     deleteNode(id);
     setSelected((cur) => (cur === id ? null : cur));
   }

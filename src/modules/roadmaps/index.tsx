@@ -3,6 +3,7 @@ import { useCoreGraph } from '../../stores/coreGraph';
 import Icon from '../../design-system/icons/Icon';
 import AmbientField from '../../design-system/background/AmbientField';
 import ShipAmbience from '../../design-system/background/ShipAmbience';
+import { askConfirm } from '../../stores/confirmStore';
 
 /** ROADMAPS — Step 5: ported 1:1 from xos-prototype.html (.track vertical
  * timeline) and extended per the Feature Uplift notes: drag-to-reorder
@@ -88,9 +89,9 @@ export default function Roadmaps({ active }: { active: boolean }) {
                 <span
                   className="lyDel milestoneDel"
                   title="delete milestone"
-                  onClick={(e) => {
+                  onClick={async (e) => {
                     e.stopPropagation();
-                    if (!confirm(`Delete milestone "${m.version} — ${m.title}"? This cannot be undone.`)) return;
+                    if (!(await askConfirm(`Delete milestone "${m.version} — ${m.title}"?`, { tone: 'danger', confirmLabel: 'DELETE' }))) return;
                     deleteMilestone(m.id);
                   }}
                 >

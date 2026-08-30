@@ -5,6 +5,7 @@ import type { BugSeverity, BugStatus } from '../../core/types';
 import Icon from '../../design-system/icons/Icon';
 import AmbientField from '../../design-system/background/AmbientField';
 import ShipAmbience from '../../design-system/background/ShipAmbience';
+import { askConfirm } from '../../stores/confirmStore';
 
 type StatusFilter = 'all' | 'open' | 'fixed';
 type SavedView = 'none' | 'critical' | 'unassigned' | 'mine';
@@ -38,8 +39,8 @@ export default function Bugs({ active }: { active: boolean }) {
   const updateBug = useCoreGraph((s) => s.updateBug);
   const deleteNode = useCoreGraph((s) => s.deleteNode);
 
-  function handleDeleteBug(id: string, title: string) {
-    if (!confirm(`Delete "${title}"? This cannot be undone.`)) return;
+  async function handleDeleteBug(id: string, title: string) {
+    if (!(await askConfirm(`Delete "${title}"? This cannot be undone.`, { tone: 'danger', confirmLabel: 'DELETE' }))) return;
     deleteNode(id);
   }
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');

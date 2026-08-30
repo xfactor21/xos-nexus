@@ -14,6 +14,7 @@ import ToastHost from '../design-system/cockpit/ToastHost';
 import CommandPalette from '../design-system/cockpit/CommandPalette';
 import { playSound } from '../lib/sound';
 import ShortcutsOverlay from '../design-system/cockpit/ShortcutsOverlay';
+import ConfirmDialog from '../design-system/cockpit/ConfirmDialog';
 
 /** App chrome — ported 1:1 from xos-prototype.html's #hud/#sb markup and
  * body.sb toggle class. Also where Step 3's "populated from Supabase,
@@ -216,6 +217,7 @@ export default function Shell() {
       <ToastHost />
       <CommandPalette />
       <ShortcutsOverlay />
+      <ConfirmDialog />
     </XAIProvider>
   );
 }
