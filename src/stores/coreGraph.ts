@@ -84,6 +84,10 @@ interface CoreGraphState {
   nodes: NodeRecord[];
   edges: EdgeRecord[];
   memories: MemoryRecord[];
+  /** Raw `public.memory_recalls` rows for the last 7 days — kept alongside
+   * `memories` purely so rowToMemory can compute each memory's real rolling
+   * recall count; nothing else reads this directly. */
+  memoryRecalls: { memory_id: string; recalled_at: string }[];
   milestones: MilestoneRecord[];
 
   loading: boolean;
@@ -93,6 +97,14 @@ interface CoreGraphState {
   hydrate: (ownerId: string) => Promise<void>;
   subscribe: (ownerId: string) => () => void;
   reset: () => void;
+
+  /** Real recall tracking for Memory Vault (was: MemoryRecord.recalledCount
+   * always read 0 — no backing column existed). Inserts a row into
+   * `public.memory_recalls`; call this at the one genuine "xAI surfaced
+   * this memory to the Captain" moment in the client codebase (Comms'
+   * /remember reply branch) — not on every Vault view, since merely
+   * scrolling past a memory in a list isn't xAI "recalling" it. */
+  recordMemoryRecall: (memoryId: string) => Promise<void>;
 
   advanceTask: (id: string) => Promise<void>;
   cycleBug: (id: string) => Promise<void>;
@@ -202,6 +214,7 @@ export const useCoreGraph = create<CoreGraphState>((set, get) => ({
   nodes: [],
   edges: [],
   memories: [],
+  memoryRecalls: [],
   milestones: seedMilestones,
 
   loading: false,
@@ -211,20 +224,28 @@ export const useCoreGraph = create<CoreGraphState>((set, get) => ({
   hydrate: async (ownerId) => {
     set({ loading: true, error: null, ownerId });
     try {
-      const [projectsRes, nodesRes, edgesRes, memoriesRes, milestonesRes] = await Promise.all([
+      const [projectsRes, nodesRes, edgesRes, memoriesRes, milestonesRes, recallsRes] = await Promise.all([
         supabase.from('projects').select('*').eq('owner_id', ownerId).order('created_at'),
         supabase.from('nodes').select('*').eq('owner_id', ownerId).order('created_at', { ascending: false }),
         supabase.from('edges').select('*').eq('owner_id', ownerId),
         supabase.from('memories').select('*').eq('owner_id', ownerId).order('created_at', { ascending: false }),
         supabase.from('milestones').select('*').eq('owner_id', ownerId).order('order_index'),
+        // Only the trailing 7 days matter (rowToMemory's rolling window) —
+        // no reason to pull the Captain's full recall history every load.
+        supabase
+          .from('memory_recalls')
+          .select('memory_id, recalled_at')
+          .eq('owner_id', ownerId)
+          .gte('recalled_at', new Date(Date.now() - 7 * 86_400_000).toISOString()),
       ]);
-      const firstError = projectsRes.error || nodesRes.error || edgesRes.error || memoriesRes.error || milestonesRes.error;
+      const firstError = projectsRes.error || nodesRes.error || edgesRes.error || memoriesRes.error || milestonesRes.error || recallsRes.error;
       if (firstError) throw firstError;
 
       const nodes = (nodesRes.data ?? []) as NodeRecord[];
       const edges = (edgesRes.data ?? []) as EdgeRecord[];
+      const memoryRecalls = recallsRes.data ?? [];
       const projects = (projectsRes.data ?? []).map((p) => rowToProject(p, nodes.filter((n) => n.project_id === p.id)));
-      const memories = (memoriesRes.data ?? []).map((m) => rowToMemory(m, edges));
+      const memories = (memoriesRes.data ?? []).map((m) => rowToMemory(m, edges, memoryRecalls));
 
       // Milestones: a brand-new Captain has zero rows here (the table is
       // owner-scoped, so no seed data was ever inserted for them) — bootstrap
@@ -255,7 +276,7 @@ export const useCoreGraph = create<CoreGraphState>((set, get) => ({
         milestones = (milestonesRes.data ?? []).map(rowToMilestone).sort((a, b) => a.order - b.order);
       }
 
-      set({ projects, nodes, edges, memories, milestones, loading: false, loaded: true });
+      set({ projects, nodes, edges, memories, memoryRecalls, milestones, loading: false, loaded: true });
     } catch (err) {
       console.error('coreGraph.hydrate failed', err);
       set({ loading: false, error: err instanceof Error ? err.message : 'Failed to load your data.' });
@@ -296,8 +317,18 @@ export const useCoreGraph = create<CoreGraphState>((set, get) => ({
           .eq('owner_id', ownerId)
           .order('created_at', { ascending: false })
           .then(({ data }) => {
-            if (data) set((s) => ({ memories: data.map((m) => rowToMemory(m, s.edges)) }));
+            if (data) set((s) => ({ memories: data.map((m) => rowToMemory(m, s.edges, s.memoryRecalls)) }));
           });
+      })
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'memory_recalls', filter: `owner_id=eq.${ownerId}` }, (payload) => {
+        // A recall just landed (see recordMemoryRecall) — append it and
+        // remap memories so the affected card's count updates live, same
+        // as every other realtime-driven remap in this store.
+        const row = payload.new as { memory_id: string; recalled_at: string };
+        set((s) => {
+          const memoryRecalls = [...s.memoryRecalls, row];
+          return { memoryRecalls, memories: s.memories.map((m) => (m.id === row.memory_id ? { ...m, recalledCount: m.recalledCount + 1 } : m)) };
+        });
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'projects', filter: `owner_id=eq.${ownerId}` }, () => {
         supabase
@@ -327,7 +358,17 @@ export const useCoreGraph = create<CoreGraphState>((set, get) => ({
     };
   },
 
-  reset: () => set({ ownerId: null, projects: [], nodes: [], edges: [], memories: [], milestones: [], loaded: false, loading: false, error: null }),
+  reset: () => set({ ownerId: null, projects: [], nodes: [], edges: [], memories: [], memoryRecalls: [], milestones: [], loaded: false, loading: false, error: null }),
+
+  recordMemoryRecall: async (memoryId) => {
+    const ownerId = get().ownerId;
+    if (!ownerId) return;
+    const { error } = await supabase.from('memory_recalls').insert({ owner_id: ownerId, memory_id: memoryId });
+    if (error) console.error('recordMemoryRecall failed', error);
+    // realtime INSERT handler above updates memoryRecalls/memories — no
+    // local mutation needed here (and this is a background signal, not a
+    // user-facing write, so no toast/rollback on failure).
+  },
 
   advanceTask: async (id) => {
     const n = get().nodes.find((x) => x.id === id);
