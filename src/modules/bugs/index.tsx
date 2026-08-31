@@ -38,6 +38,9 @@ export default function Bugs({ active }: { active: boolean }) {
   const cycleBug = useCoreGraph((s) => s.cycleBug);
   const updateBug = useCoreGraph((s) => s.updateBug);
   const deleteNode = useCoreGraph((s) => s.deleteNode);
+  const sprints = useCoreGraph((s) => s.sprints);
+  const assignNodeToSprint = useCoreGraph((s) => s.assignNodeToSprint);
+  const sprintById = useMemo(() => new Map(sprints.map((s) => [s.id, s])), [sprints]);
 
   async function handleDeleteBug(id: string, title: string) {
     if (!(await askConfirm(`Delete "${title}"? This cannot be undone.`, { tone: 'danger', confirmLabel: 'DELETE' }))) return;
@@ -47,6 +50,7 @@ export default function Bugs({ active }: { active: boolean }) {
   const [savedView, setSavedView] = useState<SavedView>('none');
   const [query, setQuery] = useState('');
   const [editingAssignee, setEditingAssignee] = useState<string | null>(null);
+  const [editingSprint, setEditingSprint] = useState<string | null>(null);
   const [openTimeline, setOpenTimeline] = useState<string | null>(null);
 
   const nodeTitle = useMemo(() => {
@@ -147,15 +151,23 @@ export default function Bugs({ active }: { active: boolean }) {
               </span>
             )}
             <div className="mt">
-              {/* Was hardcoded "· SPRINT 002" on every card — no sprint field
-                  exists anywhere in the schema, so it never actually
-                  reflected which sprint (if any) the bug belonged to. */}
+              {/* Real sprint chip — the old "· SPRINT 002" here was hardcoded
+                  text with no backing field anywhere in the schema. This
+                  reads the live `nodes.sprint_id` FK against the real
+                  `public.sprints` table wired up in coreGraph.ts. */}
               <span>{b.severity.toUpperCase()}</span>
               {b.linkedCommit && (
                 <span className="link">
                   <Icon name="branch" size={12} /> {b.linkedCommit}
                 </span>
               )}
+              <span
+                className="assignee-pill"
+                onClick={() => setEditingSprint(editingSprint === b.id ? null : b.id)}
+                style={{ cursor: 'pointer' }}
+              >
+                <Icon name="gantt" size={12} /> {b.sprint_id ? (sprintById.get(b.sprint_id)?.name ?? 'SPRINT') : 'NO SPRINT'}
+              </span>
               <span
                 className="assignee-pill"
                 onClick={() => setEditingAssignee(editingAssignee === b.id ? null : b.id)}
@@ -209,6 +221,37 @@ export default function Bugs({ active }: { active: boolean }) {
                 ))}
               </div>
             )}
+            {editingSprint === b.id && (() => {
+              const options = sprints.filter((s) => !b.project_id || s.project_id === b.project_id);
+              return (
+                <div style={{ marginTop: 6, display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                  <span
+                    className="chip"
+                    style={{ fontSize: 9 }}
+                    onClick={() => {
+                      assignNodeToSprint(b.id, null);
+                      setEditingSprint(null);
+                    }}
+                  >
+                    NO SPRINT
+                  </span>
+                  {options.map((s) => (
+                    <span
+                      key={s.id}
+                      className="chip"
+                      style={{ fontSize: 9 }}
+                      onClick={() => {
+                        assignNodeToSprint(b.id, s.id);
+                        setEditingSprint(null);
+                      }}
+                    >
+                      {s.name}
+                    </span>
+                  ))}
+                  {!options.length && <span className="rsub" style={{ fontSize: 9 }}>No sprints for this project yet — create one in Projects → SPRINTS.</span>}
+                </div>
+              );
+            })()}
             {b.duplicateOf && b.similarity && (() => {
               // Real duplicate detection (see lib/similarity.ts +
               // coreGraph.addBug) — was a hardcoded "SOLVED #14" banner that
