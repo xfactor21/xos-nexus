@@ -2,8 +2,9 @@ name: Relay Artifact
 
 # One-off utility: pulls a previously-built workflow artifact (from a run in
 # THIS repo) out of GitHub's authenticated artifact store and re-uploads it
-# to an anonymous, unauthenticated file host (0x0.st) so it can be fetched
-# with a plain HTTPS GET — no GitHub token required on the receiving end.
+# to an anonymous, unauthenticated file host (catbox.moe) so it can be
+# fetched with a plain HTTPS GET — no GitHub token required on the
+# receiving end. (0x0.st was tried first but has disabled uploads.)
 #
 # This is deliberately separate from tauri-build.yml, which intentionally
 # does NOT publish a public GitHub Release. This workflow doesn't change
@@ -46,7 +47,7 @@ jobs:
           echo "## Relayed files" >> "$GITHUB_STEP_SUMMARY"
           find . -type f | while read -r f; do
             echo "Uploading: $f ($(stat -c%s "$f") bytes)"
-            url=$(curl -sS -F "file=@${f}" https://0x0.st)
+            url=$(curl -sS -F "reqtype=fileupload" -F "fileToUpload=@${f}" https://catbox.moe/user/api.php)
             echo "RELAY_URL: $f -> $url"
             echo "- \`$f\` -> $url" >> "$GITHUB_STEP_SUMMARY"
           done
