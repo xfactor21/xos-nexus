@@ -17,7 +17,7 @@ import {
   type ProjectClassId,
   type WidgetId,
 } from './local';
-import type { NodeRecord, ProjectRecord } from '../../core/types';
+import type { EdgeRecord, NodeRecord, ProjectRecord } from '../../core/types';
 import Icon from '../../design-system/icons/Icon';
 import DataIcon from '../../design-system/icons/DataIcon';
 import type { IconName } from '../../design-system/icons/registry';
@@ -25,18 +25,6 @@ import AmbientField from '../../design-system/background/AmbientField';
 import ShipAmbience from '../../design-system/background/ShipAmbience';
 
 type Zone = 'zoverview' | 'zboard' | 'zdocs' | 'zbugs' | 'zfeed';
-
-const docs = [
-  { t: 'Dark Mode — Requirements', meta: 'CREATED FROM NEURAL CAPTURE', fromAI: true, tag: 'NEW' },
-  { t: 'Onboarding Flow Spec', meta: 'LINKED TO 4 TASKS', fromAI: false, tag: 'AI-DRAFTED' },
-  { t: 'Auth Architecture', meta: 'SPRINT 001', fromAI: false, tag: 'RECALLED TODAY FOR BUG #17' },
-  { t: 'Brand Voice Guide', meta: '6 DAYS AGO', fromAI: false, tag: '' },
-];
-const feed = [
-  { body: 'xAI linked bug #17 -> solved #14 (92% similarity)', time: '5H AGO', fromAI: true },
-  { body: 'Neural Capture routed 4 nodes into this project', time: 'YESTERDAY', fromAI: false },
-  { body: '"Onboarding Flow" promoted to Sprint 002 milestone', time: 'YESTERDAY', fromAI: true },
-];
 
 const ZONE_LABEL: Record<Zone, { icon: IconName; label: string }> = {
   zoverview: { icon: 'xai', label: 'OVERVIEW' },
@@ -170,6 +158,87 @@ function DependencyList({ openId, nodes, edges, projects }: { openId: string; no
   );
 }
 
+const DOC_ACTIVITY_LABEL: Partial<Record<NodeRecord['kind'], string>> = {
+  bug: 'Bug reported',
+  task: 'Task added',
+  release: 'Release logged',
+  doc: 'Doc filed',
+  idea: 'Idea captured',
+  design: 'Design concept added',
+  note: 'Note captured',
+  knowledge_snapshot: 'Page saved to Knowledge Matrix',
+};
+
+const EDGE_VERB: Partial<Record<EdgeRecord['relation'], string>> = {
+  duplicates: 'flagged as a duplicate of',
+  solves: 'marked as solving',
+  blocks: 'marked as blocking',
+  references: 'referenced',
+  derived_from: 'marked as derived from',
+  affects: 'marked as affecting',
+};
+
+interface FeedItem {
+  key: string;
+  body: string;
+  time: string;
+  fromAI: boolean;
+  ts: number;
+}
+
+/** Real ACTIVITY feed (was: 3 hardcoded entries referencing bugs/milestones
+ * that may not exist in this Captain's data). Built from two real sources:
+ * this project's node creations, and edges touching this project's nodes
+ * (cross-project links get called out by name, same-project relations get
+ * the plain relation verb) — merged and sorted by real timestamp. */
+function ActivityFeed({ openId, projectNodes, edges, nodes, projects }: { openId: string; projectNodes: NodeRecord[]; edges: EdgeRecord[]; nodes: NodeRecord[]; projects: ProjectRecord[] }) {
+  const items = useMemo(() => {
+    const nodeById = new Map(nodes.map((n) => [n.id, n]));
+    const out: FeedItem[] = [];
+    projectNodes.forEach((n) => {
+      const label = DOC_ACTIVITY_LABEL[n.kind] ?? 'Node created';
+      out.push({
+        key: `n:${n.id}`,
+        body: `${label}: "${(n.title || n.body || '').slice(0, 60)}"`,
+        time: relTime(n.created_at),
+        fromAI: n.ai_classified,
+        ts: new Date(n.created_at).getTime(),
+      });
+    });
+    edges.forEach((e) => {
+      const a = nodeById.get(e.from_node);
+      const b = nodeById.get(e.to_node);
+      if (!a || !b) return;
+      if (a.project_id !== openId && b.project_id !== openId) return;
+      const mine = a.project_id === openId ? a : b;
+      const other = mine === a ? b : a;
+      const otherProject = other.project_id && other.project_id !== openId ? projects.find((p) => p.id === other.project_id) : null;
+      const verb = EDGE_VERB[e.relation] ?? 'linked to';
+      out.push({
+        key: `e:${e.id}`,
+        body: `xAI ${verb} "${mine.title}" → "${other.title}"${otherProject ? ` in ${otherProject.name.toUpperCase()}` : ''}`,
+        time: e.created_at ? relTime(e.created_at) : '',
+        fromAI: e.created_by === 'copilot',
+        ts: e.created_at ? new Date(e.created_at).getTime() : 0,
+      });
+    });
+    return out.sort((x, y) => y.ts - x.ts).slice(0, 12);
+  }, [openId, projectNodes, edges, nodes, projects]);
+  if (!items.length) return <div className="rsub" style={{ fontSize: 9 }}>No activity yet — it fills in as nodes are captured and xAI relates them.</div>;
+  return (
+    <>
+      {items.map((it) => (
+        <div className="cap" key={it.key}>
+          {it.fromAI && <Icon name="xai" size={11} glow="cyan" />} {it.body}
+          <div className="meta">
+            <span>{it.time}</span>
+          </div>
+        </div>
+      ))}
+    </>
+  );
+}
+
 export default function Projects({ active }: { active: boolean }) {
   const [openId, setOpenId] = useState<string | null>(null);
   const [zone, setZone] = useState<Zone>('zoverview');
@@ -228,6 +297,14 @@ export default function Projects({ active }: { active: boolean }) {
   const projectTasks = tasks.filter((t) => t.project_id === openId);
   const projectBugs = bugs.filter((b) => b.project_id === openId);
   const projectNodes = useMemo(() => nodes.filter((n) => n.project_id === openId), [nodes, openId]);
+  const projectDocs = useMemo(
+    () =>
+      projectNodes
+        .filter((n) => n.kind === 'doc' || n.kind === 'knowledge_snapshot')
+        .slice()
+        .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()),
+    [projectNodes],
+  );
 
   useEffect(() => {
     if (open) {
@@ -500,7 +577,7 @@ export default function Projects({ active }: { active: boolean }) {
             )}
             {cls.zones.includes('zdocs') && (
               <div className="vital">
-                <div className="n">{docs.length}</div>
+                <div className="n">{projectDocs.length}</div>
                 <div className="l">DOCS</div>
               </div>
             )}
@@ -565,12 +642,14 @@ export default function Projects({ active }: { active: boolean }) {
           </div>
           {cls.zones.includes('zdocs') && (
             <div className={`subpanel ${zone === 'zdocs' ? 'on' : ''}`} id="zdocs">
-              {docs.map((d, i) => (
-                <div className="cap" key={i}>
-                  <Icon name="file" size={12} /> {d.t}
+              {!projectDocs.length && <div className="rsub" style={{ fontSize: 9 }}>No docs yet — capture a write-up or save a page to the Knowledge Matrix and file it here.</div>}
+              {projectDocs.map((d) => (
+                <div className="cap" key={d.id}>
+                  <Icon name="file" size={12} /> {d.title || '(untitled doc)'}
                   <div className="meta">
-                    {d.fromAI && <Icon name="xai" size={11} glow="cyan" />} <span>{d.meta}</span>
-                    {d.tag && <span style={{ color: 'var(--cyan)' }}>{d.tag}</span>}
+                    {d.ai_classified && <Icon name="xai" size={11} glow="cyan" />}{' '}
+                    <span>{d.source === 'capture_text' ? 'CREATED FROM NEURAL CAPTURE' : relTime(d.created_at)}</span>
+                    {d.ai_classified && <span style={{ color: 'var(--cyan)' }}>AI-CLASSIFIED</span>}
                   </div>
                 </div>
               ))}
@@ -597,14 +676,7 @@ export default function Projects({ active }: { active: boolean }) {
             </div>
           )}
           <div className={`subpanel ${zone === 'zfeed' ? 'on' : ''}`} id="zfeed">
-            {feed.map((f, i) => (
-              <div className="cap" key={i}>
-                {f.fromAI && <Icon name="xai" size={11} glow="cyan" />} {f.body}
-                <div className="meta">
-                  <span>{f.time}</span>
-                </div>
-              </div>
-            ))}
+            <ActivityFeed openId={openId!} projectNodes={projectNodes} edges={edges} nodes={nodes} projects={projects} />
           </div>
         </div>
       )}
