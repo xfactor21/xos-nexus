@@ -93,6 +93,15 @@ interface CoreGraphState {
   addBug: (bug: { title: string; project_id: string | null; severity: BugSeverity }) => Promise<void>;
   updateBug: (id: string, patch: Partial<Pick<BugNode, 'severity' | 'assignee' | 'linkedCommit' | 'duplicateOf' | 'similarity'>>) => Promise<void>;
 
+  /** Ship's Log / Releases room: real CRUD instead of a hardcoded array.
+   * `kind: 'release'` is already a live value in the deployed `nodes_kind_check`
+   * constraint (see core/types.ts's NodeKind doc comment) — no migration
+   * needed. `notes` is stored plain-text (one line per bullet) in `body`
+   * rather than the old hardcoded HTML, since this is now real Captain
+   * input and dangerouslySetInnerHTML on it would be an XSS hole. */
+  addRelease: (r: { title: string; notes: string; status: 'in_progress' | 'done' }) => Promise<void>;
+  updateRelease: (id: string, patch: Partial<{ title: string; notes: string; status: 'in_progress' | 'done' }>) => Promise<void>;
+
   reorderMilestones: (orderedIds: string[]) => void;
   updateMilestoneDate: (id: string, date: string) => void;
   deleteMilestone: (id: string) => void;
@@ -309,6 +318,48 @@ export const useCoreGraph = create<CoreGraphState>((set, get) => ({
     set((s) => ({ nodes: upsert(s.nodes, { ...n, metadata: meta }) })); // optimistic
     const { error } = await supabase.from('nodes').update({ metadata: meta }).eq('id', id);
     if (error) console.error('updateBug failed', error);
+  },
+
+  addRelease: async (r) => {
+    const ownerId = get().ownerId;
+    if (!ownerId) return;
+    const { error } = await supabase.from('nodes').insert({
+      owner_id: ownerId,
+      project_id: null,
+      kind: 'release',
+      title: r.title,
+      body: r.notes,
+      source: 'manual',
+      ai_classified: false,
+      status: r.status,
+    });
+    if (error) {
+      console.error('addRelease failed', error);
+      pushToast('Could not log release — try again', 'warn');
+    }
+    // realtime subscription picks up the INSERT — no local mutation needed
+  },
+
+  updateRelease: async (id, patch) => {
+    const n = get().nodes.find((x) => x.id === id);
+    if (!n) return;
+    const next: NodeRecord = {
+      ...n,
+      ...(patch.title !== undefined ? { title: patch.title } : {}),
+      ...(patch.notes !== undefined ? { body: patch.notes } : {}),
+      ...(patch.status !== undefined ? { status: patch.status } : {}),
+    };
+    set((s) => ({ nodes: upsert(s.nodes, next) })); // optimistic
+    const dbPatch: Record<string, unknown> = {};
+    if (patch.title !== undefined) dbPatch.title = patch.title;
+    if (patch.notes !== undefined) dbPatch.body = patch.notes;
+    if (patch.status !== undefined) dbPatch.status = patch.status;
+    const { error } = await supabase.from('nodes').update(dbPatch).eq('id', id);
+    if (error) {
+      console.error('updateRelease failed', error);
+      set((s) => ({ nodes: upsert(s.nodes, n) })); // rollback
+      pushToast('Could not update release — try again', 'warn');
+    }
   },
 
   // Roadmaps/milestones: local-only, unchanged from the Step 5 pass — see
