@@ -2,9 +2,12 @@ name: Relay Artifact
 
 # One-off utility: pulls a previously-built workflow artifact (from a run in
 # THIS repo) out of GitHub's authenticated artifact store and re-uploads it
-# to an anonymous, unauthenticated file host (catbox.moe) so it can be
-# fetched with a plain HTTPS GET — no GitHub token required on the
-# receiving end. (0x0.st was tried first but has disabled uploads.)
+# to an anonymous, unauthenticated file host so it can be fetched with a
+# plain HTTPS GET — no GitHub token required on the receiving end. Tries a
+# short list of hosts in order and uses whichever accepts the upload.
+# (0x0.st has disabled uploads entirely; catbox.moe rejects this runner's
+# IP range with "Invalid uploader" — both left in the fallback chain in
+# case that changes, tmpfiles.org/file.io/uguu.se tried after them.)
 #
 # This is deliberately separate from tauri-build.yml, which intentionally
 # does NOT publish a public GitHub Release. This workflow doesn't change
@@ -43,11 +46,66 @@ jobs:
       - name: Upload each file to an anonymous host and print the URL
         run: |
           set -euo pipefail
+          UA="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36"
           cd ./downloaded
           echo "## Relayed files" >> "$GITHUB_STEP_SUMMARY"
+
+          try_tmpfiles() {
+            local f="$1"
+            local resp url
+            resp=$(curl -sS -A "$UA" -F "file=@${f}" https://tmpfiles.org/api/v1/upload) || return 1
+            url=$(echo "$resp" | grep -o '"url":"[^"]*"' | head -1 | sed 's/"url":"//;s/"$//' | sed 's#tmpfiles.org/#tmpfiles.org/dl/#')
+            [ -n "$url" ] && echo "$url"
+          }
+          try_fileio() {
+            local f="$1"
+            local resp url
+            resp=$(curl -sS -A "$UA" -F "file=@${f}" https://file.io) || return 1
+            url=$(echo "$resp" | grep -o '"link":"[^"]*"' | head -1 | sed 's/"link":"//;s/"$//')
+            [ -n "$url" ] && echo "$url"
+          }
+          try_uguu() {
+            local f="$1"
+            local resp url
+            resp=$(curl -sS -A "$UA" -F "files[]=@${f}" https://uguu.se/upload) || return 1
+            url=$(echo "$resp" | grep -o '"url":"[^"]*"' | head -1 | sed 's/"url":"//;s/"$//')
+            [ -n "$url" ] && echo "$url"
+          }
+          try_0x0() {
+            local f="$1"
+            local resp
+            resp=$(curl -sS -A "$UA" -F "file=@${f}" https://0x0.st) || return 1
+            case "$resp" in
+              https://*) echo "$resp" ;;
+              *) return 1 ;;
+            esac
+          }
+          try_catbox() {
+            local f="$1"
+            local resp
+            resp=$(curl -sS -A "$UA" -F "reqtype=fileupload" -F "fileToUpload=@${f}" https://catbox.moe/user/api.php) || return 1
+            case "$resp" in
+              https://*) echo "$resp" ;;
+              *) return 1 ;;
+            esac
+          }
+
           find . -type f | while read -r f; do
             echo "Uploading: $f ($(stat -c%s "$f") bytes)"
-            url=$(curl -sS -A "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36" -F "reqtype=fileupload" -F "fileToUpload=@${f}" https://catbox.moe/user/api.php)
-            echo "RELAY_URL: $f -> $url"
-            echo "- \`$f\` -> $url" >> "$GITHUB_STEP_SUMMARY"
+            url=""
+            for uploader in try_tmpfiles try_fileio try_uguu try_0x0 try_catbox; do
+              echo "  trying $uploader..."
+              url=$($uploader "$f" || true)
+              if [ -n "$url" ]; then
+                echo "  $uploader succeeded"
+                break
+              fi
+            done
+            if [ -n "$url" ]; then
+              echo "RELAY_URL: $f -> $url"
+              echo "- \`$f\` -> $url" >> "$GITHUB_STEP_SUMMARY"
+            else
+              echo "RELAY_URL: $f -> FAILED (no uploader accepted it)"
+              echo "- \`$f\` -> FAILED" >> "$GITHUB_STEP_SUMMARY"
+            fi
           done
