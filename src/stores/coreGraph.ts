@@ -10,8 +10,20 @@ import type {
   NodeKind,
   NodeRecord,
   ProjectRecord,
+  SprintRecord,
+  SuggestionRecord,
 } from '../core/types';
-import { bugStatusToDbStatus, nodeToBug, nodeToTask, rowToMemory, rowToMilestone, rowToProject, taskStatusToDbStatus } from '../core/mappers';
+import {
+  bugStatusToDbStatus,
+  nodeToBug,
+  nodeToTask,
+  rowToMemory,
+  rowToMilestone,
+  rowToProject,
+  rowToSprint,
+  rowToSuggestion,
+  taskStatusToDbStatus,
+} from '../core/mappers';
 import { findBestDuplicate } from '../lib/similarity';
 import { pushToast } from './toastStore';
 
@@ -89,6 +101,15 @@ interface CoreGraphState {
    * recall count; nothing else reads this directly. */
   memoryRecalls: { memory_id: string; recalled_at: string }[];
   milestones: MilestoneRecord[];
+  /** Real Sprint tracker state — backed by `public.sprints` (was fully
+   * provisioned with RLS but never wired to the app; see the
+   * `nodes.sprint_id` FK doc comment in core/types.ts). */
+  sprints: SprintRecord[];
+  /** Real Suggestion engine output — backed by `public.suggestions` (same
+   * "provisioned but unused" story as sprints). Populated by
+   * `generateSuggestions`'s disclosed rule-based detectors, not a fake-AI
+   * simulation. */
+  suggestions: SuggestionRecord[];
 
   loading: boolean;
   loaded: boolean;
@@ -193,6 +214,31 @@ interface CoreGraphState {
    * captures rather than deleting or orphaning them, so this is safe to
    * offer without a "this will also delete N items" warning. */
   deleteProject: (id: string) => Promise<void>;
+
+  /** Sprint tracker: real CRUD against `public.sprints`. Same optimistic +
+   * rollback pattern as everything else in this store. */
+  addSprint: (s: { name: string; project_id: string | null; release_tag?: string | null; starts_on?: string | null; ends_on?: string | null }) => Promise<void>;
+  updateSprint: (id: string, patch: Partial<Pick<SprintRecord, 'name' | 'release_tag' | 'status' | 'starts_on' | 'ends_on' | 'retro'>>) => Promise<void>;
+  deleteSprint: (id: string) => Promise<void>;
+  /** Assigns (or unassigns, with null) a node to a sprint via the real
+   * `nodes.sprint_id` FK column. */
+  assignNodeToSprint: (nodeId: string, sprintId: string | null) => Promise<void>;
+
+  /** Suggestion engine: a real, disclosed, rule-based detector over current
+   * store state (stale projects, flagged-duplicate bugs, sprints ending
+   * without a retro) — not a simulated/fake-AI feature. De-dup is
+   * DB-persisted (checks existing `suggestions` rows, any status) so a
+   * dismissed suggestion never resurfaces as a "new" event on reload.
+   * Safe to call opportunistically (e.g. on hydrate, or periodically from
+   * Comms) — it only inserts genuinely new suggestions. */
+  generateSuggestions: () => Promise<void>;
+  /** The durable "seen" marker Comms calls right after spawning a thread
+   * for a `pending` suggestion — persisted so a reload never spawns a
+   * second thread for the same suggestion (see SuggestionRecord.status's
+   * doc comment). */
+  markSuggestionSurfaced: (id: string) => Promise<void>;
+  dismissSuggestion: (id: string) => Promise<void>;
+  actionSuggestion: (id: string) => Promise<void>;
 }
 
 function upsert<T extends { id: string }>(arr: T[], row: T): T[] {
@@ -216,6 +262,8 @@ export const useCoreGraph = create<CoreGraphState>((set, get) => ({
   memories: [],
   memoryRecalls: [],
   milestones: seedMilestones,
+  sprints: [],
+  suggestions: [],
 
   loading: false,
   loaded: false,
@@ -224,7 +272,7 @@ export const useCoreGraph = create<CoreGraphState>((set, get) => ({
   hydrate: async (ownerId) => {
     set({ loading: true, error: null, ownerId });
     try {
-      const [projectsRes, nodesRes, edgesRes, memoriesRes, milestonesRes, recallsRes] = await Promise.all([
+      const [projectsRes, nodesRes, edgesRes, memoriesRes, milestonesRes, recallsRes, sprintsRes, suggestionsRes] = await Promise.all([
         supabase.from('projects').select('*').eq('owner_id', ownerId).order('created_at'),
         supabase.from('nodes').select('*').eq('owner_id', ownerId).order('created_at', { ascending: false }),
         supabase.from('edges').select('*').eq('owner_id', ownerId),
@@ -237,8 +285,11 @@ export const useCoreGraph = create<CoreGraphState>((set, get) => ({
           .select('memory_id, recalled_at')
           .eq('owner_id', ownerId)
           .gte('recalled_at', new Date(Date.now() - 7 * 86_400_000).toISOString()),
+        supabase.from('sprints').select('*').eq('owner_id', ownerId).order('created_at', { ascending: false }),
+        supabase.from('suggestions').select('*').eq('owner_id', ownerId).order('created_at', { ascending: false }),
       ]);
-      const firstError = projectsRes.error || nodesRes.error || edgesRes.error || memoriesRes.error || milestonesRes.error || recallsRes.error;
+      const firstError =
+        projectsRes.error || nodesRes.error || edgesRes.error || memoriesRes.error || milestonesRes.error || recallsRes.error || sprintsRes.error || suggestionsRes.error;
       if (firstError) throw firstError;
 
       const nodes = (nodesRes.data ?? []) as NodeRecord[];
@@ -246,6 +297,8 @@ export const useCoreGraph = create<CoreGraphState>((set, get) => ({
       const memoryRecalls = recallsRes.data ?? [];
       const projects = (projectsRes.data ?? []).map((p) => rowToProject(p, nodes.filter((n) => n.project_id === p.id)));
       const memories = (memoriesRes.data ?? []).map((m) => rowToMemory(m, edges, memoryRecalls));
+      const sprints = (sprintsRes.data ?? []).map(rowToSprint);
+      const suggestions = (suggestionsRes.data ?? []).map(rowToSuggestion);
 
       // Milestones: a brand-new Captain has zero rows here (the table is
       // owner-scoped, so no seed data was ever inserted for them) — bootstrap
@@ -276,7 +329,7 @@ export const useCoreGraph = create<CoreGraphState>((set, get) => ({
         milestones = (milestonesRes.data ?? []).map(rowToMilestone).sort((a, b) => a.order - b.order);
       }
 
-      set({ projects, nodes, edges, memories, memoryRecalls, milestones, loading: false, loaded: true });
+      set({ projects, nodes, edges, memories, memoryRecalls, milestones, sprints, suggestions, loading: false, loaded: true });
     } catch (err) {
       console.error('coreGraph.hydrate failed', err);
       set({ loading: false, error: err instanceof Error ? err.message : 'Failed to load your data.' });
@@ -348,6 +401,22 @@ export const useCoreGraph = create<CoreGraphState>((set, get) => ({
               : upsert(s.milestones, rowToMilestone(payload.new as Parameters<typeof rowToMilestone>[0])),
         }));
       })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'sprints', filter: `owner_id=eq.${ownerId}` }, (payload) => {
+        set((s) => ({
+          sprints:
+            payload.eventType === 'DELETE'
+              ? remove(s.sprints, (payload.old as { id: string }).id)
+              : upsert(s.sprints, rowToSprint(payload.new as Parameters<typeof rowToSprint>[0])),
+        }));
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'suggestions', filter: `owner_id=eq.${ownerId}` }, (payload) => {
+        set((s) => ({
+          suggestions:
+            payload.eventType === 'DELETE'
+              ? remove(s.suggestions, (payload.old as { id: string }).id)
+              : upsert(s.suggestions, rowToSuggestion(payload.new as Parameters<typeof rowToSuggestion>[0])),
+        }));
+      })
       .subscribe();
 
     return () => {
@@ -358,7 +427,21 @@ export const useCoreGraph = create<CoreGraphState>((set, get) => ({
     };
   },
 
-  reset: () => set({ ownerId: null, projects: [], nodes: [], edges: [], memories: [], memoryRecalls: [], milestones: [], loaded: false, loading: false, error: null }),
+  reset: () =>
+    set({
+      ownerId: null,
+      projects: [],
+      nodes: [],
+      edges: [],
+      memories: [],
+      memoryRecalls: [],
+      milestones: [],
+      sprints: [],
+      suggestions: [],
+      loaded: false,
+      loading: false,
+      error: null,
+    }),
 
   recordMemoryRecall: async (memoryId) => {
     const ownerId = get().ownerId;
@@ -757,5 +840,175 @@ export const useCoreGraph = create<CoreGraphState>((set, get) => ({
       if (data) set({ nodes: data as NodeRecord[] });
     }
     pushToast(`Deleted "${p.name}"`, 'success');
+  },
+
+  addSprint: async (sp) => {
+    const ownerId = get().ownerId;
+    if (!ownerId) return;
+    const { error } = await supabase.from('sprints').insert({
+      owner_id: ownerId,
+      project_id: sp.project_id,
+      name: sp.name,
+      release_tag: sp.release_tag ?? null,
+      status: 'planned',
+      starts_on: sp.starts_on ?? null,
+      ends_on: sp.ends_on ?? null,
+    });
+    if (error) {
+      console.error('addSprint failed', error);
+      pushToast('Could not create sprint — try again', 'warn');
+    }
+    // realtime subscription picks up the INSERT — no local mutation needed
+  },
+
+  updateSprint: async (id, patch) => {
+    const sp = get().sprints.find((x) => x.id === id);
+    if (!sp) return;
+    set((s) => ({ sprints: upsert(s.sprints, { ...sp, ...patch }) })); // optimistic
+    const { error } = await supabase.from('sprints').update(patch).eq('id', id);
+    if (error) {
+      console.error('updateSprint failed', error);
+      set((s) => ({ sprints: upsert(s.sprints, sp) })); // rollback
+      pushToast('Could not update sprint — try again', 'warn');
+    }
+  },
+
+  deleteSprint: async (id) => {
+    const sp = get().sprints.find((x) => x.id === id);
+    if (!sp) return;
+    set((s) => ({ sprints: remove(s.sprints, id) })); // optimistic
+    const { error } = await supabase.from('sprints').delete().eq('id', id);
+    if (error) {
+      console.error('deleteSprint failed', error);
+      set((s) => ({ sprints: upsert(s.sprints, sp) })); // rollback
+      pushToast('Could not delete sprint — try again', 'warn');
+      return;
+    }
+    pushToast(`Deleted sprint "${sp.name}"`, 'success');
+  },
+
+  assignNodeToSprint: async (nodeId, sprintId) => {
+    const n = get().nodes.find((x) => x.id === nodeId);
+    if (!n) return;
+    set((s) => ({ nodes: upsert(s.nodes, { ...n, sprint_id: sprintId }) })); // optimistic
+    const { error } = await supabase.from('nodes').update({ sprint_id: sprintId }).eq('id', nodeId);
+    if (error) {
+      console.error('assignNodeToSprint failed', error);
+      set((s) => ({ nodes: upsert(s.nodes, n) })); // rollback
+      pushToast('Could not assign to sprint — try again', 'warn');
+    }
+  },
+
+  /** Real, disclosed, rule-based suggestion detector — not a simulated/
+   * fake-AI feature (same honesty standard lib/similarity.ts's disclosed
+   * Jaccard heuristic set for duplicate-bug detection). Three deterministic
+   * triggers run over current store state:
+   *   - stale_project: an active project idle >= STALE_DAYS (mappers.ts)
+   *   - duplicate_bug: a bug already flagged via findBestDuplicate against
+   *     another bug (addBug/commitCaptureNodes set duplicateOf/similarity)
+   *   - sprint_ending: an active sprint ending within 2 days with no retro
+   * De-dup is DB-persisted: checks ALL existing `suggestions` rows for this
+   * owner (any status — pending, dismissed, or actioned) by trigger +
+   * related_nodes + project_id, so a suggestion the Captain already saw and
+   * dismissed never reappears as a "new" Comms thread on the next reload. */
+  generateSuggestions: async () => {
+    const { ownerId, projects, nodes, sprints, suggestions } = get();
+    if (!ownerId) return;
+
+    const seenKey = (t: SuggestionRecord['trigger'], relatedNodes: string[], projectId: string | null) =>
+      `${t}:${relatedNodes.slice().sort().join(',')}:${projectId ?? ''}`;
+    const alreadySurfaced = new Set(suggestions.map((s) => seenKey(s.trigger, s.related_nodes, s.project_id)));
+
+    const candidates: { project_id: string | null; trigger: SuggestionRecord['trigger']; message: string; related_nodes: string[] }[] = [];
+
+    for (const p of projects) {
+      if (!p.isStale) continue;
+      candidates.push({
+        project_id: p.id,
+        trigger: 'stale_project',
+        message: `"${p.name}" has been idle for ${p.idleDays} day${p.idleDays === 1 ? '' : 's'} — worth a check-in?`,
+        related_nodes: [],
+      });
+    }
+
+    const bugs = nodes.filter((n) => n.kind === 'bug').map(nodeToBug);
+    for (const b of bugs) {
+      if (!b.duplicateOf || b.similarity == null) continue;
+      candidates.push({
+        project_id: b.project_id,
+        trigger: 'duplicate_bug',
+        message: `"${b.title}" looks ${Math.round(b.similarity * 100)}% similar to an existing bug — merge or link them?`,
+        related_nodes: [b.id, b.duplicateOf],
+      });
+    }
+
+    const now = Date.now();
+    const soon = now + 2 * 86_400_000;
+    for (const sp of sprints) {
+      if (sp.status !== 'active' || !sp.ends_on || sp.retro) continue;
+      const endsAt = new Date(sp.ends_on).getTime();
+      if (endsAt > soon) continue;
+      candidates.push({
+        project_id: sp.project_id,
+        trigger: 'sprint_ending',
+        // related_nodes isn't strictly node ids — it's the generic uuid[]
+        // column every trigger reuses; here it carries the sprint's own id
+        // so the UI (Comms) can look the sprint back up directly instead of
+        // guessing "the" active sprint for a project.
+        message: `Sprint "${sp.name}" ${endsAt < now ? 'has ended' : 'ends soon'} — wrap it up with a retro?`,
+        related_nodes: [sp.id],
+      });
+    }
+
+    const fresh = candidates.filter((c) => !alreadySurfaced.has(seenKey(c.trigger, c.related_nodes, c.project_id)));
+    if (!fresh.length) return;
+
+    const { error } = await supabase.from('suggestions').insert(
+      fresh.map((c) => ({
+        owner_id: ownerId,
+        project_id: c.project_id,
+        trigger: c.trigger,
+        message: c.message,
+        status: 'pending',
+        related_nodes: c.related_nodes,
+      })),
+    );
+    if (error) console.error('generateSuggestions failed', error);
+    // realtime subscription picks up the INSERT(s) — no local mutation needed
+  },
+
+  markSuggestionSurfaced: async (id) => {
+    const sug = get().suggestions.find((x) => x.id === id);
+    if (!sug || sug.status !== 'pending') return; // already surfaced/resolved — don't clobber a later state
+    set((s) => ({ suggestions: upsert(s.suggestions, { ...sug, status: 'surfaced' }) })); // optimistic
+    const { error } = await supabase.from('suggestions').update({ status: 'surfaced' }).eq('id', id);
+    if (error) {
+      console.error('markSuggestionSurfaced failed', error);
+      set((s) => ({ suggestions: upsert(s.suggestions, sug) })); // rollback
+    }
+  },
+
+  dismissSuggestion: async (id) => {
+    const sug = get().suggestions.find((x) => x.id === id);
+    if (!sug) return;
+    set((s) => ({ suggestions: upsert(s.suggestions, { ...sug, status: 'dismissed' }) })); // optimistic
+    const { error } = await supabase.from('suggestions').update({ status: 'dismissed' }).eq('id', id);
+    if (error) {
+      console.error('dismissSuggestion failed', error);
+      set((s) => ({ suggestions: upsert(s.suggestions, sug) })); // rollback
+      pushToast('Could not dismiss — try again', 'warn');
+    }
+  },
+
+  actionSuggestion: async (id) => {
+    const sug = get().suggestions.find((x) => x.id === id);
+    if (!sug) return;
+    set((s) => ({ suggestions: upsert(s.suggestions, { ...sug, status: 'actioned' }) })); // optimistic
+    const { error } = await supabase.from('suggestions').update({ status: 'actioned' }).eq('id', id);
+    if (error) {
+      console.error('actionSuggestion failed', error);
+      set((s) => ({ suggestions: upsert(s.suggestions, sug) })); // rollback
+      pushToast('Could not update suggestion — try again', 'warn');
+    }
   },
 }));

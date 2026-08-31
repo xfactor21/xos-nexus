@@ -20,7 +20,7 @@ export interface ProjectClass {
   icon: string;
   color: string;
   /** Which workspace zones this class shows, in order. */
-  zones: Array<'zoverview' | 'zboard' | 'zbugs' | 'zdocs' | 'zfeed'>;
+  zones: Array<'zoverview' | 'zboard' | 'zbugs' | 'zsprints' | 'zdocs' | 'zfeed'>;
   /** Board column labels for the three task-status columns (queued/doing/done). */
   boardCols: [string, string, string];
   blurb: string;
@@ -29,7 +29,7 @@ export interface ProjectClass {
 // Amendment v0.6 step 1: icon values are IconName keys into the shared
 // design-system Icon registry (see DataIcon.tsx) instead of raw emoji.
 export const PROJECT_CLASSES: ProjectClass[] = [
-  { id: 'dev', label: 'DEV', icon: 'laptop', color: '#00F5FF', zones: ['zoverview', 'zboard', 'zbugs', 'zdocs', 'zfeed'], boardCols: ['QUEUED', 'IN PROGRESS', 'COMPLETE'], blurb: 'Sprint board, bug tracking, docs — a software project.' },
+  { id: 'dev', label: 'DEV', icon: 'laptop', color: '#00F5FF', zones: ['zoverview', 'zboard', 'zbugs', 'zsprints', 'zdocs', 'zfeed'], boardCols: ['QUEUED', 'IN PROGRESS', 'COMPLETE'], blurb: 'Sprint board, bug tracking, docs — a software project.' },
   { id: 'creative', label: 'CREATIVE', icon: 'brush', color: '#8B5CF6', zones: ['zoverview', 'zboard', 'zdocs', 'zfeed'], boardCols: ['SPARK', 'SHAPING', 'POLISHED'], blurb: 'A creative work-in-progress — no bug tracker, no sprints.' },
   { id: 'personal', label: 'PERSONAL', icon: 'sprout', color: '#FFB800', zones: ['zoverview', 'zboard', 'zfeed'], boardCols: ['SOMEDAY', 'ACTIVE', 'DONE'], blurb: 'A personal goal or habit — lightweight, no docs zone.' },
   { id: 'research', label: 'RESEARCH', icon: 'telescope', color: '#FF2D78', zones: ['zoverview', 'zboard', 'zdocs', 'zfeed'], boardCols: ['QUESTIONS', 'INVESTIGATING', 'ANSWERED'], blurb: 'An open-ended investigation — tracked as questions, not tickets.' },
