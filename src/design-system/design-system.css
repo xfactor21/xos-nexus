@@ -1105,6 +1105,69 @@ body.widget-body {
 .browserAddress:focus {
   border-color: var(--eg-cold);
 }
+/* Address bar autocomplete (bookmarks + history, deduped by URL) — wrap is
+   a single-child flex container so the input's existing `flex: 1` still
+   fills the browserBar row exactly as it did unwrapped; the dropdown
+   positions off the wrap, not the input, so it isn't clipped by the
+   input's own border-radius. */
+.browserAddressWrap {
+  position: relative;
+  flex: 1;
+  display: flex;
+}
+.browserSuggestList {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  z-index: 40;
+  background: var(--glass);
+  backdrop-filter: blur(20px);
+  border: 1px solid var(--eg-cold);
+  border-radius: 6px;
+  box-shadow: 0 0 24px rgba(0, 245, 255, 0.15), 0 12px 30px rgba(0, 0, 0, 0.5);
+  max-height: 280px;
+  overflow-y: auto;
+  padding: 4px;
+}
+.browserSuggestRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 8px;
+  border-radius: 5px;
+  cursor: pointer;
+  color: var(--text-dim);
+  transition: background 0.15s ease;
+}
+.browserSuggestRow:hover {
+  background: rgba(255, 45, 120, 0.1);
+}
+.browserSuggestRow.sel {
+  background: rgba(0, 245, 255, 0.12);
+  box-shadow: inset 2px 0 0 0 var(--cy);
+}
+.browserSuggestMain {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.browserSuggestTitle {
+  font-size: 11.5px;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.browserSuggestUrl {
+  font-size: 9.5px;
+  color: var(--text-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .browserViewport {
   position: relative;
   width: 100%;
