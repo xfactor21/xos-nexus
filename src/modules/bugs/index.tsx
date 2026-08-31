@@ -54,6 +54,7 @@ export default function Bugs({ active }: { active: boolean }) {
     nodes.forEach((n) => m.set(n.id, n.title));
     return m;
   }, [nodes]);
+  const bugById = useMemo(() => new Map(bugs.map((b) => [b.id, b])), [bugs]);
 
   function bugEdges(bugId: string) {
     return edges.filter((e) => e.from_node === bugId || e.to_node === bugId);
@@ -205,14 +206,22 @@ export default function Bugs({ active }: { active: boolean }) {
                 ))}
               </div>
             )}
-            {b.duplicateOf && b.similarity && (
-              <div className="dup-banner" onClick={() => updateBug(b.id, { duplicateOf: null, similarity: null })}>
-                <span>
-                  <Icon name="xai" size={12} glow="cyan" /> {Math.round(b.similarity * 100)}% SIMILAR TO SOLVED #14 — FIX ATTACHED
-                </span>
-                <span style={{ textDecoration: 'underline' }}>DISMISS</span>
-              </div>
-            )}
+            {b.duplicateOf && b.similarity && (() => {
+              // Real duplicate detection (see lib/similarity.ts +
+              // coreGraph.addBug) — was a hardcoded "SOLVED #14" banner that
+              // never actually pointed at a real bug. Falls back gracefully
+              // if the matched bug was since deleted, rather than lying.
+              const target = bugById.get(b.duplicateOf!);
+              return (
+                <div className="dup-banner" onClick={() => updateBug(b.id, { duplicateOf: null, similarity: null })}>
+                  <span>
+                    <Icon name="xai" size={12} glow="cyan" /> {Math.round(b.similarity! * 100)}% SIMILAR TO "{target?.title ?? 'a bug that no longer exists'}"
+                    {target?.bugStatus === 'fixed' ? ' — ALREADY FIXED' : ''}
+                  </span>
+                  <span style={{ textDecoration: 'underline' }}>DISMISS</span>
+                </div>
+              );
+            })()}
           </div>
           );
         })}

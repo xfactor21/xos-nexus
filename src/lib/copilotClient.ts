@@ -13,6 +13,7 @@
  */
 import { supabase } from './supabase';
 import type { IconName } from '../design-system/icons/registry';
+import { findBestDuplicate } from './similarity';
 
 /**
  * Step 1 ("Auth + Real Ownership") replaces the `owner_id: null` this
@@ -247,17 +248,28 @@ export async function offlineCommit(text: string, ownerIdOverride: string | null
   const c = offlineClassify(text);
   const { data: project } = await supabase.from('projects').select('id').eq('owner_id', ownerId).eq('slug', c.proj).maybeSingle();
   const kind = c.hops.includes('bugs') ? 'bug' : c.hops.includes('studio') ? 'design' : c.hops.includes('roadmaps') ? 'roadmap_item' : 'task';
+  const title = text.length > 80 ? text.slice(0, 77) + '…' : text;
+  // Real duplicate detection (see coreGraph.addBug for the full rationale) —
+  // this offline path skips the classify-capture Edge Function entirely, so
+  // it needs its own lightweight check against the Captain's existing bugs.
+  let metadata: Record<string, unknown> | undefined;
+  if (kind === 'bug') {
+    const { data: existingBugs } = await supabase.from('nodes').select('id, title, body').eq('owner_id', ownerId).eq('kind', 'bug');
+    const dup = existingBugs?.length ? findBestDuplicate({ title, body: text }, existingBugs) : null;
+    if (dup) metadata = { duplicateOf: dup.id, similarity: dup.similarity };
+  }
   const { data, error } = await supabase
     .from('nodes')
     .insert({
       owner_id: ownerId,
       project_id: project?.id ?? null,
       kind,
-      title: text.length > 80 ? text.slice(0, 77) + '…' : text,
+      title,
       body: text,
       source: 'capture_text',
       ai_classified: false,
       status: 'open',
+      ...(metadata ? { metadata } : {}),
     })
     .select('id')
     .single();
