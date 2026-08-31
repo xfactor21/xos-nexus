@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useCoreGraph } from '../../stores/coreGraph';
 import { useCommsStore } from '../../stores/commsStore';
+import { nodeToBug } from '../../core/mappers';
 import Icon from '../../design-system/icons/Icon';
 import AmbientField from '../../design-system/background/AmbientField';
 import ShipAmbience from '../../design-system/background/ShipAmbience';
@@ -24,14 +25,9 @@ interface Thread {
   xaiInitiated: boolean;
 }
 
-const replies: [RegExp, string][] = [
-  [/bug|17/i, 'Bug #17 is a login redirect loop — 92% similar to #14, which you solved in Sprint 001 with token rotation. The fix is attached to the bug card.'],
-  [/website/i, 'Website has been dark for 6 days, Captain. Its constellation is dimming. I suggest a 25-minute revival session — I can bundle bug #15 into it.'],
-  [/studyhive|study/i, "StudyHive is your brightest galaxy — 80% health, 14 tasks, a dark-mode cluster forming from today's captures."],
-  [/roadmap|next|plan/i, 'One Sprint 002 goal remains: the Electron vs Tauri shell decision. After that, Sprint 003 brings live AI routing.'],
-  [/remember|memory|decision/i, 'Most-recalled memory: "Bee mascot = brand anchor" (Sprint 001). It\'s linked to 6 active nodes.'],
-  [/.*/, "Logged, Captain. I've created a node for that and I'm mapping its relationships now."],
-];
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 function newThread(title: string, first: Msg, xaiInitiated = false): Thread {
   return { id: `t-${Math.random().toString(36).slice(2, 9)}`, title, msgs: [first], unread: xaiInitiated, xaiInitiated };
@@ -39,6 +35,11 @@ function newThread(title: string, first: Msg, xaiInitiated = false): Thread {
 
 export default function Comms({ active }: { active: boolean }) {
   const projects = useCoreGraph((s) => s.projects);
+  const nodes = useCoreGraph((s) => s.nodes);
+  const memories = useCoreGraph((s) => s.memories);
+  const milestones = useCoreGraph((s) => s.milestones);
+  const commitCaptureNodes = useCoreGraph((s) => s.commitCaptureNodes);
+  const bugs = useMemo(() => nodes.filter((n) => n.kind === 'bug').map(nodeToBug), [nodes]);
   const [threads, setThreads] = useState<Thread[]>(() => [
     newThread('GENERAL', { who: 'ai', text: "Channel open, Captain. I've been keeping an eye on things — ask me about any project, bug, or memory." }),
   ]);
@@ -50,7 +51,7 @@ export default function Comms({ active }: { active: boolean }) {
   // Shares a real, live "unread threads" count with the rest of the app —
   // Ship Ambience's reactive condition reads this to decide whether the
   // ambient decoration should read calm or "something needs attention",
-  // without importing this whole room or its (simulated) thread content.
+  // without importing this whole room or its thread content.
   useEffect(() => {
     setUnreadCount(threads.filter((t) => t.unread).length);
   }, [threads, setUnreadCount]);
@@ -79,11 +80,66 @@ export default function Comms({ active }: { active: boolean }) {
 
   const activeThread = threads.find((t) => t.id === activeId) ?? threads[0];
 
-  function buildCard(v: string): Card | undefined {
-    if (/bug|17/i.test(v)) return { kind: 'bug', title: 'Bug #17 — Login redirect loop', meta: 'HIGH · 92% MATCH TO #14', glow: 'magenta' };
-    const proj = projects.find((p) => v.toLowerCase().includes(p.name.toLowerCase()));
-    if (proj) return { kind: 'project', title: proj.name, meta: `${proj.health}% HEALTH · ${proj.idleDays}D IDLE`, glow: proj.isStale ? 'amber' : 'cyan' };
-    return undefined;
+  /** Real data-driven reply engine (was: a fixed regex → canned-string table
+   * describing a fictional bug #17/#14, a "website" project, "Bee mascot"
+   * memory etc. that may not exist in this Captain's account at all — plus a
+   * catch-all that flatly lied, claiming "I've created a node for that"
+   * without ever writing one). Every branch below reads the live store; the
+   * catch-all now genuinely files a note via commitCaptureNodes instead of
+   * only pretending to. */
+  async function computeReply(v: string): Promise<{ text: string; card?: Card }> {
+    const l = v.toLowerCase();
+
+    if (/\bbug\b|#\d+/i.test(l)) {
+      const numMatch = l.match(/#?(\d{1,4})\b/);
+      const openBugs = bugs.filter((b) => b.bugStatus !== 'fixed');
+      const byNumber = numMatch ? bugs.find((b) => b.title.includes(numMatch[1])) : undefined;
+      const target = byNumber ?? openBugs[0] ?? bugs[0];
+      if (!target) return { text: 'No bugs logged yet, Captain — clean run.' };
+      const dup = target.duplicateOf ? nodes.find((n) => n.id === target.duplicateOf) : undefined;
+      const similarityNote = target.similarity && dup ? ` — ${Math.round(target.similarity * 100)}% similar to "${dup.title}"` : '';
+      return {
+        text: `"${target.title}"${similarityNote}. Severity ${target.severity.toUpperCase()}, status ${target.bugStatus.toUpperCase()}.`,
+        card: { kind: 'bug', title: target.title, meta: `${target.severity.toUpperCase()} · ${target.bugStatus.toUpperCase()}`, glow: target.bugStatus === 'fixed' ? 'cyan' : 'magenta' },
+      };
+    }
+
+    const proj = projects.find((p) => l.includes(p.name.toLowerCase()) || l.includes(p.slug.toLowerCase()));
+    if (proj) {
+      const taskCount = nodes.filter((n) => n.kind === 'task' && n.project_id === proj.id).length;
+      const status = proj.isStale ? `gone quiet for ${proj.idleDays} days` : `${proj.idleDays}d since last touch`;
+      return {
+        text: `${proj.name} is at ${proj.health}% health with ${taskCount} task${taskCount === 1 ? '' : 's'} — ${status}.`,
+        card: { kind: 'project', title: proj.name, meta: `${proj.health}% HEALTH · ${proj.idleDays}D IDLE`, glow: proj.isStale ? 'amber' : 'cyan' },
+      };
+    }
+
+    if (/roadmap|milestone|next|plan|sprint/i.test(l)) {
+      const current = milestones.find((m) => m.state === 'current') ?? [...milestones].filter((m) => m.state === 'future').sort((a, b) => a.order - b.order)[0];
+      if (!current) return { text: 'No milestones on the roadmap yet, Captain — add one in Roadmaps to track it here.' };
+      const remaining = current.items.filter((it) => !it.done);
+      return {
+        text: remaining.length
+          ? `${current.version} — ${current.title}: ${remaining.length} item${remaining.length === 1 ? '' : 's'} left, next up "${remaining[0].label}".`
+          : `${current.version} — ${current.title} is fully checked off.`,
+      };
+    }
+
+    if (/remember|memory|decision|recall/i.test(l)) {
+      const sorted = [...memories].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+      const target = sorted.find((m) => m.kind === 'decision') ?? sorted[0];
+      if (!target) return { text: 'Nothing in memory yet, Captain — decisions and patterns get logged as they come up.' };
+      return { text: `Most recent ${target.kind}: "${target.content}" (${target.createdLabel}), linked to ${target.linkedNodeCount} node${target.linkedNodeCount === 1 ? '' : 's'}.` };
+    }
+
+    // Catch-all: genuinely file it instead of just claiming to.
+    try {
+      await commitCaptureNodes([{ kind: 'note', title: v.length > 80 ? v.slice(0, 77) + '…' : v, body: v, projectId: null, confidence: 0.6, reasoning: 'Captured via Comms channel' }]);
+      return { text: "Logged, Captain — filed as a note. I'll relate it to other nodes as connections emerge." };
+    } catch (err) {
+      console.error('Comms: catch-all commitCaptureNodes failed', err);
+      return { text: "Couldn't file that just now, Captain — try again in a moment." };
+    }
   }
 
   function send() {
@@ -92,11 +148,9 @@ export default function Comms({ active }: { active: boolean }) {
     const id = activeThread.id;
     setThreads((ts) => ts.map((t) => (t.id === id ? { ...t, msgs: [...t.msgs, { who: 'me', text: v }], unread: false } : t)));
     setVal('');
-    const reply = replies.find(([re]) => re.test(v))?.[1] ?? '';
-    const card = buildCard(v);
-    setTimeout(() => {
-      setThreads((ts) => ts.map((t) => (t.id === id ? { ...t, msgs: [...t.msgs, { who: 'ai', text: reply, card }] } : t)));
-    }, 650);
+    Promise.all([computeReply(v), delay(500)]).then(([{ text, card }]) => {
+      setThreads((ts) => ts.map((t) => (t.id === id ? { ...t, msgs: [...t.msgs, { who: 'ai', text, card }] } : t)));
+    });
   }
 
   function openNewThread() {
