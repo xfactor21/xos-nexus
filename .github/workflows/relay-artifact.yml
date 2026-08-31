@@ -47,7 +47,7 @@ jobs:
           echo "## Relayed files" >> "$GITHUB_STEP_SUMMARY"
           find . -type f | while read -r f; do
             echo "Uploading: $f ($(stat -c%s "$f") bytes)"
-            url=$(curl -sS -F "reqtype=fileupload" -F "fileToUpload=@${f}" https://catbox.moe/user/api.php)
+            url=$(curl -sS -A "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36" -F "reqtype=fileupload" -F "fileToUpload=@${f}" https://catbox.moe/user/api.php)
             echo "RELAY_URL: $f -> $url"
             echo "- \`$f\` -> $url" >> "$GITHUB_STEP_SUMMARY"
           done
