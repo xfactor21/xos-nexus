@@ -30,6 +30,21 @@ const SENTIMENTS: [SentimentValue, IconName, string][] = [
   ['rough', 'frown', 'ROUGH'],
 ];
 
+/** Same relative-time convention as Neural Capture's feed (capture/index.tsx
+ * relTime) — kept as a local copy rather than a shared import since each
+ * room's log has slightly different granularity needs and this one is only
+ * ever fed same-day-to-few-weeks-old rows. */
+function relTime(iso: string): string {
+  const ms = Date.now() - new Date(iso).getTime();
+  const min = Math.floor(ms / 60000);
+  if (min < 1) return 'JUST NOW';
+  if (min < 60) return `${min}M AGO`;
+  const hr = Math.floor(min / 60);
+  if (hr < 24) return `${hr}H AGO`;
+  const days = Math.floor(hr / 24);
+  return days === 1 ? 'YESTERDAY' : `${days}D AGO`;
+}
+
 /** FOCUS TIME — Room Overhaul Batch 3: raised to the "Forest app + an
  * Endel-style ambient soundscape tool + a serious Pomodoro tool" bar.
  * Originally ported 1:1 from xos-prototype.html (setup → live ring timer →
@@ -63,11 +78,21 @@ export default function Focus({ active }: { active: boolean }) {
 
   const projects = useCoreGraph((s) => s.projects);
   const ownerId = useCoreGraph((s) => s.ownerId);
+  const nodes = useCoreGraph((s) => s.nodes);
 
   useEffect(() => {
     if (!projId && projects.length) setProjId(projects[0].id);
   }, [projects, projId]);
   const proj = projects.find((p) => p.id === projId) ?? null;
+
+  /** SESSION LOG — real data instead of the old two hardcoded rows.
+   * submitReflection below writes a `kind: 'task'` node tagged FOCUS SESSION
+   * for every completed session; `nodes` here comes straight from
+   * coreGraph (already owner-scoped + Realtime-synced), so this list
+   * updates live the instant a session is logged, from any device. */
+  const sessionLog = nodes
+    .filter((n) => n.kind === 'task' && (n.metadata?.tags as string[] | undefined)?.includes('FOCUS SESSION'))
+    .slice(0, 5);
 
   // ---- ambient warp starfield: always faintly alive, streams during 'live' ----
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -284,7 +309,10 @@ export default function Focus({ active }: { active: boolean }) {
           source: 'manual',
           ai_classified: false,
           status: 'done',
-          metadata: { tags: ['FOCUS SESSION'] },
+          // durationMin/sentiment ride alongside the FOCUS SESSION tag so
+          // the SESSION LOG below can render real numbers without parsing
+          // them back out of the body string.
+          metadata: { tags: ['FOCUS SESSION'], durationMin: doneMin, sentiment: sentimentLabel },
         });
       }
     } catch (err) {
@@ -338,16 +366,24 @@ export default function Focus({ active }: { active: boolean }) {
           <h2 className="rh" style={{ fontSize: 11, marginTop: 26 }}>
             SESSION LOG
           </h2>
-          <div className="slog">
-            <b>YESTERDAY · 50 MIN · STUDYHIVE</b>
-            <br />
-            "Splash screen v2" — completed. Core logged 3 nodes.
-          </div>
-          <div className="slog">
-            <b>YESTERDAY · 25 MIN · NOVEL</b>
-            <br />
-            "Outline ch.3 from villain POV" — completed.
-          </div>
+          {sessionLog.length === 0 && (
+            <div className="rsub" style={{ fontSize: 9 }}>
+              No sessions logged yet — completed sessions show up here.
+            </div>
+          )}
+          {sessionLog.map((n) => {
+            const sessProj = projects.find((p) => p.id === n.project_id);
+            const dur = (n.metadata?.durationMin as number | undefined) ?? null;
+            return (
+              <div className="slog" key={n.id}>
+                <b>
+                  {relTime(n.created_at)} · {dur !== null ? `${dur} MIN` : '—'} · {sessProj ? sessProj.name.toUpperCase() : 'UNASSIGNED'}
+                </b>
+                <br />
+                "{n.title}" — completed.
+              </div>
+            );
+          })}
         </div>
       )}
       {stage === 'live' && (
