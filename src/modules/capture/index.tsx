@@ -1,9 +1,9 @@
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { DissectedPiece, NodeKind } from '../../core/types';
-import { liveClassify } from '../../lib/copilotClient';
 import { commitOrQueue } from '../../lib/offlineSync';
 import { playSound } from '../../lib/sound';
 import { isTauri } from '../../lib/localDb';
+import { pushToast } from '../../stores/toastStore';
 import Icon from '../../design-system/icons/Icon';
 import type { IconName } from '../../design-system/icons/registry';
 import AmbientField from '../../design-system/background/AmbientField';
@@ -21,6 +21,68 @@ const capDest: Record<CapKind, string> = {
   IDEA: 'DESIGN STUDIO › STUDYHIVE',
   BUG: 'BUG TRACKER › #17',
   WRITING: 'NOVEL › DRAFT NOTES',
+};
+
+/* ---- real Web Speech API dictation ---------------------------------
+ * Minimal structural typings for the SpeechRecognition API — it's not
+ * part of TS's DOM lib, and only Chromium ships it unprefixed (Safari/
+ * Tauri's WebKit shell ship it as `webkitSpeechRecognition`, same prefix
+ * pattern already handled for AudioContext in modules/focus/index.tsx).
+ * No fabricated fallback transcript anymore — unsupported browsers get a
+ * toast, not a fake canned sentence pretending to be a transcription. */
+interface SpeechRecognitionAlternativeLike {
+  transcript: string;
+}
+interface SpeechRecognitionResultLike extends ArrayLike<SpeechRecognitionAlternativeLike> {
+  isFinal: boolean;
+}
+interface SpeechRecognitionEventLike {
+  resultIndex: number;
+  results: ArrayLike<SpeechRecognitionResultLike>;
+}
+interface SpeechRecognitionErrorEventLike {
+  error: string;
+}
+interface SpeechRecognitionLike {
+  continuous: boolean;
+  interimResults: boolean;
+  lang: string;
+  onresult: ((e: SpeechRecognitionEventLike) => void) | null;
+  onerror: ((e: SpeechRecognitionErrorEventLike) => void) | null;
+  onend: (() => void) | null;
+  start: () => void;
+  stop: () => void;
+}
+type SpeechRecognitionCtor = new () => SpeechRecognitionLike;
+
+function getSpeechRecognitionCtor(): SpeechRecognitionCtor | null {
+  const w = window as unknown as { SpeechRecognition?: SpeechRecognitionCtor; webkitSpeechRecognition?: SpeechRecognitionCtor };
+  return w.SpeechRecognition ?? w.webkitSpeechRecognition ?? null;
+}
+
+/** Real destination picker: which section a piece kind files into within
+ * its target project — paired with the project name to build the same
+ * "PROJECT › SECTION" / "BUG TRACKER › PROJECT" strings the room always
+ * rendered, just derived instead of frozen at dissect() time so re-picking
+ * a project actually updates what's shown. */
+function sectionFor(kind: string): string {
+  if (kind === 'TASK') return 'TASKS';
+  if (kind === 'DESIGN') return 'DESIGN';
+  if (kind === 'BUG') return 'BUGS';
+  return 'NOTES';
+}
+function pieceDestination(kind: string, projectName: string | null): string {
+  const proj = projectName ?? 'UNASSIGNED';
+  if (kind === 'BUG') return `BUG TRACKER › ${proj}`;
+  if (kind === 'DESIGN') return `DESIGN STUDIO › ${proj}`;
+  return `${proj} › ${sectionFor(kind)}`;
+}
+const PIECE_KIND_TO_NODE_KIND: Record<string, NodeKind> = {
+  TASK: 'task',
+  DESIGN: 'design',
+  BUG: 'bug',
+  IDEA: 'idea',
+  NOTE: 'note',
 };
 
 interface CapEntry {
@@ -65,7 +127,6 @@ const PIECE_ICON: Record<string, IconName> = {
   BUG: 'bugTracker',
   IDEA: 'idea',
   NOTE: 'note',
-  EDGE: 'link',
 };
 
 export default function Capture({ active }: { active: boolean }) {
@@ -76,8 +137,12 @@ export default function Capture({ active }: { active: boolean }) {
   const [caps, setCaps] = useState<CapEntry[]>([]);
   const wavT = useRef<ReturnType<typeof setInterval> | undefined>(undefined);
   const [changed, setChanged] = useState<Set<number>>(new Set());
+  const [pickerOpen, setPickerOpen] = useState<number | null>(null);
+  const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
 
   const nodes = useCoreGraph((s) => s.nodes);
+  const projects = useCoreGraph((s) => s.projects);
+  const commitCaptureNodes = useCoreGraph((s) => s.commitCaptureNodes);
   const realCaps: CapEntry[] = useMemo(
     () =>
       nodes
@@ -100,74 +165,131 @@ export default function Capture({ active }: { active: boolean }) {
     return [...caps.filter((c) => c.time === 'SENDING…' || !realTexts.has(c.text)), ...realCaps];
   }, [caps, realCaps]);
 
+  // Real dictation cleanup — stop any live recognition + waveform interval
+  // if the room unmounts (or goes inactive) mid-recording, matching the
+  // audio-context cleanup convention in modules/focus/index.tsx.
+  useEffect(() => {
+    return () => {
+      recognitionRef.current?.stop();
+      clearInterval(wavT.current);
+    };
+  }, []);
+
+  function stopWaveform() {
+    clearInterval(wavT.current);
+    setBars(Array(26).fill(20));
+  }
+
+  /** Real Web Speech API dictation — no more fake 2.6s timeout + a hardcoded
+   * canned sentence. Click mic: starts continuous, interim-results speech
+   * recognition and live-appends real transcribed text into `raw` as the
+   * Captain talks. Click again (or a recognition-ending event) stops it.
+   * The animated bar waveform stays a decorative "recording…" cue (same
+   * ambient-flourish precedent as Focus's warp starfield) — it was never
+   * claiming to be a literal audio-level meter, so it's left as-is; what's
+   * fixed is that the actual dictated text is now real. */
   function toggleVoice() {
-    setRec((r) => {
-      const next = !r;
-      if (next) {
-        wavT.current = setInterval(() => setBars(Array.from({ length: 26 }, () => 10 + Math.random() * 85)), 110);
-        setTimeout(() => {
-          setRec((cur) => {
-            if (cur) {
-              clearInterval(wavT.current);
-              setBars(Array(26).fill(20));
-              setRaw("I want a dark mode for StudyHive — toggle in settings, remember the choice, and the logo should glow when it's on");
-              return false;
-            }
-            return cur;
-          });
-        }, 2600);
-      } else {
-        clearInterval(wavT.current);
-        setBars(Array(26).fill(20));
+    if (rec) {
+      recognitionRef.current?.stop();
+      return; // onend below flips `rec` false and stops the waveform
+    }
+    const Ctor = getSpeechRecognitionCtor();
+    if (!Ctor) {
+      pushToast('Voice dictation is not supported in this browser', 'warn');
+      return;
+    }
+    const recognition = new Ctor();
+    recognition.continuous = true;
+    recognition.interimResults = true;
+    recognition.lang = 'en-US';
+    const base = raw.trim() ? raw.trim() + ' ' : '';
+    let finalText = base;
+    recognition.onresult = (e) => {
+      let interim = '';
+      for (let i = e.resultIndex; i < e.results.length; i++) {
+        const result = e.results[i];
+        const transcript = result[0]?.transcript ?? '';
+        if (result.isFinal) finalText += transcript + ' ';
+        else interim += transcript;
       }
-      return next;
-    });
+      setRaw((finalText + interim).trim());
+    };
+    recognition.onerror = (e) => {
+      console.error('SpeechRecognition error', e.error);
+      if (e.error !== 'no-speech') pushToast(`Voice dictation stopped — ${e.error}`, 'warn');
+    };
+    recognition.onend = () => {
+      recognitionRef.current = null;
+      setRec(false);
+      stopWaveform();
+    };
+    recognitionRef.current = recognition;
+    recognition.start();
+    setRec(true);
+    wavT.current = setInterval(() => setBars(Array.from({ length: 26 }, () => 10 + Math.random() * 85)), 110);
+  }
+
+  /** Real destination picker: guesses one of the Captain's actual projects
+   * by matching its name/slug against the thought's text (was: 4 hardcoded
+   * project names — "STUDYHIVE"/"NOVEL"/"MUSIC"/"WEBSITE" — that may not
+   * even exist in this Captain's account), falling back to their first
+   * project, or unassigned if they have none yet. */
+  function guessProject(l: string): { id: string; name: string } | null {
+    for (const p of projects) {
+      if (l.includes(p.name.toLowerCase()) || l.includes(p.slug.toLowerCase())) return { id: p.id, name: p.name };
+    }
+    return projects[0] ? { id: projects[0].id, name: projects[0].name } : null;
   }
 
   function dissect() {
     const v = raw.trim();
     if (!v) return;
     const l = v.toLowerCase();
-    const proj = /studyhive/.test(l) ? 'STUDYHIVE' : /novel|chapter/.test(l) ? 'NOVEL' : /music|song/.test(l) ? 'MUSIC' : /website/.test(l) ? 'WEBSITE' : 'STUDYHIVE';
+    const guess = guessProject(l);
+    const projectId = guess?.id ?? null;
+    const projectName = guess?.name ?? null;
     const out: DissectedPiece[] = [];
-    if (/toggle|add|build|implement|want|feature|mode/.test(l)) out.push({ kind: 'TASK', body: 'Implement: core feature from thought', destination: proj + ' › TASKS › SPRINT 002', reasoning: 'Action verb + scope detected', confidence: 96 });
-    if (/remember|persist|save|choice/.test(l)) out.push({ kind: 'TASK', body: 'Persist preference across sessions', destination: proj + ' › TASKS', reasoning: 'Dependent step extracted', confidence: 91 });
-    if (/logo|glow|design|color|screen|animate/.test(l)) out.push({ kind: 'DESIGN', body: 'Visual concept -> Studio canvas', destination: 'DESIGN STUDIO › ' + proj, reasoning: 'Visual language detected', confidence: 88 });
-    if (/bug|fix|broken|crash/.test(l)) out.push({ kind: 'BUG', body: v, destination: 'BUG TRACKER › ' + proj, reasoning: 'Defect language detected', confidence: 95 });
-    if (/what if|idea|maybe/.test(l)) out.push({ kind: 'IDEA', body: v, destination: proj + ' › NOTES', reasoning: 'Speculative phrasing preserved', confidence: 84 });
-    if (!out.length) out.push({ kind: 'NOTE', body: v, destination: proj + ' › NOTES', reasoning: 'Stored — Core will relate it later', confidence: 78 });
-    out.push({ kind: 'EDGE', body: 'Relates to: "Cyberpunk theme" (Sprint 001)', destination: 'NEURAL CORE › RELATIONSHIPS', reasoning: 'Memory Vault recall', confidence: 90 });
+    const push = (kind: string, body: string, reasoning: string, confidence: number) =>
+      out.push({ kind, body, destination: pieceDestination(kind, projectName), reasoning, confidence, projectId });
+    if (/toggle|add|build|implement|want|feature|mode/.test(l)) push('TASK', 'Implement: core feature from thought', 'Action verb + scope detected', 96);
+    if (/remember|persist|save|choice/.test(l)) push('TASK', 'Persist preference across sessions', 'Dependent step extracted', 91);
+    if (/logo|glow|design|color|screen|animate/.test(l)) push('DESIGN', 'Visual concept -> Studio canvas', 'Visual language detected', 88);
+    if (/bug|fix|broken|crash/.test(l)) push('BUG', v, 'Defect language detected', 95);
+    if (/what if|idea|maybe/.test(l)) push('IDEA', v, 'Speculative phrasing preserved', 84);
+    if (!out.length) push('NOTE', v, 'Stored — Core will relate it later', 78);
     setPieces(out);
     setChanged(new Set());
+    setPickerOpen(null);
   }
 
+  /** Commits exactly what the Captain reviewed — including any destination
+   * they re-picked below — as real nodes. Deliberately does NOT re-run the
+   * raw text through liveClassify() here: that would silently re-derive its
+   * own breakdown from scratch and throw away every edit just made in the
+   * review step, which was the actual bug behind "the destination picker
+   * doesn't do anything." (liveClassify's real Claude-backed classification
+   * is still very much live — Neural Core's capture flow still uses it —
+   * this room's flow is just "review a proposal, then commit it as-is.") */
   async function commitCap() {
+    if (!pieces || !pieces.length) return;
     const v = raw.trim();
-    if (!pieces) return;
+    const items = pieces.map((p) => ({
+      kind: PIECE_KIND_TO_NODE_KIND[p.kind] ?? 'note',
+      title: p.body.length > 80 ? p.body.slice(0, 77) + '…' : p.body,
+      body: p.body,
+      projectId: p.projectId ?? null,
+      confidence: p.confidence / 100,
+      reasoning: p.reasoning,
+    }));
     setCaps((c) => [{ text: v, kind: null, icon: 'xai', meta: 'DISSECTED', metaCount: pieces.length, time: 'SENDING…' }, ...c]);
     setPieces(null);
     setRaw('');
     try {
-      const result = await liveClassify(v);
+      await commitCaptureNodes(items);
       playSound('capture');
-      const first = result.nodes?.[0];
-      setCaps((c) =>
-        c.map((entry, i) =>
-          i === 0 && entry.time === 'SENDING…'
-            ? first
-              ? {
-                  ...entry,
-                  meta: first.kind.toUpperCase().replace('_', ' '),
-                  time: 'JUST NOW',
-                  timeIcon: 'check' as IconName,
-                  linked: first.relationships?.length ? `LINKED TO ${first.relationships.length} NODE${first.relationships.length > 1 ? 'S' : ''}` : undefined,
-                }
-              : { ...entry, time: 'JUST NOW', timeIcon: 'check' as IconName }
-            : entry,
-        ),
-      );
+      setCaps((c) => c.map((entry, i) => (i === 0 && entry.time === 'SENDING…' ? { ...entry, time: 'JUST NOW', timeIcon: 'check' as IconName } : entry)));
     } catch (err) {
-      console.error('commitCap: liveClassify failed, writing via offline fallback', err);
+      console.error('commitCap: direct node write failed, falling back to offline queue', err);
       try {
         const { queued } = await commitOrQueue(v);
         playSound(queued ? 'notice' : 'capture');
@@ -239,19 +361,39 @@ export default function Capture({ active }: { active: boolean }) {
                   <Icon name="arrowRight" size={11} /> {p.destination}
                 </span>
                 <span className="why">{p.reasoning}</span>
-                <span
-                  className="fix"
-                  style={changed.has(i) ? { color: 'var(--amber)' } : undefined}
-                  onClick={() => setChanged((s) => new Set(s).add(i))}
-                >
-                  {changed.has(i) ? (
-                    <>
-                      <Icon name="check" size={11} /> RETRAINED
-                    </>
-                  ) : (
-                    'CHANGE'
-                  )}
-                </span>
+                {pickerOpen === i ? (
+                  <select
+                    autoFocus
+                    value={p.projectId ?? ''}
+                    onChange={(e) => {
+                      const val = e.target.value || null;
+                      const projName = val ? (projects.find((pr) => pr.id === val)?.name ?? null) : null;
+                      setPieces((cur) =>
+                        cur ? cur.map((pc, idx) => (idx === i ? { ...pc, projectId: val, destination: pieceDestination(pc.kind, projName) } : pc)) : cur,
+                      );
+                      setChanged((s) => new Set(s).add(i));
+                      setPickerOpen(null);
+                    }}
+                    onBlur={() => setPickerOpen(null)}
+                  >
+                    <option value="">UNASSIGNED</option>
+                    {projects.map((pr) => (
+                      <option key={pr.id} value={pr.id}>
+                        {pr.name.toUpperCase()}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <span className="fix" style={changed.has(i) ? { color: 'var(--amber)' } : undefined} onClick={() => setPickerOpen(i)}>
+                    {changed.has(i) ? (
+                      <>
+                        <Icon name="check" size={11} /> RE-ROUTED
+                      </>
+                    ) : (
+                      'CHANGE'
+                    )}
+                  </span>
+                )}
               </div>
             </div>
           ))}
