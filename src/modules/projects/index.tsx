@@ -17,21 +17,28 @@ import {
   type ProjectClassId,
   type WidgetId,
 } from './local';
-import type { EdgeRecord, NodeRecord, ProjectRecord } from '../../core/types';
+import type { EdgeRecord, NodeRecord, ProjectRecord, SprintRecord } from '../../core/types';
 import Icon from '../../design-system/icons/Icon';
 import DataIcon from '../../design-system/icons/DataIcon';
 import type { IconName } from '../../design-system/icons/registry';
 import AmbientField from '../../design-system/background/AmbientField';
 import ShipAmbience from '../../design-system/background/ShipAmbience';
 
-type Zone = 'zoverview' | 'zboard' | 'zdocs' | 'zbugs' | 'zfeed';
+type Zone = 'zoverview' | 'zboard' | 'zdocs' | 'zbugs' | 'zsprints' | 'zfeed';
 
 const ZONE_LABEL: Record<Zone, { icon: IconName; label: string }> = {
   zoverview: { icon: 'xai', label: 'OVERVIEW' },
   zboard: { icon: 'gridDense', label: 'BOARD' },
   zdocs: { icon: 'rows', label: 'DOCS' },
   zbugs: { icon: 'bugTracker', label: 'BUGS' },
+  zsprints: { icon: 'gantt', label: 'SPRINTS' },
   zfeed: { icon: 'bolt', label: 'ACTIVITY' },
+};
+
+const SPRINT_STATUS_CYCLE: Record<SprintRecord['status'], SprintRecord['status']> = {
+  planned: 'active',
+  active: 'complete',
+  complete: 'planned',
 };
 
 function relTime(iso: string) {
@@ -245,6 +252,114 @@ function ActivityFeed({ openId, projectNodes, edges, nodes, projects }: { openId
   );
 }
 
+/** Real Sprint tracker (was: a fully-provisioned, RLS-protected
+ * `public.sprints` table that no UI ever wrote to or read from). Scoped to
+ * the open project; nodes (tasks/bugs) are assigned via the real
+ * `nodes.sprint_id` FK, not a metadata hack. */
+function SprintZone({
+  projectId,
+  sprints,
+  nodes,
+  addSprint,
+  updateSprint,
+  deleteSprint,
+}: {
+  projectId: string;
+  sprints: SprintRecord[];
+  nodes: NodeRecord[];
+  addSprint: (s: { name: string; project_id: string | null; release_tag?: string | null; starts_on?: string | null; ends_on?: string | null }) => void;
+  updateSprint: (id: string, patch: Partial<Pick<SprintRecord, 'name' | 'release_tag' | 'status' | 'starts_on' | 'ends_on' | 'retro'>>) => void;
+  deleteSprint: (id: string) => void;
+}) {
+  const [showNew, setShowNew] = useState(false);
+  const [name, setName] = useState('');
+  const [tag, setTag] = useState('');
+  const [startsOn, setStartsOn] = useState('');
+  const [endsOn, setEndsOn] = useState('');
+  const [retroDrafts, setRetroDrafts] = useState<Record<string, string>>({});
+
+  const projectSprints = useMemo(
+    () => sprints.filter((s) => s.project_id === projectId).sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()),
+    [sprints, projectId],
+  );
+
+  function submitNew() {
+    const n = name.trim();
+    if (!n) return;
+    addSprint({ name: n, project_id: projectId, release_tag: tag.trim() || null, starts_on: startsOn || null, ends_on: endsOn || null });
+    setName('');
+    setTag('');
+    setStartsOn('');
+    setEndsOn('');
+    setShowNew(false);
+  }
+
+  return (
+    <>
+      <div className="rsub" style={{ marginBottom: 8 }}>TAP A SPRINT'S STATUS TO ADVANCE IT — PLANNED → ACTIVE → COMPLETE</div>
+      <button className="chip" onClick={() => setShowNew((v) => !v)}>
+        <Icon name="plus" size={13} /> NEW SPRINT
+      </button>
+      {showNew && (
+        <div className="cap" style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <input placeholder="Sprint name…" value={name} onChange={(e) => setName(e.target.value)} autoFocus />
+          <input placeholder="Release tag (optional, e.g. v0.7.0)…" value={tag} onChange={(e) => setTag(e.target.value)} />
+          <div style={{ display: 'flex', gap: 6 }}>
+            <input type="date" value={startsOn} onChange={(e) => setStartsOn(e.target.value)} />
+            <input type="date" value={endsOn} onChange={(e) => setEndsOn(e.target.value)} />
+          </div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button className="chip" onClick={() => setShowNew(false)}>CANCEL</button>
+            <button className="chip on" onClick={submitNew} disabled={!name.trim()}>CREATE</button>
+          </div>
+        </div>
+      )}
+      {!projectSprints.length && !showNew && <div className="rsub" style={{ fontSize: 9, marginTop: 8 }}>No sprints yet — plan one above.</div>}
+      {projectSprints.map((sp) => {
+        const spNodes = nodes.filter((n) => n.sprint_id === sp.id);
+        const spDone = spNodes.filter((n) => n.status === 'done' || n.status === 'archived').length;
+        return (
+          <div className="bug" key={sp.id} style={{ marginTop: 10 }}>
+            {sp.name}
+            {sp.release_tag && <span className="t" style={{ marginLeft: 6 }}>{sp.release_tag}</span>}
+            <span className="st" onClick={() => updateSprint(sp.id, { status: SPRINT_STATUS_CYCLE[sp.status] })}>
+              {sp.status.toUpperCase()}
+            </span>
+            <button
+              className="pcardDel"
+              style={{ position: 'static', marginLeft: 6 }}
+              onClick={() => deleteSprint(sp.id)}
+              title="delete sprint"
+            >
+              <Icon name="trash" size={12} />
+            </button>
+            <div className="mt">
+              <span>
+                {sp.starts_on ?? '—'} → {sp.ends_on ?? '—'}
+              </span>
+              <span style={{ marginLeft: 8 }}>
+                {spNodes.length ? `${spDone}/${spNodes.length} NODES DONE` : 'NO NODES ASSIGNED YET'}
+              </span>
+            </div>
+            {sp.status === 'complete' && (
+              <textarea
+                placeholder="Retro notes…"
+                value={retroDrafts[sp.id] ?? sp.retro ?? ''}
+                onChange={(e) => setRetroDrafts((d) => ({ ...d, [sp.id]: e.target.value }))}
+                onBlur={() => {
+                  const draft = retroDrafts[sp.id];
+                  if (draft !== undefined && draft !== (sp.retro ?? '')) updateSprint(sp.id, { retro: draft });
+                }}
+                style={{ width: '100%', marginTop: 6, minHeight: 50, resize: 'vertical' }}
+              />
+            )}
+          </div>
+        );
+      })}
+    </>
+  );
+}
+
 export default function Projects({ active }: { active: boolean }) {
   const [openId, setOpenId] = useState<string | null>(null);
   const [zone, setZone] = useState<Zone>('zoverview');
@@ -291,6 +406,10 @@ export default function Projects({ active }: { active: boolean }) {
   const cycleBug = useCoreGraph((s) => s.cycleBug);
   const assignNodeToProject = useCoreGraph((s) => s.assignNodeToProject);
   const deleteProject = useCoreGraph((s) => s.deleteProject);
+  const sprints = useCoreGraph((s) => s.sprints);
+  const addSprint = useCoreGraph((s) => s.addSprint);
+  const updateSprint = useCoreGraph((s) => s.updateSprint);
+  const deleteSprint = useCoreGraph((s) => s.deleteSprint);
 
   async function handleDeleteProject(id: string, name: string, e: RMouseEvent) {
     e.stopPropagation();
@@ -588,6 +707,12 @@ export default function Projects({ active }: { active: boolean }) {
                 <div className="l">DOCS</div>
               </div>
             )}
+            {cls.zones.includes('zsprints') && (
+              <div className="vital">
+                <div className="n">{sprints.filter((s) => s.project_id === openId && s.status === 'active').length}</div>
+                <div className="l">SPRINTS</div>
+              </div>
+            )}
             <div className="vital m">
               <div className="n">{open.health}%</div>
               <div className="l">HEALTH</div>
@@ -616,7 +741,7 @@ export default function Projects({ active }: { active: boolean }) {
                     onDragStart={() => setDragId(wid)}
                     onDragEnd={() => setDragId(null)}
                   >
-                    <span className="dragHandle">⁠⠠⠷⁠</span> <Icon name={WIDGETS[wid].icon} size={13} glow="cyan" /> {WIDGETS[wid].title}
+                    <span className="dragHandle">⁠⁠⁠⁠⁠⁠⁠⁠⁠⁠</span> <Icon name={WIDGETS[wid].icon} size={13} glow="cyan" /> {WIDGETS[wid].title}
                   </div>
                   <div className="widgetBody">{WIDGETS[wid].render()}</div>
                 </div>
@@ -688,6 +813,11 @@ export default function Projects({ active }: { active: boolean }) {
                   </div>
                 ))}
               {!projectBugs.filter((b) => b.bugStatus !== 'fixed').length && <div className="rsub">No open bugs — clean run.</div>}
+            </div>
+          )}
+          {cls.zones.includes('zsprints') && (
+            <div className={`subpanel ${zone === 'zsprints' ? 'on' : ''}`} id="zsprints">
+              <SprintZone projectId={openId!} sprints={sprints} nodes={nodes} addSprint={addSprint} updateSprint={updateSprint} deleteSprint={deleteSprint} />
             </div>
           )}
           <div className={`subpanel ${zone === 'zfeed' ? 'on' : ''}`} id="zfeed">
