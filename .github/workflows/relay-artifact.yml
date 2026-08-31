@@ -1,0 +1,52 @@
+name: Relay Artifact
+
+# One-off utility: pulls a previously-built workflow artifact (from a run in
+# THIS repo) out of GitHub's authenticated artifact store and re-uploads it
+# to an anonymous, unauthenticated file host (0x0.st) so it can be fetched
+# with a plain HTTPS GET — no GitHub token required on the receiving end.
+#
+# This is deliberately separate from tauri-build.yml, which intentionally
+# does NOT publish a public GitHub Release. This workflow doesn't change
+# that policy: it relays one already-built artifact, once, to a temporary
+# unauthenticated URL, rather than making installers permanently/publicly
+# discoverable via the repo's Releases page.
+#
+# Usage: trigger manually (workflow_dispatch) with the source run id and
+# artifact name. The resulting URL is printed in the job log and summary.
+
+on:
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: 'Workflow run id that produced the artifact'
+        required: true
+        type: string
+      artifact_name:
+        description: 'Artifact name to relay'
+        required: true
+        default: 'xos-nexus-windows'
+        type: string
+
+jobs:
+  relay:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download artifact from source run
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ inputs.artifact_name }}
+          run-id: ${{ inputs.run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: ./downloaded
+
+      - name: Upload each file to an anonymous host and print the URL
+        run: |
+          set -euo pipefail
+          cd ./downloaded
+          echo "## Relayed files" >> "$GITHUB_STEP_SUMMARY"
+          find . -type f | while read -r f; do
+            echo "Uploading: $f ($(stat -c%s "$f") bytes)"
+            url=$(curl -sS -F "file=@${f}" https://0x0.st)
+            echo "RELAY_URL: $f -> $url"
+            echo "- \`$f\` -> $url" >> "$GITHUB_STEP_SUMMARY"
+          done
