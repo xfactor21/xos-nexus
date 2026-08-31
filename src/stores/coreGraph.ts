@@ -10,7 +10,7 @@ import type {
   NodeRecord,
   ProjectRecord,
 } from '../core/types';
-import { bugStatusToDbStatus, nodeToBug, nodeToTask, rowToMemory, rowToProject, taskStatusToDbStatus } from '../core/mappers';
+import { bugStatusToDbStatus, nodeToBug, nodeToTask, rowToMemory, rowToMilestone, rowToProject, taskStatusToDbStatus } from '../core/mappers';
 import { pushToast } from './toastStore';
 
 /**
@@ -23,10 +23,14 @@ import { pushToast } from './toastStore';
  * derived from this store reflects writes from anywhere (Neural Core,
  * Neural Capture, another device) without a refresh.
  *
- * Milestones/Roadmaps are the one deliberate exception: there's no real
- * table for them in the deployed schema, and adding one wasn't authorized
- * by this step (no migration called for in the handoff for Step 3) — they
- * stay on local seed state, same as before. Flagged in the session log.
+ * Milestones/Roadmaps: previously the one deliberate exception (no real
+ * table, local seed state only). That's now closed — see the
+ * `create_milestones_table` migration (public.milestones, owner-scoped RLS,
+ * added to the supabase_realtime publication same as nodes/edges/memories/
+ * projects). `seedMilestones` below is kept only as the one-time bootstrap
+ * content a brand-new Captain's roadmap starts with — hydrate() inserts it
+ * for an owner with zero milestone rows, then everything after that is a
+ * real persisted row like every other table in this store.
  */
 
 const seedMilestones: MilestoneRecord[] = [
@@ -102,14 +106,18 @@ interface CoreGraphState {
   addRelease: (r: { title: string; notes: string; status: 'in_progress' | 'done' }) => Promise<void>;
   updateRelease: (id: string, patch: Partial<{ title: string; notes: string; status: 'in_progress' | 'done' }>) => Promise<void>;
 
-  reorderMilestones: (orderedIds: string[]) => void;
-  updateMilestoneDate: (id: string, date: string) => void;
-  deleteMilestone: (id: string) => void;
-  promoteMemoryToMilestone: (memoryId: string, milestoneId: string) => void;
+  /** Roadmaps create-milestone UI: real insert, appended after the current
+   * max order_index so it lands at the end of the track (drag-to-reorder
+   * handles the rest). */
+  addMilestone: (m: { version: string; title: string; statusLabel: string; state: MilestoneRecord['state']; releaseDate: string | null; items?: MilestoneRecord['items'] }) => Promise<void>;
+  reorderMilestones: (orderedIds: string[]) => Promise<void>;
+  updateMilestoneDate: (id: string, date: string) => Promise<void>;
+  deleteMilestone: (id: string) => Promise<void>;
+  promoteMemoryToMilestone: (memoryId: string, milestoneId: string) => Promise<void>;
   /** Cross-room drag-and-drop (OS-grade directive): dragging a bug row onto
-   * a Roadmaps milestone promotes it — mirrors promoteMemoryToMilestone's
-   * local-only milestones model. */
-  promoteBugToMilestone: (bugId: string, milestoneId: string) => void;
+   * a Roadmaps milestone promotes it — same real-persist pattern as
+   * promoteMemoryToMilestone now that milestones has a backing table. */
+  promoteBugToMilestone: (bugId: string, milestoneId: string) => Promise<void>;
   /** Cross-room drag-and-drop: dragging an unassigned capture node onto a
    * project card assigns it — a real write, not local-only, since
    * project_id lives on the `nodes` table itself. */
@@ -191,13 +199,14 @@ export const useCoreGraph = create<CoreGraphState>((set, get) => ({
   hydrate: async (ownerId) => {
     set({ loading: true, error: null, ownerId });
     try {
-      const [projectsRes, nodesRes, edgesRes, memoriesRes] = await Promise.all([
+      const [projectsRes, nodesRes, edgesRes, memoriesRes, milestonesRes] = await Promise.all([
         supabase.from('projects').select('*').eq('owner_id', ownerId).order('created_at'),
         supabase.from('nodes').select('*').eq('owner_id', ownerId).order('created_at', { ascending: false }),
         supabase.from('edges').select('*').eq('owner_id', ownerId),
         supabase.from('memories').select('*').eq('owner_id', ownerId).order('created_at', { ascending: false }),
+        supabase.from('milestones').select('*').eq('owner_id', ownerId).order('order_index'),
       ]);
-      const firstError = projectsRes.error || nodesRes.error || edgesRes.error || memoriesRes.error;
+      const firstError = projectsRes.error || nodesRes.error || edgesRes.error || memoriesRes.error || milestonesRes.error;
       if (firstError) throw firstError;
 
       const nodes = (nodesRes.data ?? []) as NodeRecord[];
@@ -205,7 +214,36 @@ export const useCoreGraph = create<CoreGraphState>((set, get) => ({
       const projects = (projectsRes.data ?? []).map((p) => rowToProject(p, nodes.filter((n) => n.project_id === p.id)));
       const memories = (memoriesRes.data ?? []).map((m) => rowToMemory(m, edges));
 
-      set({ projects, nodes, edges, memories, loading: false, loaded: true });
+      // Milestones: a brand-new Captain has zero rows here (the table is
+      // owner-scoped, so no seed data was ever inserted for them) — bootstrap
+      // their roadmap with the same default milestones this app has always
+      // shipped with, as real persisted rows this time instead of shared
+      // local state. Every hydrate after that first one just reads what's
+      // actually in the table.
+      let milestones: MilestoneRecord[];
+      if ((milestonesRes.data ?? []).length === 0) {
+        const seedRows = seedMilestones.map((m) => ({
+          owner_id: ownerId,
+          version: m.version,
+          title: m.title,
+          status_label: m.statusLabel,
+          state: m.state,
+          release_date: m.releaseDate,
+          order_index: m.order,
+          items: m.items,
+        }));
+        const { data: inserted, error: seedError } = await supabase.from('milestones').insert(seedRows).select();
+        if (seedError) {
+          console.error('coreGraph.hydrate: failed to seed default milestones', seedError);
+          milestones = seedMilestones;
+        } else {
+          milestones = (inserted ?? []).map(rowToMilestone).sort((a, b) => a.order - b.order);
+        }
+      } else {
+        milestones = (milestonesRes.data ?? []).map(rowToMilestone).sort((a, b) => a.order - b.order);
+      }
+
+      set({ projects, nodes, edges, memories, milestones, loading: false, loaded: true });
     } catch (err) {
       console.error('coreGraph.hydrate failed', err);
       set({ loading: false, error: err instanceof Error ? err.message : 'Failed to load your data.' });
@@ -259,6 +297,14 @@ export const useCoreGraph = create<CoreGraphState>((set, get) => ({
             if (data) set((s) => ({ projects: data.map((p) => rowToProject(p, s.nodes.filter((n) => n.project_id === p.id))) }));
           });
       })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'milestones', filter: `owner_id=eq.${ownerId}` }, (payload) => {
+        set((s) => ({
+          milestones:
+            payload.eventType === 'DELETE'
+              ? remove(s.milestones, (payload.old as { id: string }).id)
+              : upsert(s.milestones, rowToMilestone(payload.new as Parameters<typeof rowToMilestone>[0])),
+        }));
+      })
       .subscribe();
 
     return () => {
@@ -269,7 +315,7 @@ export const useCoreGraph = create<CoreGraphState>((set, get) => ({
     };
   },
 
-  reset: () => set({ ownerId: null, projects: [], nodes: [], edges: [], memories: [], loaded: false, loading: false, error: null }),
+  reset: () => set({ ownerId: null, projects: [], nodes: [], edges: [], memories: [], milestones: [], loaded: false, loading: false, error: null }),
 
   advanceTask: async (id) => {
     const n = get().nodes.find((x) => x.id === id);
@@ -362,50 +408,106 @@ export const useCoreGraph = create<CoreGraphState>((set, get) => ({
     }
   },
 
-  // Roadmaps/milestones: local-only, unchanged from the Step 5 pass — see
-  // the module doc comment above for why.
-  reorderMilestones: (orderedIds) =>
-    set((s) => ({
-      milestones: orderedIds
-        .map((id, i) => {
-          const m = s.milestones.find((x) => x.id === id)!;
-          return { ...m, order: i };
-        })
-        .sort((a, b) => a.order - b.order),
-    })),
+  // Roadmaps/milestones: real CRUD against public.milestones (see the
+  // `create_milestones_table` migration) — same optimistic-update-then-
+  // persist-then-rollback-on-error shape as everything else in this store.
+  addMilestone: async (m) => {
+    const ownerId = get().ownerId;
+    if (!ownerId) return;
+    const maxOrder = get().milestones.reduce((max, x) => Math.max(max, x.order), -1);
+    const { error } = await supabase.from('milestones').insert({
+      owner_id: ownerId,
+      version: m.version,
+      title: m.title,
+      status_label: m.statusLabel,
+      state: m.state,
+      release_date: m.releaseDate,
+      order_index: maxOrder + 1,
+      items: m.items ?? [],
+    });
+    if (error) {
+      console.error('addMilestone failed', error);
+      pushToast('Could not create milestone — try again', 'warn');
+    }
+    // realtime subscription picks up the INSERT — no local mutation needed
+  },
 
-  updateMilestoneDate: (id, date) =>
-    set((s) => ({ milestones: s.milestones.map((m) => (m.id === id ? { ...m, releaseDate: date } : m)) })),
+  reorderMilestones: async (orderedIds) => {
+    const prev = get().milestones;
+    const next = orderedIds
+      .map((id, i) => {
+        const m = prev.find((x) => x.id === id)!;
+        return { ...m, order: i };
+      })
+      .sort((a, b) => a.order - b.order);
+    set({ milestones: next }); // optimistic
+    const results = await Promise.all(next.map((m) => supabase.from('milestones').update({ order_index: m.order }).eq('id', m.id)));
+    const failed = results.find((r) => r.error);
+    if (failed) {
+      console.error('reorderMilestones failed', failed.error);
+      set({ milestones: prev }); // rollback
+      pushToast('Could not reorder — try again', 'warn');
+    }
+  },
 
-  // Milestones have no backing table (see the module doc comment) — delete
-  // is a plain local `set()`, same shape as reorderMilestones/updateMilestoneDate.
-  deleteMilestone: (id) => set((s) => ({ milestones: remove(s.milestones, id) })),
+  updateMilestoneDate: async (id, date) => {
+    const m = get().milestones.find((x) => x.id === id);
+    if (!m) return;
+    set((s) => ({ milestones: s.milestones.map((x) => (x.id === id ? { ...x, releaseDate: date || null } : x)) })); // optimistic
+    const { error } = await supabase.from('milestones').update({ release_date: date || null }).eq('id', id);
+    if (error) {
+      console.error('updateMilestoneDate failed', error);
+      set((s) => ({ milestones: s.milestones.map((x) => (x.id === id ? m : x)) })); // rollback
+      pushToast('Could not update release date — try again', 'warn');
+    }
+  },
 
-  promoteMemoryToMilestone: (memoryId, milestoneId) =>
-    set((s) => {
-      const mem = s.memories.find((m) => m.id === memoryId);
-      if (!mem) return s;
-      return {
-        milestones: s.milestones.map((m) =>
-          // Amendment v0.6 step 1: `fromMemory` flag replaces the embedded ◈
-          // text marker — the render site (Roadmaps) renders the xAI icon
-          // itself instead of matching on string content.
-          m.id === milestoneId ? { ...m, items: [...m.items, { label: mem.content, done: false, fromMemory: true }] } : m,
-        ),
-      };
-    }),
+  deleteMilestone: async (id) => {
+    const m = get().milestones.find((x) => x.id === id);
+    if (!m) return;
+    set((s) => ({ milestones: remove(s.milestones, id) })); // optimistic
+    const { error } = await supabase.from('milestones').delete().eq('id', id);
+    if (error) {
+      console.error('deleteMilestone failed', error);
+      set((s) => ({ milestones: upsert(s.milestones, m) })); // rollback
+      pushToast('Could not delete milestone — try again', 'warn');
+      return;
+    }
+    pushToast(`Deleted milestone "${m.version} — ${m.title}"`, 'success');
+  },
 
-  promoteBugToMilestone: (bugId, milestoneId) =>
-    set((s) => {
-      const bug = s.nodes.find((n) => n.id === bugId);
-      if (!bug) return s;
-      pushToast(`Promoted "${bug.title}" to a milestone`, 'success');
-      return {
-        milestones: s.milestones.map((m) =>
-          m.id === milestoneId ? { ...m, items: [...m.items, { label: bug.title, done: false, fromBug: true }] } : m,
-        ),
-      };
-    }),
+  promoteMemoryToMilestone: async (memoryId, milestoneId) => {
+    const mem = get().memories.find((x) => x.id === memoryId);
+    const target = get().milestones.find((x) => x.id === milestoneId);
+    if (!mem || !target) return;
+    // Amendment v0.6 step 1: `fromMemory` flag replaces the embedded ◈
+    // text marker — the render site (Roadmaps) renders the xAI icon
+    // itself instead of matching on string content.
+    const items = [...target.items, { label: mem.content, done: false, fromMemory: true }];
+    set((s) => ({ milestones: s.milestones.map((x) => (x.id === milestoneId ? { ...x, items } : x)) })); // optimistic
+    const { error } = await supabase.from('milestones').update({ items }).eq('id', milestoneId);
+    if (error) {
+      console.error('promoteMemoryToMilestone failed', error);
+      set((s) => ({ milestones: s.milestones.map((x) => (x.id === milestoneId ? target : x)) })); // rollback
+      pushToast('Could not promote memory — try again', 'warn');
+    }
+  },
+
+  promoteBugToMilestone: async (bugId, milestoneId) => {
+    const bug = get().nodes.find((n) => n.id === bugId);
+    const target = get().milestones.find((x) => x.id === milestoneId);
+    if (!bug || !target) return;
+    const items = [...target.items, { label: bug.title, done: false, fromBug: true }];
+    set((s) => ({ milestones: s.milestones.map((x) => (x.id === milestoneId ? { ...x, items } : x)) })); // optimistic
+    const { error } = await supabase.from('milestones').update({ items }).eq('id', milestoneId);
+    if (error) {
+      console.error('promoteBugToMilestone failed', error);
+      set((s) => ({ milestones: s.milestones.map((x) => (x.id === milestoneId ? target : x)) })); // rollback
+      pushToast('Could not promote bug — try again', 'warn');
+      return;
+    }
+    pushToast(`Promoted "${bug.title}" to a milestone`, 'success');
+  },
 
   assignNodeToProject: async (nodeId, projectId) => {
     const n = get().nodes.find((x) => x.id === nodeId);

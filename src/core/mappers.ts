@@ -10,7 +10,7 @@
  * below); everything else is read out of metadata with safe defaults so a
  * node with no metadata yet (e.g. one Neural Core just wrote) still renders.
  */
-import type { BugNode, BugSeverity, EdgeRecord, MemoryRecord, NodeRecord, ProjectRecord, TaskNode } from './types';
+import type { BugNode, BugSeverity, EdgeRecord, MemoryRecord, MilestoneRecord, NodeRecord, ProjectRecord, TaskNode } from './types';
 
 export function nodeToTask(n: NodeRecord): TaskNode {
   const taskStatus = n.status === 'done' || n.status === 'archived' ? 2 : n.status === 'in_progress' ? 1 : 0;
@@ -107,5 +107,31 @@ export function rowToMemory(
     linkedNodeCount,
     createdLabel: relativeLabel(m.created_at),
     created_at: m.created_at,
+  };
+}
+
+/** Roadmaps: the `public.milestones` table (see `create_milestones_table`
+ * migration) uses snake_case DB column names (`status_label`, `order_index`,
+ * `release_date`) — this maps a raw row to the camelCase MilestoneRecord
+ * shape every room already reads/writes. */
+export function rowToMilestone(row: {
+  id: string;
+  version: string;
+  title: string;
+  status_label: string;
+  state: string;
+  release_date: string | null;
+  order_index: number;
+  items: unknown;
+}): MilestoneRecord {
+  return {
+    id: row.id,
+    version: row.version,
+    title: row.title,
+    statusLabel: row.status_label,
+    state: row.state as MilestoneRecord['state'],
+    releaseDate: row.release_date,
+    order: row.order_index,
+    items: Array.isArray(row.items) ? (row.items as MilestoneRecord['items']) : [],
   };
 }
