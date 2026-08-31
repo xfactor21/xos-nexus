@@ -7,6 +7,7 @@ import type {
   EdgeRecord,
   MemoryRecord,
   MilestoneRecord,
+  NodeKind,
   NodeRecord,
   ProjectRecord,
 } from '../core/types';
@@ -96,6 +97,16 @@ interface CoreGraphState {
   cycleBug: (id: string) => Promise<void>;
   addBug: (bug: { title: string; project_id: string | null; severity: BugSeverity }) => Promise<void>;
   updateBug: (id: string, patch: Partial<Pick<BugNode, 'severity' | 'assignee' | 'linkedCommit' | 'duplicateOf' | 'similarity'>>) => Promise<void>;
+
+  /** Neural Capture's real destination picker: writes the Captain-reviewed
+   * (and possibly re-routed) dissection pieces directly as real nodes,
+   * honoring whatever destination each piece was actually left on —
+   * deliberately NOT re-running raw text through liveClassify() on commit,
+   * since that would silently re-derive its own destinations from scratch
+   * and discard every edit the Captain just made in the review step. */
+  commitCaptureNodes: (
+    items: { kind: NodeKind; title: string; body: string; projectId: string | null; confidence: number; reasoning: string }[],
+  ) => Promise<void>;
 
   /** Ship's Log / Releases room: real CRUD instead of a hardcoded array.
    * `kind: 'release'` is already a live value in the deployed `nodes_kind_check`
@@ -364,6 +375,31 @@ export const useCoreGraph = create<CoreGraphState>((set, get) => ({
     set((s) => ({ nodes: upsert(s.nodes, { ...n, metadata: meta }) })); // optimistic
     const { error } = await supabase.from('nodes').update({ metadata: meta }).eq('id', id);
     if (error) console.error('updateBug failed', error);
+  },
+
+  commitCaptureNodes: async (items) => {
+    const ownerId = get().ownerId;
+    if (!ownerId || !items.length) return;
+    const rows = items.map((it) => ({
+      owner_id: ownerId,
+      project_id: it.projectId,
+      kind: it.kind,
+      title: it.title,
+      body: it.body,
+      source: 'capture_text',
+      ai_classified: true,
+      // ai_confidence is a 0..1 column; DissectedPiece.confidence is 0..100.
+      ai_confidence: Math.max(0, Math.min(1, it.confidence)),
+      ai_reasoning: it.reasoning,
+      status: 'open',
+    }));
+    const { error } = await supabase.from('nodes').insert(rows);
+    if (error) {
+      console.error('commitCaptureNodes failed', error);
+      pushToast('Could not save capture — try again', 'warn');
+      throw error;
+    }
+    // realtime subscription picks up the INSERT(s) — no local mutation needed
   },
 
   addRelease: async (r) => {

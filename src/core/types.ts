@@ -169,4 +169,8 @@ export interface DissectedPiece {
   destination: string;
   reasoning: string;
   confidence: number;
+  /** Real destination picker (Neural Capture): which of the Captain's
+   * actual projects this piece will file under, null = unassigned.
+   * Editable pre-commit — see CHANGE picker in modules/capture/index.tsx. */
+  projectId?: string | null;
 }
