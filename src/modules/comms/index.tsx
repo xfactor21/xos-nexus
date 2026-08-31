@@ -39,6 +39,7 @@ export default function Comms({ active }: { active: boolean }) {
   const memories = useCoreGraph((s) => s.memories);
   const milestones = useCoreGraph((s) => s.milestones);
   const commitCaptureNodes = useCoreGraph((s) => s.commitCaptureNodes);
+  const recordMemoryRecall = useCoreGraph((s) => s.recordMemoryRecall);
   const bugs = useMemo(() => nodes.filter((n) => n.kind === 'bug').map(nodeToBug), [nodes]);
   const [threads, setThreads] = useState<Thread[]>(() => [
     newThread('GENERAL', { who: 'ai', text: "Channel open, Captain. I've been keeping an eye on things — ask me about any project, bug, or memory." }),
@@ -129,6 +130,10 @@ export default function Comms({ active }: { active: boolean }) {
       const sorted = [...memories].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
       const target = sorted.find((m) => m.kind === 'decision') ?? sorted[0];
       if (!target) return { text: 'Nothing in memory yet, Captain — decisions and patterns get logged as they come up.' };
+      // Real recall tracking (Memory Vault's "RECALLED N×" stat) — this is
+      // the one genuine "xAI surfaced a memory to the Captain" moment in
+      // the client codebase, so it's the one place that logs a recall.
+      recordMemoryRecall(target.id);
       return { text: `Most recent ${target.kind}: "${target.content}" (${target.createdLabel}), linked to ${target.linkedNodeCount} node${target.linkedNodeCount === 1 ? '' : 's'}.` };
     }
 

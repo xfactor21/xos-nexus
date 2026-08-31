@@ -92,18 +92,29 @@ function relativeLabel(iso: string): string {
   return `${Math.floor(days / 30)} MONTH${Math.floor(days / 30) > 1 ? 'S' : ''} AGO`;
 }
 
+const RECALL_WINDOW_MS = 7 * 86_400_000;
+
+/** `recalls` are rows from the new `public.memory_recalls` table (see the
+ * `create_memory_recalls_table` migration) — one row per genuine "xAI
+ * surfaced this memory to the Captain" event (currently: Comms' /remember
+ * reply branch). `recalledCount` used to always read 0 (the type's own doc
+ * comment admitted "no backing column, not tracked yet") — this is a real,
+ * queryable, rolling 7-day count instead of a permanent fake zero. */
 export function rowToMemory(
   m: { id: string; project_id: string | null; source_node: string | null; content: string; kind: string; created_at: string },
   edges: EdgeRecord[],
+  recalls: { memory_id: string; recalled_at: string }[] = [],
 ): MemoryRecord {
   const linkedNodeCount = m.source_node ? edges.filter((e) => e.from_node === m.source_node || e.to_node === m.source_node).length : 0;
+  const now = Date.now();
+  const recalledCount = recalls.filter((r) => r.memory_id === m.id && now - new Date(r.recalled_at).getTime() <= RECALL_WINDOW_MS).length;
   return {
     id: m.id,
     project_id: m.project_id,
     source_node: m.source_node,
     content: m.content,
     kind: m.kind as MemoryRecord['kind'],
-    recalledCount: 0,
+    recalledCount,
     linkedNodeCount,
     createdLabel: relativeLabel(m.created_at),
     created_at: m.created_at,
