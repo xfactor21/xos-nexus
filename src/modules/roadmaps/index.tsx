@@ -1,18 +1,32 @@
 import { useRef, useState, type DragEvent } from 'react';
 import { useCoreGraph } from '../../stores/coreGraph';
+import type { MilestoneRecord } from '../../core/types';
 import Icon from '../../design-system/icons/Icon';
+import type { IconName } from '../../design-system/icons/registry';
 import AmbientField from '../../design-system/background/AmbientField';
 import ShipAmbience from '../../design-system/background/ShipAmbience';
 import { askConfirm } from '../../stores/confirmStore';
+import { pushToast } from '../../stores/toastStore';
+
+const MILESTONE_STATES: [MilestoneRecord['state'], IconName, string][] = [
+  ['future', 'hourglass', 'PLANNED'],
+  ['current', 'bolt', 'CURRENT'],
+  ['shipped', 'check', 'SHIPPED'],
+];
 
 /** ROADMAPS — Step 5: ported 1:1 from xos-prototype.html (.track vertical
  * timeline) and extended per the Feature Uplift notes: drag-to-reorder
  * milestones, editable release dates + a timeline/Gantt-lite view,
  * per-milestone progress bars computed from linked item completion, and
- * promoting a Memory Vault pattern directly into a milestone. */
+ * promoting a Memory Vault pattern directly into a milestone. Milestones
+ * are now real, persisted, owner-scoped rows (public.milestones) instead of
+ * shared local seed state — this room adds the one piece that was still
+ * missing: an actual create-milestone form, instead of every Captain being
+ * stuck with only the four bootstrap entries forever. */
 export default function Roadmaps({ active }: { active: boolean }) {
   const milestones = useCoreGraph((s) => s.milestones);
   const memories = useCoreGraph((s) => s.memories);
+  const addMilestone = useCoreGraph((s) => s.addMilestone);
   const reorderMilestones = useCoreGraph((s) => s.reorderMilestones);
   const updateMilestoneDate = useCoreGraph((s) => s.updateMilestoneDate);
   const deleteMilestone = useCoreGraph((s) => s.deleteMilestone);
@@ -21,6 +35,52 @@ export default function Roadmaps({ active }: { active: boolean }) {
   const [view, setView] = useState<'track' | 'gantt'>('track');
   const [promoting, setPromoting] = useState<string | null>(null);
   const dragId = useRef<string | null>(null);
+
+  const [newOpen, setNewOpen] = useState(false);
+  const [newVersion, setNewVersion] = useState('');
+  const [newTitle, setNewTitle] = useState('');
+  const [newStatusLabel, setNewStatusLabel] = useState('');
+  const [newState, setNewState] = useState<MilestoneRecord['state']>('future');
+  const [newDate, setNewDate] = useState('');
+  const [newItems, setNewItems] = useState('');
+  const [creating, setCreating] = useState(false);
+
+  function resetNewForm() {
+    setNewVersion('');
+    setNewTitle('');
+    setNewStatusLabel('');
+    setNewState('future');
+    setNewDate('');
+    setNewItems('');
+    setNewOpen(false);
+  }
+
+  async function handleCreate() {
+    const version = newVersion.trim();
+    const title = newTitle.trim();
+    if (!version || !title) return;
+    setCreating(true);
+    try {
+      const fallbackLabel = newState === 'shipped' ? 'SHIPPED' : newState === 'current' ? 'CURRENT' : 'PLANNED';
+      const items = newItems
+        .split('\n')
+        .map((line) => line.replace(/^[+\-*]\s*/, '').trim())
+        .filter(Boolean)
+        .map((label) => ({ label, done: false }));
+      await addMilestone({
+        version,
+        title,
+        statusLabel: newStatusLabel.trim() || fallbackLabel,
+        state: newState,
+        releaseDate: newDate || null,
+        items,
+      });
+      pushToast(`"${version} — ${title}" added to the roadmap.`, 'success');
+      resetNewForm();
+    } finally {
+      setCreating(false);
+    }
+  }
 
   const ordered = [...milestones].sort((a, b) => a.order - b.order);
   const patterns = memories.filter((m) => m.kind === 'pattern');
@@ -65,7 +125,60 @@ export default function Roadmaps({ active }: { active: boolean }) {
         <span className={`chip ${view === 'gantt' ? 'on' : ''}`} onClick={() => setView('gantt')}>
           <Icon name="gantt" size={12} /> TIMELINE (GANTT-LITE)
         </span>
+        <span className={`chip ${newOpen ? 'on' : ''}`} style={{ marginLeft: 'auto' }} onClick={() => setNewOpen((v) => !v)}>
+          <Icon name={newOpen ? 'close' : 'plus'} size={12} /> {newOpen ? 'CANCEL' : 'NEW MILESTONE'}
+        </span>
       </div>
+
+      {newOpen && (
+        <div className="cmdCustomForm" style={{ marginBottom: 18 }}>
+          <div className="optrow" style={{ margin: 0, gap: 8 }}>
+            <input
+              placeholder='Version — e.g. "v0.8.0"'
+              value={newVersion}
+              onChange={(e) => setNewVersion(e.target.value)}
+              style={{ flex: '0 0 140px' }}
+            />
+            <input
+              placeholder='Title — e.g. "MOBILE TERRITORY"'
+              value={newTitle}
+              onChange={(e) => setNewTitle(e.target.value)}
+              style={{ flex: 1 }}
+            />
+          </div>
+          <div className="optrow" style={{ margin: 0 }}>
+            {MILESTONE_STATES.map(([v, icon, label]) => (
+              <span key={v} className={`chip ${newState === v ? 'on' : ''}`} onClick={() => setNewState(v)}>
+                <Icon name={icon} size={11} /> {label}
+              </span>
+            ))}
+          </div>
+          <div className="optrow" style={{ margin: 0, gap: 8 }}>
+            <input
+              placeholder={`Status label (optional — defaults to "${newState === 'shipped' ? 'SHIPPED' : newState === 'current' ? 'CURRENT' : 'PLANNED'}")`}
+              value={newStatusLabel}
+              onChange={(e) => setNewStatusLabel(e.target.value)}
+              style={{ flex: 1 }}
+            />
+            <input type="date" className="date-input" value={newDate} onChange={(e) => setNewDate(e.target.value)} />
+          </div>
+          <textarea
+            placeholder={'Seed items (optional) — one per line, e.g.\n+ Mobile shell decision\n+ Offline-first sync'}
+            value={newItems}
+            onChange={(e) => setNewItems(e.target.value)}
+            rows={2}
+          />
+          <div className="optrow" style={{ margin: 0 }}>
+            <span
+              className="chip"
+              style={{ marginLeft: 'auto', opacity: newVersion.trim() && newTitle.trim() && !creating ? 1 : 0.4, pointerEvents: newVersion.trim() && newTitle.trim() && !creating ? 'auto' : 'none' }}
+              onClick={handleCreate}
+            >
+              <Icon name="plus" size={12} /> {creating ? 'CREATING…' : 'CREATE MILESTONE'}
+            </span>
+          </div>
+        </div>
+      )}
 
       {view === 'track' && (
         <div className="track">
@@ -80,7 +193,7 @@ export default function Roadmaps({ active }: { active: boolean }) {
             >
               <h3>
                 <span>
-                  <span className="drag-handle">⠠⠠⠠⠠⠠⠠</span>
+                  <span className="drag-handle">⁠⠠⠠⠠⠠⠠⠠</span>
                   {m.version} — {m.title}
                 </span>
                 <span className="st">
