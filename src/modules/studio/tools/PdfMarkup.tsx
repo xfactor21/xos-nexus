@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { PointerEvent as RPointerEvent } from 'react';
 import * as pdfjsLib from 'pdfjs-dist';
 // eslint-disable-next-line import/no-unresolved
@@ -27,6 +27,12 @@ type Annotation =
   | { id: string; kind: 'ellipse'; x: number; y: number; w: number; h: number; color: string; width: number }
   | { id: string; kind: 'pen'; points: Point[]; color: string; width: number }
   | { id: string; kind: 'text'; x: number; y: number; text: string; color: string; size: number };
+
+// Stable empty-array reference for pages with no annotations yet — without
+// this, `annByPage[pageIdx] ?? []` allocates a brand-new array every render
+// for any blank page, which made the redraw effect below re-fire on every
+// render instead of only when the annotation data actually changed.
+const EMPTY_ANNOTATIONS: Annotation[] = [];
 
 function drawAnnotation(ctx: CanvasRenderingContext2D, a: Annotation): void {
   switch (a.kind) {
@@ -137,7 +143,7 @@ export default function PdfMarkup({ onExit }: { boardId: string; onExit: () => v
     }
   }
 
-  const annotations = annByPage[pageIdx] ?? [];
+  const annotations = useMemo(() => annByPage[pageIdx] ?? EMPTY_ANNOTATIONS, [annByPage, pageIdx]);
   function setAnnotations(next: Annotation[] | ((prev: Annotation[]) => Annotation[])) {
     setAnnByPage((prev) => ({
       ...prev,

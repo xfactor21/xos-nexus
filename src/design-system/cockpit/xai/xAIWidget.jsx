@@ -8,7 +8,6 @@
 import React from 'react'
 import { Canvas } from '@react-three/fiber'
 import { OrbitControls } from '@react-three/drei'
-import XAI from './xAI'
 import { XAIProvider, XAIAuto, XAIBrain } from './xAIController-FINAL'
 
 // SUPER SIMPLE - Use this if you want 1 line usage

@@ -97,9 +97,10 @@ function Sparkline({ projectNodes, color }: { projectNodes: NodeRecord[]; color:
   );
 }
 
+const HEATMAP_WEEKS = 12;
+const HEATMAP_DAYS = HEATMAP_WEEKS * 7;
+
 function ActivityHeatmap({ projectNodes }: { projectNodes: NodeRecord[] }) {
-  const weeks = 12;
-  const days = weeks * 7;
   const counts = useMemo(() => {
     const byDay = new Map<string, number>();
     projectNodes.forEach((n) => {
@@ -107,7 +108,7 @@ function ActivityHeatmap({ projectNodes }: { projectNodes: NodeRecord[] }) {
       byDay.set(key, (byDay.get(key) ?? 0) + 1);
     });
     const out: { key: string; n: number }[] = [];
-    for (let i = days - 1; i >= 0; i--) {
+    for (let i = HEATMAP_DAYS - 1; i >= 0; i--) {
       const d = new Date(Date.now() - i * 86_400_000);
       const key = d.toISOString().slice(0, 10);
       out.push({ key, n: byDay.get(key) ?? 0 });
