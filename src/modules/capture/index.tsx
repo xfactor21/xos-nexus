@@ -15,14 +15,6 @@ async function openCaptureWidget() {
   await invoke('open_capture_widget');
 }
 
-type CapKind = 'IDEA' | 'BUG' | 'WRITING';
-
-const capDest: Record<CapKind, string> = {
-  IDEA: 'DESIGN STUDIO › STUDYHIVE',
-  BUG: 'BUG TRACKER › #17',
-  WRITING: 'NOVEL › DRAFT NOTES',
-};
-
 /* ---- real Web Speech API dictation ---------------------------------
  * Minimal structural typings for the SpeechRecognition API — it's not
  * part of TS's DOM lib, and only Chromium ships it unprefixed (Safari/
@@ -87,7 +79,6 @@ const PIECE_KIND_TO_NODE_KIND: Record<string, NodeKind> = {
 
 interface CapEntry {
   text: string;
-  kind: CapKind | null;
   icon: IconName;
   meta: string;
   metaCount?: number;
@@ -152,7 +143,6 @@ export default function Capture({ active }: { active: boolean }) {
         .slice(0, 10)
         .map((n) => ({
           text: n.title || n.body || '(empty capture)',
-          kind: null,
           icon: NODE_KIND_TO_CAP_ICON[n.kind] ?? 'idea',
           meta: n.kind.toUpperCase().replace('_', ' '),
           time: relTime(n.created_at),
@@ -251,9 +241,15 @@ export default function Capture({ active }: { active: boolean }) {
     const out: DissectedPiece[] = [];
     const push = (kind: string, body: string, reasoning: string, confidence: number) =>
       out.push({ kind, body, destination: pieceDestination(kind, projectName), reasoning, confidence, projectId });
-    if (/toggle|add|build|implement|want|feature|mode/.test(l)) push('TASK', 'Implement: core feature from thought', 'Action verb + scope detected', 96);
-    if (/remember|persist|save|choice/.test(l)) push('TASK', 'Persist preference across sessions', 'Dependent step extracted', 91);
-    if (/logo|glow|design|color|screen|animate/.test(l)) push('DESIGN', 'Visual concept -> Studio canvas', 'Visual language detected', 88);
+    // These used to push canned generic body text ("Implement: core feature
+    // from thought", "Persist preference across sessions", "Visual concept
+    // -> Studio canvas") regardless of what the Captain actually typed —
+    // fabricated content standing in for a real extract. Every branch now
+    // files the Captain's real words; `reasoning` still explains why the
+    // rule matched, which is genuinely about the match, not the content.
+    if (/toggle|add|build|implement|want|feature|mode/.test(l)) push('TASK', v, 'Action verb + scope detected', 96);
+    if (/remember|persist|save|choice/.test(l)) push('TASK', v, 'Dependent step extracted', 91);
+    if (/logo|glow|design|color|screen|animate/.test(l)) push('DESIGN', v, 'Visual language detected', 88);
     if (/bug|fix|broken|crash/.test(l)) push('BUG', v, 'Defect language detected', 95);
     if (/what if|idea|maybe/.test(l)) push('IDEA', v, 'Speculative phrasing preserved', 84);
     if (!out.length) push('NOTE', v, 'Stored — Core will relate it later', 78);
@@ -281,7 +277,7 @@ export default function Capture({ active }: { active: boolean }) {
       confidence: p.confidence / 100,
       reasoning: p.reasoning,
     }));
-    setCaps((c) => [{ text: v, kind: null, icon: 'xai', meta: 'DISSECTED', metaCount: pieces.length, time: 'SENDING…' }, ...c]);
+    setCaps((c) => [{ text: v, icon: 'xai', meta: 'DISSECTED', metaCount: pieces.length, time: 'SENDING…' }, ...c]);
     setPieces(null);
     setRaw('');
     try {
@@ -424,13 +420,6 @@ export default function Capture({ active }: { active: boolean }) {
                   </>
                 )}
               </b>
-              <span>
-                {c.kind && capDest[c.kind] && (
-                  <>
-                    <Icon name="arrowRight" size={11} /> {capDest[c.kind]}
-                  </>
-                )}
-              </span>
               {c.linked && (
                 <span style={{ color: 'var(--cyan)' }}>
                   <Icon name="xai" size={11} glow="cyan" /> {c.linked}

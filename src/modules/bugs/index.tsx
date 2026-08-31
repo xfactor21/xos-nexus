@@ -147,7 +147,10 @@ export default function Bugs({ active }: { active: boolean }) {
               </span>
             )}
             <div className="mt">
-              <span>{b.severity.toUpperCase()} · SPRINT 002</span>
+              {/* Was hardcoded "· SPRINT 002" on every card — no sprint field
+                  exists anywhere in the schema, so it never actually
+                  reflected which sprint (if any) the bug belonged to. */}
+              <span>{b.severity.toUpperCase()}</span>
               {b.linkedCommit && (
                 <span className="link">
                   <Icon name="branch" size={12} /> {b.linkedCommit}

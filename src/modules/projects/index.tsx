@@ -70,21 +70,26 @@ function HealthRing({ pct, color }: { pct: number; color: string }) {
   );
 }
 
-function seededBars(seed: string, health: number): number[] {
-  let h = 0;
-  for (let i = 0; i < seed.length; i++) h = (h * 31 + seed.charCodeAt(i)) >>> 0;
-  const bars: number[] = [];
-  for (let i = 0; i < 7; i++) {
-    h = (h * 1103515245 + 12345) >>> 0;
-    const jitter = (h % 40) - 20;
-    bars.push(Math.max(12, Math.min(100, health + jitter * (0.3 + i / 14))));
-  }
-  return bars;
+/** Real per-project activity bars (was: `seededBars` — a hash-jitter around
+ * the current health % regenerated fresh every render, visually implying a
+ * 7-point trend history that was never actually recorded anywhere). This is
+ * a genuine count of that project's real nodes created per day over the
+ * last 7 days — same real `created_at` field ActivityHeatmap below already
+ * buckets by day, just condensed to a 7-bar strip for the card. */
+function realDailyBars(projectNodes: NodeRecord[]): number[] {
+  const counts = Array.from({ length: 7 }, () => 0);
+  const now = Date.now();
+  projectNodes.forEach((n) => {
+    const days = Math.floor((now - new Date(n.created_at).getTime()) / 86_400_000);
+    if (days >= 0 && days < 7) counts[6 - days]++;
+  });
+  const max = Math.max(1, ...counts);
+  return counts.map((c) => Math.max(12, Math.round((c / max) * 100)));
 }
-function Sparkline({ seed, health, color }: { seed: string; health: number; color: string }) {
-  const bars = useMemo(() => seededBars(seed, health), [seed, health]);
+function Sparkline({ projectNodes, color }: { projectNodes: NodeRecord[]; color: string }) {
+  const bars = useMemo(() => realDailyBars(projectNodes), [projectNodes]);
   return (
-    <div className="pcardSpark" aria-hidden="true">
+    <div className="pcardSpark" aria-hidden="true" title="Nodes created per day, last 7 days">
       {bars.map((v, i) => (
         <i key={i} style={{ height: `${v}%`, background: color }} />
       ))}
@@ -280,6 +285,7 @@ export default function Projects({ active }: { active: boolean }) {
   const edges = useCoreGraph((s) => s.edges);
   const tasks = useMemo(() => nodes.filter((n) => n.kind === 'task').map(nodeToTask), [nodes]);
   const bugs = useMemo(() => nodes.filter((n) => n.kind === 'bug').map(nodeToBug), [nodes]);
+  const bugById = useMemo(() => new Map(bugs.map((b) => [b.id, b])), [bugs]);
   const advanceTask = useCoreGraph((s) => s.advanceTask);
   const cycleBug = useCoreGraph((s) => s.cycleBug);
   const assignNodeToProject = useCoreGraph((s) => s.assignNodeToProject);
@@ -490,7 +496,7 @@ export default function Projects({ active }: { active: boolean }) {
                       `${tasks.filter((t) => t.project_id === p.id).length} TASKS · ACTIVE`
                     )}
                   </div>
-                  <Sparkline seed={p.id} health={p.health} color={pc.color} />
+                  <Sparkline projectNodes={nodes.filter((n) => n.project_id === p.id)} color={pc.color} />
                   <button
                     className="pcardTimeline"
                     style={{ color: pc.color, borderColor: `${pc.color}55` }}
@@ -664,11 +670,19 @@ export default function Projects({ active }: { active: boolean }) {
                     {b.title} <span className="st" onClick={() => cycleBug(b.id)}>{b.bugStatus.toUpperCase()}</span>
                     <div className="mt">
                       <span>{b.severity.toUpperCase()}</span>
-                      {b.similarity && (
-                        <span className="link">
-                          <Icon name="xai" size={12} glow="cyan" /> {Math.round(b.similarity * 100)}% SIMILAR TO A SOLVED BUG — FIX ATTACHED
-                        </span>
-                      )}
+                      {/* Was unconditionally "SIMILAR TO A SOLVED BUG — FIX
+                          ATTACHED" whenever similarity existed, even for a
+                          duplicate that's still open — same real lookup +
+                          honest fallback as the Bug Tracker's own banner. */}
+                      {b.duplicateOf && b.similarity && (() => {
+                        const target = bugById.get(b.duplicateOf!);
+                        return (
+                          <span className="link">
+                            <Icon name="xai" size={12} glow="cyan" /> {Math.round(b.similarity! * 100)}% SIMILAR TO "{target?.title ?? 'a bug that no longer exists'}"
+                            {target?.bugStatus === 'fixed' ? ' — FIX ATTACHED' : ''}
+                          </span>
+                        );
+                      })()}
                     </div>
                   </div>
                 ))}
