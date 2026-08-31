@@ -10,7 +10,7 @@
  * below); everything else is read out of metadata with safe defaults so a
  * node with no metadata yet (e.g. one Neural Core just wrote) still renders.
  */
-import type { BugNode, BugSeverity, EdgeRecord, MemoryRecord, MilestoneRecord, NodeRecord, ProjectRecord, TaskNode } from './types';
+import type { BugNode, BugSeverity, EdgeRecord, MemoryRecord, MilestoneRecord, NodeRecord, ProjectRecord, SprintRecord, SuggestionRecord, TaskNode } from './types';
 
 export function nodeToTask(n: NodeRecord): TaskNode {
   const taskStatus = n.status === 'done' || n.status === 'archived' ? 2 : n.status === 'in_progress' ? 1 : 0;
@@ -144,5 +144,59 @@ export function rowToMilestone(row: {
     releaseDate: row.release_date,
     order: row.order_index,
     items: Array.isArray(row.items) ? (row.items as MilestoneRecord['items']) : [],
+  };
+}
+
+/** `public.sprints` row → SprintRecord. Columns are already snake_case/camel-
+ * compatible except for the identity mapping itself — kept as an explicit
+ * function (rather than a raw cast) so a future column rename only touches
+ * one place. */
+export function rowToSprint(row: {
+  id: string;
+  owner_id: string | null;
+  project_id: string | null;
+  name: string;
+  release_tag: string | null;
+  status: string;
+  starts_on: string | null;
+  ends_on: string | null;
+  retro: string | null;
+  created_at: string;
+}): SprintRecord {
+  return {
+    id: row.id,
+    owner_id: row.owner_id,
+    project_id: row.project_id,
+    name: row.name,
+    release_tag: row.release_tag,
+    status: (row.status as SprintRecord['status']) ?? 'planned',
+    starts_on: row.starts_on,
+    ends_on: row.ends_on,
+    retro: row.retro,
+    created_at: row.created_at,
+  };
+}
+
+/** `public.suggestions` row → SuggestionRecord. `related_nodes` is a Postgres
+ * uuid[] — normalized to a plain string[] with a safe empty-array default. */
+export function rowToSuggestion(row: {
+  id: string;
+  owner_id: string | null;
+  project_id: string | null;
+  trigger: string;
+  message: string;
+  status: string;
+  related_nodes: unknown;
+  created_at: string;
+}): SuggestionRecord {
+  return {
+    id: row.id,
+    owner_id: row.owner_id,
+    project_id: row.project_id,
+    trigger: row.trigger as SuggestionRecord['trigger'],
+    message: row.message,
+    status: (row.status as SuggestionRecord['status']) ?? 'pending',
+    related_nodes: Array.isArray(row.related_nodes) ? (row.related_nodes as string[]) : [],
+    created_at: row.created_at,
   };
 }

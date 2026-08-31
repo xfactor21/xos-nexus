@@ -70,6 +70,10 @@ export interface NodeRecord {
   created_at: string;
   /** jsonb — used by Design Studio to persist canvas items without a migration. */
   metadata?: Record<string, unknown>;
+  /** Real, live nullable FK column on the `nodes` table (confirmed via schema
+   * introspection) referencing `public.sprints.id`. Nullable — most nodes
+   * aren't assigned to a sprint. */
+  sprint_id: string | null;
 }
 
 /** Task-flavored node, as rendered on the Projects kanban board. */
@@ -161,6 +165,50 @@ export interface MilestoneRecord {
   releaseDate: string | null; // ISO date, editable
   order: number;
   items: { label: string; done: boolean; fromMemory?: boolean; fromBug?: boolean }[];
+}
+
+/**
+ * Verified against the live `sprints` table (Supabase project hkfasnoxhowjjfpnnvqb):
+ * RLS policy "own sprints" (cmd ALL, owner_id = auth.uid()) already exists,
+ * so no migration is needed to build this feature — app-layer wiring only.
+ */
+export interface SprintRecord {
+  id: string;
+  owner_id: string | null;
+  project_id: string | null;
+  name: string;
+  release_tag: string | null;
+  status: 'planned' | 'active' | 'complete';
+  starts_on: string | null; // ISO date
+  ends_on: string | null; // ISO date
+  retro: string | null;
+  created_at: string;
+}
+
+/**
+ * Verified against the live `suggestions` table (Supabase project
+ * hkfasnoxhowjjfpnnvqb): RLS policy "own suggestions" (cmd ALL,
+ * owner_id = auth.uid()) already exists. Populated by a real, disclosed,
+ * rule-based detector (see coreGraph.ts's generateSuggestions) — not a
+ * simulated/fake-AI feature, matching the honesty standard set by
+ * similarity.ts's disclosed Jaccard heuristic.
+ */
+export interface SuggestionRecord {
+  id: string;
+  owner_id: string | null;
+  project_id: string | null;
+  /** Which detector produced this — surfaced honestly in the UI rather than
+   * pretending to be free-form AI reasoning. */
+  trigger: 'stale_project' | 'duplicate_bug' | 'sprint_ending';
+  message: string;
+  /** 'pending' = detected, not yet shown anywhere. 'surfaced' = a Comms
+   * thread was spawned for it — this is the durable "seen" marker
+   * (persisted, not just in-memory) that stops it from spawning a second
+   * thread on the next reload. 'dismissed'/'actioned' are explicit Captain
+   * responses from that thread. */
+  status: 'pending' | 'surfaced' | 'dismissed' | 'actioned';
+  related_nodes: string[];
+  created_at: string;
 }
 
 export interface DissectedPiece {
