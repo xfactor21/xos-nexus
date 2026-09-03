@@ -9,8 +9,21 @@
          face has a real 3-tier weight ladder (400/500/600/700) to build
          typographic hierarchy from, instead of leaning on letter-spacing
          alone. Share Tech Mono (data/labels) is unchanged — mono stays for
-         data per the amendment's explicit note. -->
-    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;600;700&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+         data per the amendment's explicit note.
+
+         Fix: these were loaded from fonts.googleapis.com/fonts.gstatic.com.
+         The packaged desktop app sets Cross-Origin-Embedder-Policy:
+         require-corp (src-tauri/tauri.conf.json, for the Terminal room's
+         WebContainers SharedArrayBuffer requirement) — Google Fonts doesn't
+         send a Cross-Origin-Resource-Policy header, so under COEP:require-corp
+         the webview silently blocks both the stylesheet and the woff2 files.
+         Net effect: no font-loading error anywhere, the app just silently
+         fell back to the system UI font everywhere, which is why the whole
+         redesign's typographic identity (Orbitron display face, Share Tech
+         Mono data face) was invisible in the built app despite being fully
+         present in the CSS. Self-hosting removes the cross-origin request
+         entirely, independent of whatever the COEP value ends up being. -->
+    <link rel="stylesheet" href="/fonts/fonts.css">
   </head>
   <body class="nodock">
     <div id="root"></div>
