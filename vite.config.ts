@@ -16,7 +16,7 @@ export default defineConfig({
   // webview and the system tray/poppable-widget work before it.
   server: {
     headers: {
-      'Cross-Origin-Embedder-Policy': 'require-corp',
+      'Cross-Origin-Embedder-Policy': 'credentialless',
       'Cross-Origin-Opener-Policy': 'same-origin',
     },
   },
